@@ -1,0 +1,21 @@
+{
+  "name": "Enterprise",
+  "slug": "enterprise",
+  "version": "1.0.0",
+  "description": "企业管理功能：许可证、支持工单、部署脚本、监控告警",
+  "author": "FastBlog Team",
+  "category": "tool",
+  "icon": "🏢",
+  "tags": ["enterprise", "license", "ticket", "deployment", "monitoring"],
+  "requires": {"fastblog": ">=1.0.0", "python": ">=3.8"},
+  "capabilities": [
+    "read:enterprise",
+    "write:enterprise"
+  ],
+  "settings_schema": {
+    "license_auto_validate": {"type": "boolean", "label": "自动验证许可证", "default": true, "help": "定期自动检查许可证有效性"},
+    "alert_check_interval": {"type": "number", "label": "告警检查间隔(分钟)", "default": 30, "min": 5, "max": 1440, "help": "监控告警的检查频率"},
+    "ticket_auto_assign": {"type": "boolean", "label": "自动分配工单", "default": true, "help": "新工单是否自动分配给空闲客服"},
+    "deployment_timeout": {"type": "number", "label": "部署超时(秒)", "default": 300, "min": 30, "max": 3600, "help": "部署脚本执行的超时时间"}
+  }
+}

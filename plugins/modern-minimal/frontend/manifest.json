@@ -1,0 +1,19 @@
+{
+  "name": "Modern Minimal",
+  "slug": "modern-minimal",
+  "version": "2.0.0",
+  "routes": [
+    {
+      "path": "/admin/plugin-pages/modern-minimal",
+      "component": "./admin/ConfigPage.tsx",
+      "title": "简约主题"
+    }
+  ],
+  "navItems": [
+    {
+      "label": "简约主题",
+      "href": "/admin/plugin-pages/modern-minimal",
+      "icon": "Palette"
+    }
+  ]
+}

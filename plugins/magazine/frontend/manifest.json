@@ -1,0 +1,19 @@
+{
+  "name": "Magazine",
+  "slug": "magazine",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "path": "/admin/plugin-pages/magazine",
+      "component": "./admin/ConfigPage.tsx",
+      "title": "杂志主题"
+    }
+  ],
+  "navItems": [
+    {
+      "label": "杂志主题",
+      "href": "/admin/plugin-pages/magazine",
+      "icon": "Palette"
+    }
+  ]
+}

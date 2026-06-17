@@ -1,0 +1,22 @@
+{
+  "name": "Migration",
+  "slug": "migration",
+  "version": "1.0.0",
+  "description": "内容迁移工具：从 WordPress、Halo 等平台迁移内容到 FastBlog",
+  "author": "FastBlog Team",
+  "category": "tool",
+  "icon": "📦",
+  "tags": ["migration", "import", "wordpress", "halo"],
+  "requires": {"fastblog": ">=1.0.0", "python": ">=3.8"},
+  "capabilities": [
+    "read:migration",
+    "write:migration",
+    "delete:migration"
+  ],
+  "settings_schema": {
+    "default_platform": {"type": "select", "label": "默认源平台", "default": "wordpress", "options": [{"value": "wordpress", "label": "WordPress"}, {"value": "halo", "label": "Halo"}, {"value": "ghost", "label": "Ghost"}], "help": "新建迁移任务时的默认平台"},
+    "batch_size": {"type": "number", "label": "每批迁移数量", "default": 50, "min": 10, "max": 500, "help": "每批次迁移的文章数量"},
+    "import_images": {"type": "boolean", "label": "导入图片", "default": true, "help": "迁移时是否下载并导入文章中的图片"},
+    "preserve_slugs": {"type": "boolean", "label": "保留原始链接", "default": true, "help": "是否保留文章的原始 URL 别名"}
+  }
+}

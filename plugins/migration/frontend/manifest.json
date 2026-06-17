@@ -1,0 +1,13 @@
+{
+  "name": "Migration",
+  "slug": "migration",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "path": "/admin/plugin-pages/migration",
+      "component": "./admin/Page.tsx",
+      "title": "迁移管理"
+    }
+  ],
+  "navItems": []
+}

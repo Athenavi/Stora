@@ -1,0 +1,19 @@
+{
+  "name": "代码片段收藏",
+  "slug": "code-snippets",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "path": "/admin/plugin-pages/code-snippets",
+      "component": "./admin/Page.tsx",
+      "title": "代码片段"
+    }
+  ],
+  "navItems": [
+    {
+      "label": "代码片段",
+      "href": "/admin/plugin-pages/code-snippets",
+      "icon": "Code"
+    }
+  ]
+}
