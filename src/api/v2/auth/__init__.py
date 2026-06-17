@@ -15,6 +15,10 @@ def _build_router():
     from src.api.v2.auth.login import router as login_router
     router.include_router(login_router)
 
+    # OAuth
+    from src.api.v2.auth.oauth import router as oauth_router
+    router.include_router(oauth_router)
+
     # User CRUD (from existing module)
     from src.api.v2.users.unified_users import router as users_router
     router.include_router(users_router)
