@@ -84,9 +84,5 @@ aioboto3==15.5.0
 # Utilities
 secure-python-utils==0.1.4
 
-# Type checking
-mypy>=1.0
-types-requests
-types-redis
-types-PyYAML
+python-jose
 
