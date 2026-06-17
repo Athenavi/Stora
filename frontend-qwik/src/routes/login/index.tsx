@@ -1,13 +1,24 @@
 /**
  * Stora Login — Enterprise login page
  */
-import { component$, useSignal } from "@builder.io/qwik";
-import { useNavigate } from "@builder.io/qwik-city";
-import { login } from "~/lib/api";
+import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { useNavigate, useLocation } from "@builder.io/qwik-city";
+import { login, setToken } from "~/lib/api";
 import { Button } from "~/components/ui/Button";
 
 export default component$(() => {
   const nav = useNavigate();
+  const loc = useLocation();
+
+  // Handle OAuth token in URL
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(() => {
+    const token = loc.url.searchParams.get("token");
+    if (token) {
+      setToken(token);
+      nav("/drive");
+    }
+  });
   const username = useSignal("");
   const password = useSignal("");
   const error = useSignal("");
@@ -77,6 +88,20 @@ export default component$(() => {
           <p class="mt-8 text-center text-sm text-slate-500">
             还没有账号？<a href="/register" class="text-indigo-600 hover:text-indigo-800 font-medium">注册</a>
           </p>
+
+          <div class="mt-6 pt-6 border-t border-slate-200">
+            <p class="text-xs text-center text-slate-400 mb-4">或使用第三方账号登录</p>
+            <div class="flex gap-3">
+              <a href="/api/v2/auth/oauth/github"
+                class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                <span>GitHub</span>
+              </a>
+              <a href="/api/v2/auth/oauth/google"
+                class="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border border-slate-300 rounded-lg text-sm text-slate-700 hover:bg-slate-50 transition-colors">
+                <span>Google</span>
+              </a>
+            </div>
+          </div>
         </div>
       </div>
     </div>
