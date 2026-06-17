@@ -315,9 +315,8 @@ def register_all_routes(app: FastAPI, worker_info: str):
                 'shared.models.social',
                 'shared.models.ad',
                 'shared.models.ai',
-                # 预热 auth_deps 避免并行加载时死锁
+                # 预热共享模块
                 'src.auth',
-                'src.auth.auth_deps',
             ]
             for _pkg in _shared_subpkgs:
                 try:

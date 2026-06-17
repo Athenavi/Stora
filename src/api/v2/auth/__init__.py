@@ -1,4 +1,4 @@
-"""Stora Auth API Router — handles login/register/token refresh"""
+"""Stora Auth API Router"""
 from fastapi import APIRouter
 
 _router = None
@@ -11,7 +11,11 @@ def _build_router():
 
     router = APIRouter(tags=["auth"])
 
-    # Auth routes from V2
+    # Login/Register/Profile
+    from src.api.v2.auth.login import router as login_router
+    router.include_router(login_router)
+
+    # User CRUD (from existing module)
     from src.api.v2.users.unified_users import router as users_router
     router.include_router(users_router)
 
