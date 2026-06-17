@@ -20,7 +20,6 @@ def _build_router():
     from src.api.v2.performance.css_optimizer import router as css_optimizer_router
     from src.api.v2.performance.http2_config import router as http2_config_router
     from src.api.v2.performance.load_balancer import router as load_balancer_router
-    from src.api.v2.performance.localization import router as localization_router
     from src.api.v2.performance.object_cache import router as object_cache_router
     from src.api.v2.performance.performance_monitor import router as performance_monitor_router
     from src.api.v2.performance.performance_tracking import router as performance_tracking_router
@@ -35,7 +34,6 @@ def _build_router():
     router.include_router(css_optimizer_router, prefix="/css-optimizer")
     router.include_router(http2_config_router, prefix="/http2")
     router.include_router(load_balancer_router, prefix="/load-balancer")
-    router.include_router(localization_router, prefix="/localization")
     router.include_router(object_cache_router, prefix="/object-cache")
     router.include_router(query_monitor_router, prefix="/query-monitor")
     router.include_router(query_optimization_router, prefix="/query-optimization")

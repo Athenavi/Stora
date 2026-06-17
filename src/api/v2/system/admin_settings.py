@@ -5,9 +5,9 @@ from typing import Dict, Any
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.v2.auth import jwt_required
 from shared.models import SystemSettings, MenuItems, Pages, Menus
 from src.api.v2._helpers import ok, fail
-from src.auth import jwt_required_page_dependency as jwt_required
 from src.extensions import get_async_db_session as get_async_db
 
 router = APIRouter(tags=["admin-settings"])
