@@ -1,15 +1,23 @@
 /**
  * Stora Drive — Enterprise File Manager
+ *
+ * Supports folder navigation via ?folder=id query param.
  */
 import { component$, useSignal } from "@builder.io/qwik";
-import { routeLoader$ } from "@builder.io/qwik-city";
-import { listFiles, type FileItem } from "~/lib/api";
+import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
+import { listFiles, getFolderChildren, type FileItem, type Folder, type FolderChildrenResponse } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton } from "~/components/ui/Button";
 import UploadZone from "~/components/upload/UploadZone";
 
-export const useFileList = routeLoader$(async () => {
-  return await listFiles({ page: 1, page_size: 50 }).catch(() => null);
+export const useFileList = routeLoader$(async ({ query, url }) => {
+  const folderId = url.searchParams.get("folder");
+  if (folderId) {
+    const data = await getFolderChildren(Number(folderId)).catch(() => null);
+    return data || { folders: [], files: [], path: [] };
+  }
+  const files = await listFiles({ page: 1, page_size: 50 }).catch(() => null);
+  return files ? { folders: [], files: files.items, path: [{ id: 0, name: "我的文件" }] } : null;
 });
 
 function fmtSize(bytes: number): string {
@@ -41,7 +49,13 @@ const typeColors: Record<string, { icon: string; color: string }> = {
 
 export default component$(() => {
   const data = useFileList();
-  const files = data.value?.items || [];
+  const nav = useNavigate();
+  const loc = useLocation();
+  const allItems: ({ type: "folder" } & Folder | { type: "file" } & FileItem)[] = [];
+  if (data.value) {
+    for (const f of data.value.folders) allItems.push({ type: "folder", ...f });
+    for (const f of data.value.files) allItems.push({ type: "file", ...f });
+  }
   const viewMode = useSignal<"list" | "grid">("list");
   const showUpload = useSignal(false);
   const selIds = useSignal<number[]>([]);
@@ -81,8 +95,13 @@ export default component$(() => {
       )}
 
       <div class="flex items-center gap-1.5 px-6 py-2.5 text-sm border-b border-slate-100 bg-white/80 shrink-0">
-        <span class="text-slate-500 font-medium">我的文件</span>
-        {files.length > 0 && <><Icon name="chevronRight" size={14} class="text-slate-300" /><span class="text-slate-400">{files.length} 个项目</span></>}
+        <span class="text-slate-500 font-medium">
+          {data.value?.path?.length ? data.value.path[data.value.path.length-1]?.name : '我的文件'}
+        </span>
+        {data.value?.path?.slice(0,-1).map(p => (
+          <a key={p.id} href={`/drive?folder=${p.id}`} class="text-slate-400 hover:text-indigo-600 transition-colors">{p.name}</a>
+        ))}
+        {allItems.length > 0 && <><Icon name="chevronRight" size={14} class="text-slate-300" /><span class="text-slate-400">{allItems.length} 个项目</span></>}
       </div>
 
       {/* Content */}
@@ -96,7 +115,7 @@ export default component$(() => {
               </div>
             ))}
           </div>
-        ) : files.length === 0 ? (
+        ) : allItems.length === 0 ? (
           <div class="flex flex-col items-center justify-center h-full text-slate-400">
             <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">📂</div>
             <h3 class="text-lg font-semibold text-slate-500 mb-1">空目录</h3>
@@ -110,8 +129,8 @@ export default component$(() => {
             <thead>
               <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 sticky top-0 bg-slate-50/95 backdrop-blur">
                 <th class="w-10 px-4 py-3">
-                  <input type="checkbox" checked={selIds.value.length === files.length && files.length > 0}
-                    onChange$={() => selIds.value = selIds.value.length === files.length ? [] : files.map(f => f.id)} class="rounded border-slate-300" />
+                  <input type="checkbox" checked={selIds.value.length === allItems.length && allItems.length > 0}
+                    onChange$={() => selIds.value = selIds.value.length === allItems.length ? [] : allItems.map(f => f.id)} class="rounded border-slate-300" />
                 </th>
                 <th class="px-2 py-3">文件名</th>
                 <th class="px-2 py-3 w-28">大小</th>
@@ -121,18 +140,35 @@ export default component$(() => {
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-50">
-              {files.map(f => {
+              {allItems.map(item => {
+                if (item.type === "folder") {
+                  const sel = selIds.value.includes(item.id);
+                  return (
+                    <tr key={`f-${item.id}`} onClick$={() => nav(`/drive?folder=${item.id}`)}
+                      class={`group cursor-pointer text-sm transition-colors ${sel ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
+                      <td class="px-4 py-3" onClick$={(e: any) => e.stopPropagation()}>
+                        <input type="checkbox" checked={sel}
+                          onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }}
+                          class="rounded border-slate-300" />
+                      </td>
+                      <td class="px-2 py-3" colspan="5">
+                        <div class="flex items-center gap-3">
+                          <div class="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center text-sm">📁</div>
+                          <span class="text-slate-700 font-medium">{item.name}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+                const f = item as any;
                 const tc = typeColors[f.file_type] || typeColors.other;
                 const sel = selIds.value.includes(f.id);
                 return (
                   <tr key={f.id} class={`group cursor-pointer text-sm transition-colors ${sel ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
                     <td class="px-4 py-3">
                       <input type="checkbox" checked={sel}
-                        onChange$={() => {
-                          const i = selIds.value.indexOf(f.id);
-                          if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(f.id);
-                          selIds.value = [...selIds.value];
-                        }} class="rounded border-slate-300" />
+                        onChange$={() => { const i = selIds.value.indexOf(f.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(f.id); selIds.value = [...selIds.value]; }}
+                        class="rounded border-slate-300" />
                     </td>
                     <td class="px-2 py-3">
                       <div class="flex items-center gap-3">
@@ -151,15 +187,23 @@ export default component$(() => {
           </table>
         ) : (
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-7 gap-4 p-6">
-            {files.map(f => {
+            {allItems.map(item => {
+              if (item.type === "folder") {
+                return (
+                  <div key={`f-${item.id}`} onClick$={() => nav(`/drive?folder=${item.id}`)}
+                    class="group relative bg-white rounded-xl border-2 border-slate-100 hover:border-amber-300 hover:shadow-sm transition-all cursor-pointer p-3">
+                    <div class="aspect-square rounded-lg bg-amber-50 flex items-center justify-center text-5xl mb-2.5">📁</div>
+                    <p class="text-xs font-medium text-slate-700 truncate text-center">{item.name}</p>
+                    <div class="absolute inset-0 rounded-xl ring-1 ring-inset ring-black/5 pointer-events-none" />
+                  </div>
+                );
+              }
+              const f = item as any;
               const tc = typeColors[f.file_type] || typeColors.other;
               const sel = selIds.value.includes(f.id);
               return (
-                <div key={f.id} onClick$={() => {
-                  const i = selIds.value.indexOf(f.id);
-                  if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(f.id);
-                  selIds.value = [...selIds.value];
-                }} class={`group relative bg-white rounded-xl border-2 transition-all cursor-pointer p-3 ${sel ? "border-indigo-500 shadow-md" : "border-slate-100 hover:border-slate-200 hover:shadow-sm"}`}>
+                <div key={f.id} onClick$={() => { const i = selIds.value.indexOf(f.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(f.id); selIds.value = [...selIds.value]; }}
+                  class={`group relative bg-white rounded-xl border-2 transition-all cursor-pointer p-3 ${sel ? "border-indigo-500 shadow-md" : "border-slate-100 hover:border-slate-200 hover:shadow-sm"}`}>
                   <div class={`aspect-square rounded-lg flex items-center justify-center text-4xl mb-2.5 ${tc.color}`}><span>{tc.icon}</span></div>
                   <p class="text-xs font-medium text-slate-700 truncate text-center">{f.filename}</p>
                   <p class="text-xs text-slate-400 text-center mt-0.5">{fmtSize(f.file_size)}</p>
