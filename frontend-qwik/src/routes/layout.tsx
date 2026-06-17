@@ -27,6 +27,7 @@ export default component$(() => {
   const isFavorites = path.startsWith("/favorites");
   const isAdmin = path.startsWith("/admin");
   const darkMode = useSignal(false);
+  const mobileMenuOpen = useSignal(false);
   const sidebarOpen = useSignal(true);
 
   const nav = [
@@ -39,11 +40,18 @@ export default component$(() => {
 
   return (
     <div class={`flex h-screen overflow-hidden ${darkMode.value ? 'dark bg-slate-900' : 'bg-slate-50'}`}>
+      {/* Mobile overlay */}
+      {mobileMenuOpen.value && (
+        <div class="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick$={() => mobileMenuOpen.value = false} />
+      )}
+
       {/* Sidebar */}
       <aside
         class={`${
           sidebarOpen.value ? "w-[260px]" : "w-0"
-        } transition-all duration-300 bg-slate-900 text-white flex flex-col shrink-0 overflow-hidden`}
+        } ${mobileMenuOpen.value ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+          transition-all duration-300 bg-slate-900 text-white flex flex-col shrink-0 overflow-hidden
+          fixed lg:static inset-y-0 left-0 z-40 lg:z-auto`}
       >
         <div class="flex items-center gap-3 px-6 h-16 border-b border-slate-800 shrink-0">
           <div class="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white text-sm font-bold">
@@ -100,8 +108,14 @@ export default component$(() => {
         {/* Topbar */}
         <header class="h-16 bg-white border-b border-slate-200 flex items-center gap-4 px-6 shrink-0">
           <button
-            onClick$={() => (sidebarOpen.value = !sidebarOpen.value)}
-            class="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            onClick$={() => { if (window.innerWidth < 1024) mobileMenuOpen.value = true; else sidebarOpen.value = !sidebarOpen.value; }}
+            class="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors lg:hidden"
+          >
+            <Icon name="menu" size={20} />
+          </button>
+          <button
+            onClick$={() => sidebarOpen.value = !sidebarOpen.value}
+            class="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors hidden lg:block"
           >
             <Icon name="menu" size={20} />
           </button>

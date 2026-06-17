@@ -15,4 +15,6 @@ from shared.models.file.access_log import AccessLog
 from shared.models.file.download_token import DownloadToken
 from shared.models.file.storage_quota import StorageQuota
 
-__all__ = ["FileItem", "Folder", "FileFingerprint", "FileOptimization", "UploadTask", "UploadChunk", "DownloadTask", "TrashItem", "FileVersion", "FileTag", "FileTagAssignment", "AccessLog", "DownloadToken", "StorageQuota"]
+from shared.models.file.storage_plan import StoragePlan
+
+__all__ = ["FileItem", "Folder", "FileFingerprint", "FileOptimization", "UploadTask", "UploadChunk", "DownloadTask", "TrashItem", "FileVersion", "FileTag", "FileTagAssignment", "AccessLog", "DownloadToken", "StorageQuota", "StoragePlan"]
