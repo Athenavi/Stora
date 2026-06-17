@@ -26,6 +26,7 @@ export default component$(() => {
   const isTrash = path.startsWith("/trash");
   const isFavorites = path.startsWith("/favorites");
   const isAdmin = path.startsWith("/admin");
+  const darkMode = useSignal(false);
   const sidebarOpen = useSignal(true);
 
   const nav = [
@@ -37,7 +38,7 @@ export default component$(() => {
   ];
 
   return (
-    <div class="flex h-screen overflow-hidden bg-slate-50">
+    <div class={`flex h-screen overflow-hidden ${darkMode.value ? 'dark bg-slate-900' : 'bg-slate-50'}`}>
       {/* Sidebar */}
       <aside
         class={`${
@@ -105,6 +106,9 @@ export default component$(() => {
             <Icon name="menu" size={20} />
           </button>
           <div class="flex-1" />
+          <button onClick$={() => darkMode.value = !darkMode.value} class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title={darkMode.value ? "亮色模式" : "暗色模式"}>
+            {darkMode.value ? <Icon name="eye" size={20} /> : <Icon name="eye" size={20} />}
+          </button>
           <button class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="设置">
             <Icon name="setting" size={20} />
           </button>
