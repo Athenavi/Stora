@@ -1,5 +1,5 @@
 /**
- * 用户认证/资料 API
+ * Stora 用户认证/资料 API
  */
 import { api, setToken } from './api-client';
 
@@ -23,17 +23,8 @@ export interface LoginResponse {
   user: User;
 }
 
-export interface RegisterParams {
-  username: string;
-  email: string;
-  password: string;
-  password_confirm: string;
-}
-
-export const login = async (
-  username: string,
-  password: string,
-): Promise<LoginResponse> => {
+/** 登录 */
+export const login = async (username: string, password: string): Promise<LoginResponse> => {
   const fd = new FormData();
   fd.append('username', username);
   fd.append('password', password);
@@ -42,18 +33,26 @@ export const login = async (
   return res;
 };
 
-export const register = (params: RegisterParams): Promise<User> =>
-  api.post('/auth/register', params);
+/** 注册 */
+export const register = (params: {
+  username: string;
+  email: string;
+  password: string;
+  password_confirm: string;
+}) => {
+  const fd = new FormData();
+  fd.append('username', params.username);
+  fd.append('email', params.email);
+  fd.append('password', params.password);
+  fd.append('password_confirm', params.password_confirm);
+  return api.post('/auth/register', fd);
+};
 
+/** 登出 */
 export const logout = (): Promise<void> => api.post('/auth/logout');
 
+/** 获取当前用户信息 */
 export const getProfile = (): Promise<User> => api.get('/auth/me');
 
-export const getQuota = (): Promise<{
-  max_storage: number;
-  used_storage: number;
-  max_file_size: number;
-  max_files_count: number;
-  files_count: number;
-  usage_percent: number;
-}> => api.get('/users/me/quota');
+/** 获取存储配额 */
+export const getQuota = () => api.get('/users/me/quota');
