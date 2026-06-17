@@ -1,7 +1,4 @@
-"""
-认证API聚合路由器 - V2统一入口
-包装 V1 auth 模块，后续逐步将路由迁移为原生 V2 实现
-"""
+"""Stora Auth API Router — handles login/register/token refresh"""
 from fastapi import APIRouter
 
 _router = None
@@ -14,9 +11,9 @@ def _build_router():
 
     router = APIRouter(tags=["auth"])
 
-    # ── V1 模块（待逐步内联优化）──
-    from src.api.v2.auth_v1pack import router as auth_router
-    router.include_router(auth_router)
+    # Auth routes from V2
+    from src.api.v2.users.unified_users import router as users_router
+    router.include_router(users_router)
 
     _router = router
     return _router
