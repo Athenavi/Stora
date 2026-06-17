@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 
 from shared.services.security.rate_limiter import rate_limiter
 from src.api.v2._helpers import ok, fail
-from src.auth.auth_deps import jwt_required_dependency as jwt_required, admin_required as admin_required_api
+from src.auth import jwt_required_dependency as jwt_required, jwt_required
 
 router = APIRouter(tags=["rate-limit"])
 logger = logging.getLogger(__name__)
@@ -159,7 +159,7 @@ async def update_default_config(
         requests: int = Body(..., description="最大请求数"),
         window: int = Body(..., description="时间窗口（秒）"),
         current_user=Depends(jwt_required),
-        _=Depends(admin_required_api)
+        _=Depends(jwt_required)
 ):
     """
     更新默认限流配置（管理员）

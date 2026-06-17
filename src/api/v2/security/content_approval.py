@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models import ApprovalRecord
 from shared.services.security.content_approval_service import content_approval_service
 from src.api.v2._helpers import ok, fail
-from src.auth.auth_deps import jwt_required_dependency as jwt_required, get_current_user
+from src.auth import jwt_required_dependency as jwt_required, get_current_user
 from src.extensions import get_async_db_session as get_async_db
 
 router = APIRouter(tags=["approval"])

@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from shared.models.user import User as UserModel
 from shared.services.users.session_management_service import session_management_service
 from src.api.v2._helpers import ok, fail
-from src.auth.auth_deps import get_current_active_user, admin_required as admin_required_api
+from src.auth import get_current_active_user, jwt_required
 
 router = APIRouter(tags=["sessions"])
 logger = logging.getLogger(__name__)
@@ -191,7 +191,7 @@ async def get_session_stats(
 @_catch
 async def admin_get_user_sessions(
         user_id: int,
-        current_user: UserModel = Depends(admin_required_api)
+        current_user: UserModel = Depends(jwt_required)
 ):
     """
     管理员查看指定用户的会话列表

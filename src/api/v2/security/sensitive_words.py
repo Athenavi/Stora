@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.security import SensitiveWord
 from src.api.v2._helpers import ok, fail
 from src.auth import jwt_required_dependency as jwt_required
-from src.auth.auth_deps import admin_required as admin_required_api
+from src.auth import jwt_required
 from src.extensions import get_async_db_session as get_async_db
 
 router = APIRouter(tags=["sensitive-words"])

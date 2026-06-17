@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from shared.models.user import User as UserModel
 from shared.services.users.login_security_service import login_security_service
 from src.api.v2._helpers import ok, fail
-from src.auth.auth_deps import get_current_active_user, admin_required as admin_required_api
+from src.auth import get_current_active_user, jwt_required
 from src.extensions import get_async_db_session as get_async_db
 
 router = APIRouter(tags=["security"])
@@ -92,7 +92,7 @@ async def get_my_security_stats(
 @router.get("/admin/locked-users", summary="获取被锁定的用户列表")
 @_catch
 async def get_locked_users(
-        current_user: UserModel = Depends(admin_required_api),
+        current_user: UserModel = Depends(jwt_required),
         db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -119,7 +119,7 @@ async def get_locked_users(
 async def admin_get_user_history(
         username: str,
         limit: int = Query(50, ge=1, le=200, description="返回数量"),
-        current_user: UserModel = Depends(admin_required_api),
+        current_user: UserModel = Depends(jwt_required),
         db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -149,7 +149,7 @@ async def admin_get_user_history(
 @_catch
 async def admin_get_user_stats(
         username: str,
-        current_user: UserModel = Depends(admin_required_api),
+        current_user: UserModel = Depends(jwt_required),
         db: AsyncSession = Depends(get_async_db)
 ):
     """
