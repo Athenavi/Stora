@@ -17,6 +17,7 @@ export default component$(() => {
   const isShare = path.startsWith("/share");
   const isTrash = path.startsWith("/trash");
   const isFavorites = path.startsWith("/favorites");
+  const isAdmin = path.startsWith("/admin");
   const sidebarOpen = useSignal(true);
 
   const nav = [
@@ -24,6 +25,7 @@ export default component$(() => {
     { href: "/share", icon: "share" as const, label: "我的分享", active: isShare },
     { href: "/trash", icon: "trash" as const, label: "回收站", active: isTrash },
     { href: "/favorites", icon: "star" as const, label: "收藏夹", active: isFavorites },
+    { href: "/admin", icon: "setting" as const, label: "管理面板", active: isAdmin },
   ];
 
   return (
