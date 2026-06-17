@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Body
 
-from auth import get_current_user
+from src.api.v2.auth_v1pack import get_current_user
 from shared.services.core.multi_level_cache import multi_level_cache
 from src.api.v2._helpers import ok, fail, _catch
 
