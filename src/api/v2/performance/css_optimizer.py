@@ -10,7 +10,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Body
 from shared.models.user import User
 from shared.services.performance.css_optimizer import css_optimizer_service
 from src.api.v2._helpers import ok, fail, _catch
-from src.auth.auth_deps import admin_required as admin_required_api
+from src.api.v2.auth_v1pack import get_current_user
+
+
+def _check_admin(user):
+    if not (getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False)):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
 
 router = APIRouter()
 
@@ -20,9 +26,10 @@ router = APIRouter()
 @_catch
 async def extract_critical_css_api(
         request: Request, data: Dict[str, Any] = Body(...),
-        current_user: User = Depends(admin_required_api)
+        current_user: User = Depends(get_current_user)
 ):
     """提取关键CSS API"""
+    _check_admin(current_user)
     html_content = data.get('html_content', '')
     css_files = data.get('css_files', [])
     page_type = data.get('page_type', 'article')
