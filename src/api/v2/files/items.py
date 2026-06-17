@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_, delete
 from sqlalchemy.orm import selectinload
 
-from shared.models import FileItem, Folder, User
+from shared.models import FileItem, FileFingerprint, Folder, StorageQuota, User
 from src.api.v2._helpers import ok, fail
 from src.auth import jwt_required_dependency as jwt_required
 from src.extensions import get_async_db_session as get_async_db
@@ -275,6 +275,128 @@ async def move_files(
         f.folder_id = target_folder_id
     await db.commit()
     return ok(msg=f"已移动 {len(files)} 个文件")
+
+
+# ─── Trash / Recycle Bin ───
+
+@router.get("/trash")
+async def list_trash(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """列出回收站中的文件"""
+    conditions = [
+        FileItem.user_id == current_user.id,
+        FileItem.deleted_at.isnot(None),
+    ]
+    count_q = select(func.count()).select_from(FileItem).where(and_(*conditions))
+    total = (await db.execute(count_q)).scalar() or 0
+
+    q = select(FileItem).where(and_(*conditions)).order_by(FileItem.deleted_at.desc())
+    q = q.offset((page - 1) * page_size).limit(page_size)
+    items = (await db.execute(q)).scalars().all()
+
+    return ok({
+        "items": [_file_to_dict(f) for f in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    })
+
+
+@router.post("/trash/{file_id}/restore")
+async def restore_file(
+    file_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """从回收站恢复文件"""
+    file = await db.get(FileItem, file_id)
+    if not file or file.user_id != current_user.id:
+        return fail("文件不存在")
+    file.deleted_at = None
+    await db.commit()
+    return ok(msg="已恢复")
+
+
+@router.post("/trash/batch-restore")
+async def batch_restore(
+    file_ids: List[int],
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """批量恢复文件"""
+    result = await db.execute(
+        select(FileItem).where(
+            FileItem.id.in_(file_ids),
+            FileItem.user_id == current_user.id,
+            FileItem.deleted_at.isnot(None),
+        )
+    )
+    files = result.scalars().all()
+    for f in files:
+        f.deleted_at = None
+    await db.commit()
+    return ok(msg=f"已恢复 {len(files)} 个文件")
+
+
+@router.delete("/trash/{file_id}/destroy")
+async def destroy_file(
+    file_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """永久删除文件（物理删除）"""
+    file = await db.get(FileItem, file_id)
+    if not file or file.user_id != current_user.id:
+        return fail("文件不存在")
+
+    # Decrement fingerprint ref count
+    if file.file_hash:
+        fp = (await db.execute(
+            select(FileFingerprint).where(FileFingerprint.hash == file.file_hash)
+        )).scalar_one_or_none()
+        if fp:
+            fp.reference_count -= 1
+            if fp.reference_count <= 0:
+                import os
+                if fp.storage_path and os.path.exists(fp.storage_path):
+                    os.remove(fp.storage_path)
+                await db.delete(fp)
+
+    # Update quota
+    from shared.models import StorageQuota
+    quota = (await db.execute(
+        select(StorageQuota).where(StorageQuota.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if quota:
+        quota.used_storage = max(0, (quota.used_storage or 0) - (file.file_size or 0))
+        quota.files_count = max(0, (quota.files_count or 0) - 1)
+
+    await db.delete(file)
+    await db.commit()
+    return ok(msg="已永久删除")
+
+
+@router.post("/trash/clear")
+async def clear_trash(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """清空回收站"""
+    result = await db.execute(
+        select(FileItem).where(
+            FileItem.user_id == current_user.id,
+            FileItem.deleted_at.isnot(None),
+        )
+    )
+    files = result.scalars().all()
+    for f in files:
+        await db.delete(f)
+    await db.commit()
+    return ok(msg=f"已清空 {len(files)} 个文件")
 
 
 # ─── Helpers ───
