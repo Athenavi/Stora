@@ -59,5 +59,16 @@ async def get_current_user(
     return decode_token(credentials.credentials)
 
 
-# Re-export the dependency used across the app
+async def get_current_user_optional(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> Optional[dict]:
+    if credentials is None:
+        return None
+    try:
+        return decode_token(credentials.credentials)
+    except HTTPException:
+        return None
+
+
 jwt_required = get_current_user
+jwt_optional = get_current_user_optional

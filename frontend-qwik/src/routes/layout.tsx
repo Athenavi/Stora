@@ -1,13 +1,21 @@
 /**
  * Stora App Layout — enterprise sidebar + topbar
  */
-import { component$, useSignal, Slot } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, Slot } from "@builder.io/qwik";
 import { useLocation, Link } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
+import { api } from "~/lib/api";
 
 export default component$(() => {
   const loc = useLocation();
   const path = loc.url.pathname;
+  const quota = useSignal<{ max_storage: number; used_storage: number; usage_percent: number } | null>(null);
+
+  // Load quota on mount
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(async () => {
+    try { const q = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); quota.value = q; } catch {}
+  });
 
   if (path === "/login" || path === "/register") {
     return <Slot />;
@@ -77,10 +85,10 @@ export default component$(() => {
           <div class="mt-3">
             <div class="flex justify-between text-xs text-slate-500 mb-1">
               <span>存储空间</span>
-              <span>0 MB / 1 GB</span>
+              <span>{quota.value ? `${(quota.value.used_storage / 1073741824).toFixed(1)} GB / ${(quota.value.max_storage / 1073741824).toFixed(1)} GB` : '加载中...'}</span>
             </div>
             <div class="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-              <div class="h-full w-[2%] bg-indigo-500 rounded-full transition-all" />
+              <div class="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${Math.min(quota.value?.usage_percent || 0, 100)}%` }} />
             </div>
           </div>
         </div>

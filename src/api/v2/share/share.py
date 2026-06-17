@@ -12,7 +12,7 @@ from sqlalchemy import select, func, and_
 
 from shared.models import FileItem, Folder, FileShare, ShareLink, User, AccessLog
 from src.api.v2._helpers import ok, fail
-from src.auth import jwt_required_dependency as jwt_required
+from src.auth import jwt_required_dependency as jwt_required, jwt_optional
 from src.extensions import get_async_db_session as get_async_db
 
 router = APIRouter(prefix="/shares", tags=["shares"])
@@ -119,7 +119,7 @@ async def access_share(
     short_code: str,
     password: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_async_db),
-    current_user: Optional[User] = Depends(jwt_required),
+    current_user: Optional[dict] = Depends(jwt_optional),
 ):
     """访问分享链接（公开访问）"""
     link = (await db.execute(
