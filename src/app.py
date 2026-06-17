@@ -902,6 +902,10 @@ def create_app(config=None):
         swagger_ui_oauth2_redirect_url="/api/v2/docs/oauth2-redirect",
     )
 
+    # 注册全局异常处理器
+    from src.middleware.error_handler import register_error_handlers
+    register_error_handlers(app)
+
     # 注册中间件
     step_start = _time.monotonic()
     register_middleware(app)
