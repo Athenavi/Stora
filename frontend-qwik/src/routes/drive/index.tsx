@@ -1,6 +1,7 @@
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
 import { listFiles, type FileItem } from "~/lib/api";
+import UploadZone from "~/components/upload/UploadZone";
 
 // ─── Loaders ───
 
@@ -52,6 +53,7 @@ function fileIcon(type: string): string {
 export default component$(() => {
   const fileList = useFileList();
   const viewMode = useSignal<"grid" | "list">("list");
+  const showUpload = useSignal(false);
 
   const files = fileList.value.items;
   const total = fileList.value.total;
@@ -86,9 +88,16 @@ export default component$(() => {
           </button>
         </div>
 
-        <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors flex items-center gap-1.5">
+        <button
+          onClick$={() => (showUpload.value = !showUpload.value)}
+          class={`px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1.5 ${
+            showUpload.value
+              ? "bg-indigo-100 text-indigo-700 border border-indigo-200"
+              : "bg-indigo-600 text-white hover:bg-indigo-700"
+          }`}
+        >
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
-          上传
+          {showUpload.value ? "关闭" : "上传"}
         </button>
         <button class="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors flex items-center gap-1.5">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
@@ -102,6 +111,12 @@ export default component$(() => {
         <svg class="w-3 h-3 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
         <span class="text-slate-400 text-xs">{total} 个文件</span>
       </div>
+
+      {showUpload.value && (
+        <div class="px-4 py-3 border-b bg-white">
+          <UploadZone folderId={undefined} />
+        </div>
+      )}
 
       {/* File Content */}
       <div class="flex-1 overflow-auto">
