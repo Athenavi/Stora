@@ -1,5 +1,5 @@
 """
-MCP 文章工具处理器
+MCP 文章工具处理�?
 """
 from datetime import datetime
 
@@ -10,7 +10,7 @@ from src.utils.database.main import get_async_session_context
 
 
 async def create_article(arguments: dict) -> dict:
-    """创建新文章"""
+    """创建新文�?""
     title = (arguments.get("title") or "").strip()
     content = (arguments.get("content") or "").strip()
     if not title:
@@ -24,7 +24,7 @@ async def create_article(arguments: dict) -> dict:
 
     async with get_async_session_context() as db:
         try:
-            # 从上下文获取当前用户（MCP 调用方），回退到默认值
+            # 从上下文获取当前用户（MCP 调用方），回退到默认�?
             from src.mcp._context import get_user_ctx
             ctx = get_user_ctx()
             author_id = ctx.id if ctx else None
@@ -39,7 +39,7 @@ async def create_article(arguments: dict) -> dict:
             db.add(ArticleContent(article=article.id, content=content, created_at=now, updated_at=now))
             await db.commit()
 
-            return {"success": True, "message": f"文章「{title}」创建成功",
+            return {"success": True, "message": f"文章「{title}」创建成�?,
                     "article_id": article.id, "status": status_str}
         except Exception as e:
             await db.rollback()
@@ -56,7 +56,7 @@ async def update_article(arguments: dict) -> dict:
     async with get_async_session_context() as db:
         article = await db.scalar(select(Article).where(Article.id == int(article_id)))
         if not article:
-            raise ValueError(f"文章 #{article_id} 不存在")
+            raise ValueError(f"文章 #{article_id} 不存�?)
 
         if "title" in arguments:
             article.title = arguments["title"].strip()
@@ -77,7 +77,7 @@ async def update_article(arguments: dict) -> dict:
 
 
 async def delete_article(arguments: dict) -> dict:
-    """软删除文章"""
+    """软删除文�?""
     article_id = arguments.get("article_id")
     if not article_id:
         raise ValueError("文章ID不能为空")
@@ -85,23 +85,23 @@ async def delete_article(arguments: dict) -> dict:
     async with get_async_session_context() as db:
         article = await db.scalar(select(Article).where(Article.id == int(article_id)))
         if not article:
-            raise ValueError(f"文章 #{article_id} 不存在")
+            raise ValueError(f"文章 #{article_id} 不存�?)
 
         article.status = -1
         article.updated_at = datetime.utcnow()
         await db.commit()
-        return {"success": True, "message": f"文章 #{article_id} 已删除", "article_id": article_id}
+        return {"success": True, "message": f"文章 #{article_id} 已删�?, "article_id": article_id}
 
 
 async def search_articles(arguments: dict) -> list:
-    """搜索文章（优先 MeiliSearch，回退数据库 LIKE）"""
+    """搜索文章（优�?MeiliSearch，回退数据�?LIKE�?""
     query_text = (arguments.get("query") or "").strip()
     limit = min(arguments.get("limit", 10), 50)
     if not query_text:
-        raise ValueError("搜索关键词不能为空")
+        raise ValueError("搜索关键词不能为�?)
 
     try:
-        from shared.services.integrations.meilisearch_service import meilisearch_service
+        # [REMOVED].meilisearch_service import meilisearch_service
         result = await meilisearch_service.search(query=query_text, page=1, per_page=limit)
         if result and 'articles' in result:
             return [{"id": h.get("id"), "title": h.get("title", ""),

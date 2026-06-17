@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from shared.services.articles.anomaly_detector import anomaly_detector
+# [REMOVED].anomaly_detector import anomaly_detector
 from shared.services.security.security_alert import security_alert_service
 from shared.services.security.security_report import report_generator
 from shared.services.security.audit_service import audit_service
@@ -39,8 +39,7 @@ async def generate_daily_report(
         current_user=Depends(jwt_required),
 ):
     """生成日报"""
-    # 检查权限
-    is_admin = getattr(current_user, 'is_superuser', False) or getattr(current_user, 'is_staff', False)
+    # 检查权�?    is_admin = getattr(current_user, 'is_superuser', False) or getattr(current_user, 'is_staff', False)
     if not is_admin:
         raise HTTPException(status_code=403, detail="Permission denied")
 
@@ -64,14 +63,12 @@ async def generate_weekly_report(
         current_user=Depends(jwt_required),
 ):
     """生成周报"""
-    # 检查权限
-    is_admin = getattr(current_user, 'is_superuser', False) or getattr(current_user, 'is_staff', False)
+    # 检查权�?    is_admin = getattr(current_user, 'is_superuser', False) or getattr(current_user, 'is_staff', False)
     if not is_admin:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     # 获取数据
-    anomalies = anomaly_detector.get_anomalies(hours=168)  # 7天
-    alerts = security_alert_service.get_alert_history(hours=168)
+    anomalies = anomaly_detector.get_anomalies(hours=168)  # 7�?    alerts = security_alert_service.get_alert_history(hours=168)
     audit_logs = await audit_service.get_logs(limit=500)
 
     report = report_generator.generate_weekly_report(
@@ -89,14 +86,12 @@ async def generate_monthly_report(
         current_user=Depends(jwt_required),
 ):
     """生成月报"""
-    # 检查权限
-    is_admin = getattr(current_user, 'is_superuser', False) or getattr(current_user, 'is_staff', False)
+    # 检查权�?    is_admin = getattr(current_user, 'is_superuser', False) or getattr(current_user, 'is_staff', False)
     if not is_admin:
         raise HTTPException(status_code=403, detail="Permission denied")
 
     # 获取数据
-    anomalies = anomaly_detector.get_anomalies(hours=720)  # 30天
-    alerts = security_alert_service.get_alert_history(hours=720)
+    anomalies = anomaly_detector.get_anomalies(hours=720)  # 30�?    alerts = security_alert_service.get_alert_history(hours=720)
     audit_logs = await audit_service.get_logs(limit=2000)
 
     report = report_generator.generate_monthly_report(
@@ -116,8 +111,7 @@ async def get_report_history(
         current_user=Depends(jwt_required),
 ):
     """获取报告历史"""
-    # 检查权限
-    is_admin = getattr(current_user, 'is_superuser', False) or getattr(current_user, 'is_staff', False)
+    # 检查权�?    is_admin = getattr(current_user, 'is_superuser', False) or getattr(current_user, 'is_staff', False)
     if not is_admin:
         raise HTTPException(status_code=403, detail="Permission denied")
 

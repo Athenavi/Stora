@@ -10,7 +10,7 @@ from datetime import datetime
 import httpx
 from sqlalchemy import select
 
-from shared.models.webhook import Webhook, WebhookDelivery
+# [REMOVED] import Webhook, WebhookDelivery
 from src.utils.database.main import get_async_session
 
 
@@ -19,7 +19,7 @@ class WebhookService:
 
     @staticmethod
     async def trigger_event(event_name: str, payload: dict):
-        """触发 Webhook 事件并发送给所有订阅者"""
+        """触发 Webhook 事件并发送给所有订阅�?""
         async for db in get_async_session():
             query = select(Webhook).where(Webhook.is_active == True)
             result = await db.execute(query)
@@ -27,13 +27,13 @@ class WebhookService:
 
             for wh in webhooks:
                 if event_name in wh.events:
-                    # 为每个 Webhook 创建独立的异步任务，不阻塞主流程
+                    # 为每�?Webhook 创建独立的异步任务，不阻塞主流程
                     import asyncio
                     asyncio.create_task(WebhookService._send_delivery(wh, event_name, payload))
 
     @staticmethod
     async def _send_delivery(webhook: Webhook, event: str, payload: dict):
-        """执行单次 Webhook 投递"""
+        """执行单次 Webhook 投�?""
         async for db in get_async_session():
             delivery = WebhookDelivery(
                 webhook_id=webhook.id,
