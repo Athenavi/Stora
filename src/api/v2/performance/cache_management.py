@@ -7,9 +7,9 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Body
 
+from auth import get_current_user
 from shared.services.core.multi_level_cache import multi_level_cache
 from src.api.v2._helpers import ok, fail, _catch
-from src.auth.auth_deps import jwt_required_dependency as jwt_required
 
 router = APIRouter()
 
@@ -22,7 +22,7 @@ def _check_admin(user):
 
 @router.get("/stats", summary="获取缓存统计", description="获取多级缓存的详细统计信息")
 @_catch
-async def get_cache_stats(current_user=Depends(jwt_required)):
+async def get_cache_stats(current_user=Depends(get_current_user)):
     """获取缓存统计信息"""
     _check_admin(current_user)
     stats = multi_level_cache.get_stats()
@@ -32,8 +32,8 @@ async def get_cache_stats(current_user=Depends(jwt_required)):
 @router.post("/warmup", summary="缓存预热", description="批量预热缓存数据")
 @_catch
 async def warmup_cache(
-        keys_data: List[Dict[str, Any]] = Body(..., description="预热数据列表"),
-        current_user=Depends(jwt_required),
+    keys_data: List[Dict[str, Any]] = Body(..., description="预热数据列表"),
+    current_user=Depends(get_current_user),
 ):
     """缓存预热"""
     _check_admin(current_user)
@@ -43,7 +43,7 @@ async def warmup_cache(
 
 @router.delete("/clear", summary="清空缓存", description="清空所有缓存层级")
 @_catch
-async def clear_cache(current_user=Depends(jwt_required)):
+async def clear_cache(current_user=Depends(get_current_user)):
     """清空所有缓存"""
     _check_admin(current_user)
     await multi_level_cache.clear()
@@ -52,7 +52,7 @@ async def clear_cache(current_user=Depends(jwt_required)):
 
 @router.get("/items/{key}", summary="获取缓存值", description="从多级缓存中获取指定键的值")
 @_catch
-async def get_cache_value(key: str, current_user=Depends(jwt_required)):
+async def get_cache_value(key: str, current_user=Depends(get_current_user)):
     """获取单个缓存值"""
     _check_admin(current_user)
     value = await multi_level_cache.get(key)
@@ -64,10 +64,10 @@ async def get_cache_value(key: str, current_user=Depends(jwt_required)):
 @router.post("/items/{key}", summary="设置缓存值", description="设置缓存值到所有层级")
 @_catch
 async def set_cache_value(
-        key: str,
-        value: Any = Body(..., description="缓存值"),
-        ttl: Optional[int] = Body(None, description="TTL(秒)"),
-        current_user=Depends(jwt_required),
+    key: str,
+    value: Any = Body(..., description="缓存值"),
+    ttl: Optional[int] = Body(None, description="TTL(秒)"),
+    current_user=Depends(get_current_user),
 ):
     """设置缓存值"""
     _check_admin(current_user)
@@ -77,7 +77,7 @@ async def set_cache_value(
 
 @router.delete("/items/{key}", summary="删除缓存值", description="从所有缓存层级删除指定键")
 @_catch
-async def delete_cache_value(key: str, current_user=Depends(jwt_required)):
+async def delete_cache_value(key: str, current_user=Depends(get_current_user)):
     """删除缓存值"""
     _check_admin(current_user)
     await multi_level_cache.delete(key)
@@ -87,8 +87,8 @@ async def delete_cache_value(key: str, current_user=Depends(jwt_required)):
 @router.post("/config", summary="更新缓存配置", description="动态更新缓存配置")
 @_catch
 async def update_cache_config(
-        config: Dict[str, Any] = Body(..., description="配置项"),
-        current_user=Depends(jwt_required),
+    config: Dict[str, Any] = Body(..., description="配置项"),
+    current_user=Depends(get_current_user),
 ):
     """更新缓存配置"""
     _check_admin(current_user)
