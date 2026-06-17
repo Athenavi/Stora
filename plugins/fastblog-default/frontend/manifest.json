@@ -1,0 +1,19 @@
+{
+  "name": "FastBlog Default",
+  "slug": "fastblog-default",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "path": "/admin/plugin-pages/default",
+      "component": "./admin/ConfigPage.tsx",
+      "title": "默认主题"
+    }
+  ],
+  "navItems": [
+    {
+      "label": "默认主题",
+      "href": "/admin/plugin-pages/default",
+      "icon": "Palette"
+    }
+  ]
+}

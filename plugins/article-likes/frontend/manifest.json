@@ -1,0 +1,19 @@
+{
+  "name": "Article Likes",
+  "slug": "article-likes",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "path": "/admin/plugin-pages/article-likes",
+      "component": "./admin/Page.tsx",
+      "title": "Article Likes"
+    }
+  ],
+  "navItems": [
+    {
+      "label": "Article Likes",
+      "href": "/admin/plugin-pages/article-likes",
+      "icon": "Heart"
+    }
+  ]
+}

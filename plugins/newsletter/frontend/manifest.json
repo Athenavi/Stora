@@ -1,0 +1,19 @@
+{
+  "name": "Newsletter",
+  "slug": "newsletter",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "path": "/admin/plugin-pages/newsletter",
+      "component": "./admin/Page.tsx",
+      "title": "Newsletter"
+    }
+  ],
+  "navItems": [
+    {
+      "label": "Newsletter",
+      "href": "/admin/plugin-pages/newsletter",
+      "icon": "Mail"
+    }
+  ]
+}

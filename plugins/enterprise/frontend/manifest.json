@@ -1,0 +1,13 @@
+{
+  "name": "Enterprise",
+  "slug": "enterprise",
+  "version": "1.0.0",
+  "routes": [
+    {
+      "path": "/admin/plugin-pages/enterprise",
+      "component": "./admin/Page.tsx",
+      "title": "企业管理"
+    }
+  ],
+  "navItems": []
+}

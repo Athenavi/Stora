@@ -1,0 +1,57 @@
+{
+  "name": "Modern Minimal",
+  "slug": "modern-minimal",
+  "version": "2.0.0",
+  "description": "现代简约风格主题 - 干净、优雅、响应式设计，支持代码高亮和深色模式，适合技术博客和个人作品集",
+  "author": "FastBlog Team",
+  "author_url": "https://athenavi.github.io",
+  "plugin_url": "https://athenavi.github.io/themes/modern-minimal",
+  "category": "theme",
+  "icon": "✨",
+  "screenshot": "screenshot.svg",
+  "license": "MIT",
+  "tags": ["minimal", "modern", "clean", "responsive", "technology", "code", "dark-mode"],
+  "requires": {"fastblog": ">=1.0.0"},
+  "supports": ["custom-logo", "custom-header", "featured-image", "post-thumbnails", "comments", "widgets", "table-of-contents", "code-highlighting", "dark-mode", "responsive-design"],
+  "settings_schema": {
+    "colors": {
+      "type": "group", "label": "颜色方案",
+      "fields": {
+        "primary": {"type": "color", "label": "主色调", "default": "#3b82f6"},
+        "secondary": {"type": "color", "label": "次要色", "default": "#64748b"},
+        "accent": {"type": "color", "label": "强调色", "default": "#f59e0b"},
+        "background": {"type": "color", "label": "背景色", "default": "#ffffff"},
+        "foreground": {"type": "color", "label": "前景色", "default": "#1f2937"},
+        "code_background": {"type": "color", "label": "代码块背景", "default": "#1e293b"},
+        "code_text": {"type": "color", "label": "代码块文字", "default": "#e2e8f0"}
+      }
+    },
+    "layout": {
+      "type": "group", "label": "布局设置",
+      "fields": {
+        "sidebar_position": {"type": "select", "label": "侧边栏位置", "options": [{"value": "left", "label": "左侧"}, {"value": "right", "label": "右侧"}, {"value": "none", "label": "无"}], "default": "right"},
+        "content_width": {"type": "select", "label": "内容宽度", "options": [{"value": "max-w-4xl", "label": "中"}, {"value": "max-w-5xl", "label": "宽"}, {"value": "max-w-7xl", "label": "超宽"}], "default": "max-w-5xl"},
+        "show_toc": {"type": "boolean", "label": "显示目录", "default": true}
+      }
+    },
+    "typography": {
+      "type": "group", "label": "排版设置",
+      "fields": {
+        "font_family": {"type": "text", "label": "正文字体", "default": "Inter, system-ui, -apple-system, sans-serif"},
+        "code_font": {"type": "text", "label": "等宽字体", "default": "Fira Code, JetBrains Mono, monospace"},
+        "font_size": {"type": "text", "label": "字号", "default": "16px"},
+        "line_height": {"type": "number", "label": "行高", "default": 1.75}
+      }
+    },
+    "features": {
+      "type": "group", "label": "功能开关",
+      "fields": {
+        "show_reading_time": {"type": "boolean", "label": "显示阅读时间", "default": true},
+        "show_related_posts": {"type": "boolean", "label": "显示相关文章", "default": true},
+        "show_code_line_numbers": {"type": "boolean", "label": "代码行号", "default": true},
+        "show_copy_button": {"type": "boolean", "label": "代码复制按钮", "default": true},
+        "auto_dark_mode": {"type": "boolean", "label": "自动深色模式", "default": true}
+      }
+    }
+  }
+}

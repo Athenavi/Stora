@@ -1,0 +1,2045 @@
+models:
+  # ============================================================
+  # 用户模块 (user)
+  # ============================================================
+  User:
+    description: 用户模型
+    status: active
+    frontend_page: /admin/users
+    properties:
+      id:
+        type: bigint
+        description: 用户 ID
+      username:
+        type: string
+        description: 用户名
+        unique: true
+        maxLength: 255
+      email:
+        type: string
+        format: email
+        description: 邮箱
+      password:
+        type: string
+        maxLength: 255
+        description: 密码（哈希后存储）
+        sensitive: true
+      profile_picture:
+        type: string
+        nullable: true
+        description: 个人资料图片
+      bio:
+        type: string
+        nullable: true
+        description: 个人简介
+      is_active:
+        type: boolean
+        default: true
+        description: 是否激活
+      is_superuser:
+        type: boolean
+        default: false
+        description: 是否为超级管理员
+      is_staff:
+        type: boolean
+        default: false
+        description: 是否为工作人员
+      date_joined:
+        type: string
+        format: date-time
+        description: 注册时间
+      last_login_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 上次登录时间
+      last_login_ip:
+        type: string
+        nullable: true
+        description: 上次登录 IP
+      register_ip:
+        type: string
+        nullable: true
+        description: 注册 IP
+      locale:
+        type: string
+        default: zh_CN
+        description: 语言设置
+      is_2fa_enabled:
+        type: boolean
+        default: false
+        description: 是否启用双因素认证
+      totp_secret:
+        type: string
+        nullable: true
+        maxLength: 32
+        description: TOTP 密钥
+        sensitive: true
+      backup_codes:
+        type: text
+        nullable: true
+        description: 备用码(JSON格式存储)
+        sensitive: true
+      total_storage:
+        type: bigint
+        default: 1073741824
+        description: 总存储空间（字节，默认1GB）
+      used_storage:
+        type: bigint
+        default: 0
+        description: 已用存储空间（字节）
+    module: user
+    orm: true
+    table: users
+    indexes:
+      - name: idx_users_username
+        columns:
+          - username
+        unique: true
+        comment: 用户名唯一索引
+      - name: idx_users_email
+        columns:
+          - email
+        unique: true
+        comment: 邮箱唯一索引
+      - name: idx_users_is_active
+        columns:
+          - is_active
+        comment: 激活状态索引
+    relationships:
+      roles:
+        target: Role
+        secondary: user_role_assignments
+        back_populates: users
+        primaryjoin: User.id == user_role_assignments.c.user_id
+        secondaryjoin: user_role_assignments.c.role_id == Role.id
+
+  UserCreate:
+    type: schema
+    description: 用户创建请求模型
+    properties:
+      username:
+        type: string
+        minLength: 3
+        maxLength: 150
+        description: 用户名
+      email:
+        type: string
+        format: email
+        description: 邮箱
+      password:
+        type: string
+        minLength: 6
+        writeOnly: true
+        description: 密码
+      password_confirm:
+        type: string
+        minLength: 6
+        writeOnly: true
+        description: 确认密码
+    required:
+      - username
+      - password
+      - password_confirm
+
+  UserUpdate:
+    type: schema
+    description: 用户更新请求模型
+    properties:
+      username:
+        type: string
+        minLength: 3
+        maxLength: 150
+        description: 用户名
+      email:
+        type: string
+        format: email
+        description: 邮箱
+      profile_picture:
+        type: string
+        nullable: true
+        description: 个人资料图片
+      bio:
+        type: string
+        nullable: true
+        description: 个人简介
+      locale:
+        type: string
+        default: zh_CN
+        description: 语言设置
+
+  ProfileUpdateRequest:
+    type: schema
+    description: 用户资料更新请求
+    properties:
+      username:
+        type: string
+        nullable: true
+        description: 用户名
+      email:
+        type: string
+        nullable: true
+        format: email
+        description: 邮箱
+      bio:
+        type: string
+        nullable: true
+        description: 个人简介
+      locale:
+        type: string
+        nullable: true
+        description: 语言设置
+
+  PasswordChange:
+    type: schema
+    description: 密码修改请求模型
+    properties:
+      old_password:
+        type: string
+        writeOnly: true
+        description: 当前密码
+      new_password:
+        type: string
+        minLength: 6
+        writeOnly: true
+        description: 新密码
+      new_password_confirm:
+        type: string
+        minLength: 6
+        writeOnly: true
+        description: 确认新密码
+    required:
+      - old_password
+      - new_password
+      - new_password_confirm
+
+  UserBlock:
+    description: 用户屏蔽/拉黑模型
+    status: active
+    frontend_page: /admin/users
+    properties:
+      id:
+        type: bigint
+        description: 屏蔽记录ID
+      blocker:
+        type: bigint
+        description: 屏蔽者用户ID
+        foreignKey: User
+      blocked_user:
+        type: bigint
+        description: 被屏蔽用户ID
+        foreignKey: User
+      reason:
+        type: string
+        nullable: true
+        maxLength: 500
+        description: 屏蔽原因
+      created_at:
+        type: string
+        format: date-time
+        description: 屏蔽时间
+    module: user
+    orm: true
+    table: user_blocks
+    indexes:
+      - name: idx_user_blocks_unique
+        columns:
+          - blocker
+          - blocked_user
+        unique: true
+        comment: 唯一屏蔽关系索引
+
+  UserSession:
+    description: 用户会话模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 会话 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 用户 ID
+      session_token:
+        type: string
+        maxLength: 512
+        description: 会话令牌
+      refresh_token:
+        type: string
+        maxLength: 512
+        nullable: true
+        description: 刷新令牌
+      ip_address:
+        type: string
+        maxLength: 45
+        nullable: true
+        description: IP 地址
+      user_agent:
+        type: text
+        nullable: true
+        description: 用户代理
+      is_active:
+        type: boolean
+        default: true
+        description: 是否活跃
+      expires_at:
+        type: string
+        format: date-time
+        description: 过期时间
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: user
+    orm: true
+    table: user_sessions
+    indexes:
+      - name: idx_user_sessions_user
+        columns:
+          - user_id
+        comment: 用户会话索引
+      - name: idx_user_sessions_token
+        columns:
+          - session_token
+        unique: true
+        comment: 令牌唯一索引
+
+  # ============================================================
+  # 安全模块 (security)
+  # ============================================================
+  LoginAttempt:
+    description: 登录尝试记录模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 记录 ID
+      user_id:
+        type: bigint
+        nullable: true
+        foreignKey: User
+        description: 用户 ID
+      username:
+        type: string
+        maxLength: 255
+        description: 尝试登录的用户名
+      ip_address:
+        type: string
+        maxLength: 45
+        description: IP 地址
+      user_agent:
+        type: text
+        nullable: true
+        description: 用户代理
+      success:
+        type: boolean
+        default: false
+        description: 是否成功
+      failure_reason:
+        type: string
+        nullable: true
+        maxLength: 255
+        description: 失败原因
+      created_at:
+        type: string
+        format: date-time
+        description: 尝试时间
+    module: security
+    orm: true
+    table: login_attempts
+    indexes:
+      - name: idx_login_attempts_user
+        columns:
+          - user_id
+        comment: 用户登录尝试索引
+      - name: idx_login_attempts_ip
+        columns:
+          - ip_address
+        comment: IP 登录尝试索引
+      - name: idx_login_attempts_created
+        columns:
+          - created_at
+        order: DESC
+        comment: 时间索引
+
+  TokenBlacklist:
+    description: Token 黑名单模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 记录 ID
+      token_jti:
+        type: string
+        maxLength: 128
+        description: Token JTI
+      token_type:
+        type: string
+        maxLength: 20
+        default: access
+        description: Token 类型 (access/refresh)
+      user_id:
+        type: bigint
+        nullable: true
+        foreignKey: User
+        description: 用户 ID
+      expires_at:
+        type: string
+        format: date-time
+        description: Token 过期时间
+      blacklisted_at:
+        type: string
+        format: date-time
+        description: 加入黑名单时间
+      reason:
+        type: string
+        nullable: true
+        maxLength: 255
+        description: 加入黑名单原因
+    module: security
+    orm: true
+    table: token_blacklist
+    indexes:
+      - name: idx_token_blacklist_jti
+        columns:
+          - token_jti
+        unique: true
+        comment: JTI 唯一索引
+      - name: idx_token_blacklist_expires
+        columns:
+          - expires_at
+        comment: 过期时间索引
+
+  SensitiveWord:
+    description: 敏感词模型
+    status: active
+    frontend_page: /admin/sensitive-words
+    properties:
+      id:
+        type: bigint
+        description: 敏感词 ID
+      word:
+        type: string
+        maxLength: 200
+        description: 敏感词内容
+      replacement:
+        type: string
+        maxLength: 200
+        description: 替换内容
+      level:
+        type: integer
+        default: 1
+        description: 级别
+      is_active:
+        type: boolean
+        default: true
+        description: 是否激活
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: security
+    orm: true
+    table: sensitive_words
+    indexes:
+      - name: idx_sensitive_words_word
+        columns:
+          - word
+        unique: true
+        comment: 敏感词唯一索引
+
+  GDPRConsent:
+    description: GDPR 用户同意记录模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 记录 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 用户 ID
+      consent_type:
+        type: string
+        maxLength: 100
+        description: 同意类型
+      granted:
+        type: boolean
+        default: true
+        description: 是否同意
+      ip_address:
+        type: string
+        maxLength: 45
+        nullable: true
+        description: IP 地址
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: security
+    orm: true
+    table: gdpr_consents
+    indexes:
+      - name: idx_gdpr_consents_user
+        columns:
+          - user_id
+        comment: 用户同意记录索引
+
+  FieldPermission:
+    description: 字段级权限控制模型
+    status: active
+    frontend_page: /admin/user-security
+    properties:
+      id:
+        type: bigint
+        description: 权限 ID
+      role_id:
+        type: bigint
+        foreignKey: Role
+        description: 角色 ID
+      model_name:
+        type: string
+        maxLength: 100
+        description: 模型名称
+      field_name:
+        type: string
+        maxLength: 100
+        description: 字段名称
+      can_read:
+        type: boolean
+        default: true
+        description: 是否可读
+      can_write:
+        type: boolean
+        default: false
+        description: 是否可写
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: security
+    orm: true
+    table: field_permissions
+
+  # ============================================================
+  # 权限模块 (rbac)
+  # ============================================================
+  Role:
+    description: 角色模型
+    status: active
+    frontend_page: /admin/roles
+    properties:
+      id:
+        type: bigint
+        description: 角色 ID
+      name:
+        type: string
+        maxLength: 100
+        description: 角色名称
+      slug:
+        type: string
+        maxLength: 100
+        unique: true
+        description: 角色标识
+      description:
+        type: string
+        nullable: true
+        description: 角色描述
+      is_system:
+        type: boolean
+        default: false
+        description: 是否系统内置
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: rbac
+    orm: true
+    table: roles
+    indexes:
+      - name: idx_roles_slug
+        columns:
+          - slug
+        unique: true
+    relationships:
+      users:
+        target: User
+        secondary: user_role_assignments
+        back_populates: roles
+        primaryjoin: Role.id == user_role_assignments.c.role_id
+        secondaryjoin: user_role_assignments.c.user_id == User.id
+
+  Capability:
+    description: 权限能力模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 能力 ID
+      codename:
+        type: string
+        maxLength: 100
+        unique: true
+        description: 能力代码
+      name:
+        type: string
+        maxLength: 100
+        description: 能力名称
+      description:
+        type: string
+        nullable: true
+        description: 能力描述
+      module:
+        type: string
+        maxLength: 50
+        nullable: true
+        description: 所属模块
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: rbac
+    orm: true
+    table: capabilities
+    indexes:
+      - name: idx_capabilities_codename
+        columns:
+          - codename
+        unique: true
+        comment: 能力代码唯一索引
+
+  RoleCapability:
+    description: 角色-权限能力关联模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 关联 ID
+      role_id:
+        type: bigint
+        foreignKey: Role
+        description: 角色 ID
+      capability_id:
+        type: bigint
+        foreignKey: Capability
+        description: 能力 ID
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: rbac
+    orm: true
+    table: role_capabilities
+    indexes:
+      - name: idx_role_capabilities_role
+        columns:
+          - role_id
+      - name: idx_role_capabilities_capability
+        columns:
+          - capability_id
+      - name: idx_role_capabilities_unique
+        columns:
+          - role_id
+          - capability_id
+        unique: true
+        comment: 唯一关联索引
+
+  UserRole:
+    description: 用户角色关联模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 关联 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 用户 ID
+      role_id:
+        type: bigint
+        foreignKey: Role
+        description: 角色 ID
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: rbac
+    orm: true
+    table: user_role_assignments
+    indexes:
+      - name: idx_user_roles_user
+        columns:
+          - user_id
+      - name: idx_user_roles_role
+        columns:
+          - role_id
+      - name: idx_user_roles_unique
+        columns:
+          - user_id
+          - role_id
+        unique: true
+        comment: 唯一关联索引
+
+  PermissionAuditLog:
+    description: 权限审计日志模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 日志 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 操作用户 ID
+      action:
+        type: string
+        maxLength: 50
+        description: 操作类型
+      target_type:
+        type: string
+        maxLength: 50
+        description: 目标类型
+      target_id:
+        type: bigint
+        nullable: true
+        description: 目标 ID
+      details:
+        type: text
+        nullable: true
+        description: 操作详情
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: rbac
+    orm: true
+    table: permission_audit_logs
+    indexes:
+      - name: idx_perm_audit_user
+        columns:
+          - user_id
+      - name: idx_perm_audit_action
+        columns:
+          - action
+      - name: idx_perm_audit_created
+        columns:
+          - created_at
+        order: DESC
+
+  # ============================================================
+  # 文件存储模块 (file) — 网盘核心
+  # ============================================================
+  FileItem:
+    description: 文件/存储项模型
+    status: active
+    frontend_page: /drive
+    properties:
+      id:
+        type: bigint
+        description: 文件 ID
+      user_id:
+        type: bigint
+        description: 所有者用户 ID
+        foreignKey: User
+      folder_id:
+        type: bigint
+        nullable: true
+        description: 所属文件夹 ID
+        foreignKey: Folder
+      filename:
+        type: string
+        maxLength: 255
+        description: 文件名
+      original_filename:
+        type: string
+        nullable: true
+        maxLength: 255
+        description: 原始文件名
+      file_path:
+        type: string
+        maxLength: 500
+        description: 存储路径
+        sensitive: true
+      file_url:
+        type: string
+        maxLength: 500
+        nullable: true
+        description: 文件访问 URL
+      file_size:
+        type: bigint
+        default: 0
+        description: 文件大小（字节）
+      mime_type:
+        type: string
+        maxLength: 100
+        nullable: true
+        description: MIME 类型
+      file_type:
+        type: string
+        maxLength: 20
+        default: other
+        description: 文件类型 (image/video/audio/document/archive/other)
+      storage_driver:
+        type: string
+        maxLength: 50
+        default: local
+        description: 存储驱动 (local/s3/minio)
+      storage_bucket:
+        type: string
+        maxLength: 100
+        nullable: true
+        description: 存储桶名称
+      storage_key:
+        type: string
+        maxLength: 500
+        nullable: true
+        description: 存储驱动中的对象 key
+      file_hash:
+        type: string
+        maxLength: 64
+        nullable: true
+        description: 文件 SHA256 哈希
+      is_folder:
+        type: boolean
+        default: false
+        description: 是否为文件夹
+      is_favorite:
+        type: boolean
+        default: false
+        description: 是否收藏
+      is_encrypted:
+        type: boolean
+        default: false
+        description: 是否加密存储
+      thumbnail_url:
+        type: string
+        maxLength: 500
+        nullable: true
+        description: 缩略图 URL
+      width:
+        type: integer
+        nullable: true
+        description: 宽度（图片/视频）
+      height:
+        type: integer
+        nullable: true
+        description: 高度（图片/视频）
+      duration:
+        type: integer
+        nullable: true
+        description: 时长秒数（音视频）
+      description:
+        type: text
+        nullable: true
+        description: 文件描述
+      download_count:
+        type: integer
+        default: 0
+        description: 下载次数
+      sort_order:
+        type: integer
+        default: 0
+        description: 排序顺序
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+      deleted_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 删除时间（软删除）
+    module: file
+    orm: true
+    table: file_items
+    indexes:
+      - name: idx_file_items_user
+        columns:
+          - user_id
+        comment: 用户文件索引
+      - name: idx_file_items_folder
+        columns:
+          - folder_id
+        comment: 文件夹文件索引
+      - name: idx_file_items_user_folder
+        columns:
+          - user_id
+          - folder_id
+        comment: 用户文件夹文件索引
+      - name: idx_file_items_hash
+        columns:
+          - file_hash
+        comment: 文件哈希索引（秒传）
+      - name: idx_file_items_file_type
+        columns:
+          - file_type
+        comment: 文件类型索引
+      - name: idx_file_items_created
+        columns:
+          - created_at
+        order: DESC
+        comment: 创建时间索引
+      - name: idx_file_items_favorite
+        columns:
+          - user_id
+          - is_favorite
+        comment: 收藏文件索引
+      - name: idx_file_items_deleted
+        columns:
+          - deleted_at
+        comment: 软删除索引
+      - name: idx_file_items_user_filename
+        columns:
+          - user_id
+          - filename
+        comment: 用户文件名搜索索引
+
+  Folder:
+    description: 文件夹模型
+    status: active
+    frontend_page: /drive
+    properties:
+      id:
+        type: bigint
+        description: 文件夹 ID
+      user_id:
+        type: bigint
+        description: 所有者用户 ID
+        foreignKey: User
+      parent_id:
+        type: bigint
+        nullable: true
+        description: 父文件夹 ID
+        foreignKey: Folder
+      name:
+        type: string
+        maxLength: 255
+        description: 文件夹名称
+      description:
+        type: string
+        nullable: true
+        description: 文件夹描述
+      color:
+        type: string
+        maxLength: 10
+        nullable: true
+        description: 文件夹颜色标记
+      icon:
+        type: string
+        maxLength: 50
+        nullable: true
+        description: 文件夹图标
+      is_shared:
+        type: boolean
+        default: false
+        description: 是否已共享
+      sort_order:
+        type: integer
+        default: 0
+        description: 排序顺序
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: file
+    orm: true
+    table: folders
+    indexes:
+      - name: idx_folders_user
+        columns:
+          - user_id
+        comment: 用户文件夹索引
+      - name: idx_folders_parent
+        columns:
+          - parent_id
+        comment: 父文件夹索引
+      - name: idx_folders_user_parent
+        columns:
+          - user_id
+          - parent_id
+        comment: 用户父文件夹索引
+      - name: idx_folders_user_name
+        columns:
+          - user_id
+          - parent_id
+          - name
+        unique: true
+        comment: 同一目录下文件夹名唯一
+
+  FileFingerprint:
+    description: 文件指纹/哈希模型（用于秒传和去重）
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 指纹 ID
+      hash:
+        type: string
+        maxLength: 64
+        unique: true
+        description: 文件 SHA256 哈希
+      file_size:
+        type: bigint
+        description: 文件大小
+      mime_type:
+        type: string
+        maxLength: 100
+        nullable: true
+        description: MIME 类型
+      storage_path:
+        type: string
+        maxLength: 500
+        description: 存储路径
+        sensitive: true
+      reference_count:
+        type: integer
+        default: 1
+        description: 引用计数
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: file
+    orm: true
+    table: file_fingerprints
+    indexes:
+      - name: idx_file_fingerprints_hash
+        columns:
+          - hash
+        unique: true
+        comment: 哈希唯一索引
+
+  FileOptimization:
+    description: 文件优化配置模型（缩略图、转码、CDN）
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 优化配置 ID
+      file_id:
+        type: bigint
+        foreignKey: FileItem
+        description: 文件 ID
+      thumbnail_url:
+        type: string
+        maxLength: 500
+        nullable: true
+        description: 缩略图 URL
+      preview_url:
+        type: string
+        maxLength: 500
+        nullable: true
+        description: 预览 URL
+      cdn_url:
+        type: string
+        maxLength: 500
+        nullable: true
+        description: CDN URL
+      sizes_json:
+        type: text
+        nullable: true
+        description: 多尺寸 JSON
+      optimization_status:
+        type: string
+        maxLength: 20
+        default: pending
+        description: 优化状态 (pending/processing/completed/failed)
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: file
+    orm: true
+    table: file_optimizations
+    indexes:
+      - name: idx_file_optimizations_file
+        columns:
+          - file_id
+        comment: 文件 ID 索引
+      - name: idx_file_optimizations_status
+        columns:
+          - optimization_status
+        comment: 优化状态索引
+
+  # ============================================================
+  # 上传/下载模块 (file)
+  # ============================================================
+  UploadTask:
+    description: 上传任务模型
+    status: active
+    properties:
+      id:
+        type: string
+        maxLength: 36
+        description: 任务 ID (UUID)
+      user_id:
+        type: bigint
+        description: 用户 ID
+      filename:
+        type: string
+        maxLength: 255
+        description: 文件名
+      total_size:
+        type: bigint
+        description: 文件总大小
+      total_chunks:
+        type: integer
+        description: 总分块数
+      uploaded_chunks:
+        type: integer
+        default: 0
+        description: 已上传分块数
+      file_hash:
+        type: string
+        nullable: true
+        maxLength: 64
+        description: 文件 SHA256 哈希
+      status:
+        type: string
+        default: initialized
+        description: 状态 (initialized/uploading/completed/canceled)
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: file
+    orm: true
+    table: upload_tasks
+
+  UploadChunk:
+    description: 上传分块模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 分块 ID
+      upload_id:
+        type: string
+        maxLength: 36
+        description: 上传任务 ID
+      chunk_index:
+        type: integer
+        description: 分块索引
+      chunk_hash:
+        type: string
+        maxLength: 64
+        description: 分块 SHA256 哈希
+      chunk_size:
+        type: integer
+        description: 分块大小
+      chunk_path:
+        type: string
+        maxLength: 500
+        description: 分块临时路径
+        sensitive: true
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: file
+    orm: true
+    table: upload_chunks
+
+  DownloadTask:
+    description: 下载任务模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 任务 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 用户 ID
+      file_id:
+        type: bigint
+        nullable: true
+        foreignKey: FileItem
+        description: 文件 ID
+      download_token:
+        type: string
+        maxLength: 128
+        nullable: true
+        description: 下载令牌
+      status:
+        type: string
+        maxLength: 20
+        default: pending
+        description: 状态 (pending/downloading/completed/failed/cancelled)
+      progress:
+        type: integer
+        default: 0
+        description: 进度 (0-100)
+      error_message:
+        type: text
+        nullable: true
+        description: 错误信息
+      source_url:
+        type: string
+        maxLength: 2048
+        nullable: true
+        description: 源 URL（离线下载）
+      total_size:
+        type: bigint
+        nullable: true
+        description: 总大小
+      downloaded_size:
+        type: bigint
+        default: 0
+        description: 已下载大小
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+      completed_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 完成时间
+    module: file
+    orm: true
+    table: download_tasks
+    indexes:
+      - name: idx_download_tasks_user
+        columns:
+          - user_id
+      - name: idx_download_tasks_status
+        columns:
+          - status
+
+  # ============================================================
+  # 文件分享模块 (share)
+  # ============================================================
+  FileShare:
+    description: 文件/文件夹分享记录模型
+    status: active
+    frontend_page: /drive/shares
+    properties:
+      id:
+        type: bigint
+        description: 分享记录 ID
+      file_id:
+        type: bigint
+        nullable: true
+        foreignKey: FileItem
+        description: 分享的文件 ID
+      folder_id:
+        type: bigint
+        nullable: true
+        foreignKey: Folder
+        description: 分享的文件夹 ID
+      owner_id:
+        type: bigint
+        foreignKey: User
+        description: 分享者用户 ID
+      shared_with_id:
+        type: bigint
+        nullable: true
+        foreignKey: User
+        description: 分享给的用户 ID（null=公开链接）
+      permission:
+        type: string
+        maxLength: 20
+        default: read
+        description: 权限 (read/write/admin)
+      expires_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 过期时间
+      is_link_share:
+        type: boolean
+        default: false
+        description: 是否链接分享
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: share
+    orm: true
+    table: file_shares
+    indexes:
+      - name: idx_file_shares_owner
+        columns:
+          - owner_id
+        comment: 分享者索引
+      - name: idx_file_shares_shared_with
+        columns:
+          - shared_with_id
+        comment: 被分享者索引
+      - name: idx_file_shares_file
+        columns:
+          - file_id
+      - name: idx_file_shares_folder
+        columns:
+          - folder_id
+      - name: idx_file_shares_expires
+        columns:
+          - expires_at
+
+  ShareLink:
+    description: 外部分享链接模型
+    status: active
+    frontend_page: /drive/shares
+    properties:
+      id:
+        type: bigint
+        description: 链接 ID
+      share_id:
+        type: bigint
+        nullable: true
+        foreignKey: FileShare
+        description: 关联的分享记录 ID
+      file_id:
+        type: bigint
+        nullable: true
+        foreignKey: FileItem
+        description: 文件 ID
+      folder_id:
+        type: bigint
+        nullable: true
+        foreignKey: Folder
+        description: 文件夹 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 创建者用户 ID
+      short_code:
+        type: string
+        maxLength: 32
+        unique: true
+        description: 短链接代码
+      password_hash:
+        type: string
+        maxLength: 128
+        nullable: true
+        description: 访问密码哈希
+      permission:
+        type: string
+        maxLength: 20
+        default: read
+        description: 权限 (read/download/write)
+      max_downloads:
+        type: integer
+        default: 0
+        description: 最大下载次数（0=不限）
+      download_count:
+        type: integer
+        default: 0
+        description: 已下载次数
+      max_views:
+        type: integer
+        default: 0
+        description: 最大浏览次数（0=不限）
+      view_count:
+        type: integer
+        default: 0
+        description: 已浏览次数
+      expires_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 过期时间
+      is_active:
+        type: boolean
+        default: true
+        description: 是否有效
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: share
+    orm: true
+    table: share_links
+    indexes:
+      - name: idx_share_links_code
+        columns:
+          - short_code
+        unique: true
+        comment: 短链接唯一索引
+      - name: idx_share_links_user
+        columns:
+          - user_id
+        comment: 创建者索引
+      - name: idx_share_links_active
+        columns:
+          - is_active
+        comment: 有效链接索引
+      - name: idx_share_links_expires
+        columns:
+          - expires_at
+        comment: 过期时间索引
+
+  # ============================================================
+  # 回收站模块 (file)
+  # ============================================================
+  TrashItem:
+    description: 回收站项目模型
+    status: active
+    frontend_page: /drive/trash
+    properties:
+      id:
+        type: bigint
+        description: 回收站记录 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 用户 ID
+      file_id:
+        type: bigint
+        nullable: true
+        foreignKey: FileItem
+        description: 原始文件 ID
+      folder_id:
+        type: bigint
+        nullable: true
+        foreignKey: Folder
+        description: 原始文件夹 ID
+      original_path:
+        type: string
+        maxLength: 1000
+        description: 原始路径
+      original_name:
+        type: string
+        maxLength: 255
+        description: 原始文件名
+      file_size:
+        type: bigint
+        default: 0
+        description: 文件大小
+      deleted_at:
+        type: string
+        format: date-time
+        description: 删除时间
+      expires_at:
+        type: string
+        format: date-time
+        description: 过期自动清理时间
+    module: file
+    orm: true
+    table: trash_items
+    indexes:
+      - name: idx_trash_items_user
+        columns:
+          - user_id
+        comment: 用户回收站索引
+      - name: idx_trash_items_expires
+        columns:
+          - expires_at
+        comment: 过期清理索引
+
+  # ============================================================
+  # 文件版本历史模块 (file)
+  # ============================================================
+  FileVersion:
+    description: 文件版本历史模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 版本 ID
+      file_id:
+        type: bigint
+        foreignKey: FileItem
+        description: 文件 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 上传者用户 ID
+      version_number:
+        type: integer
+        description: 版本号
+      file_size:
+        type: bigint
+        default: 0
+        description: 版本文件大小
+      file_hash:
+        type: string
+        maxLength: 64
+        nullable: true
+        description: 版本文件哈希
+      storage_path:
+        type: string
+        maxLength: 500
+        description: 版本存储路径
+        sensitive: true
+      change_note:
+        type: string
+        nullable: true
+        maxLength: 500
+        description: 版本变更说明
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: file
+    orm: true
+    table: file_versions
+    indexes:
+      - name: idx_file_versions_file
+        columns:
+          - file_id
+        comment: 文件版本索引
+      - name: idx_file_versions_number
+        columns:
+          - file_id
+          - version_number
+        unique: true
+        comment: 文件版本号唯一
+
+  # ============================================================
+  # 文件标签模块 (file)
+  # ============================================================
+  FileTag:
+    description: 文件标签模型
+    status: active
+    frontend_page: /drive/tags
+    properties:
+      id:
+        type: bigint
+        description: 标签 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 用户 ID
+      name:
+        type: string
+        maxLength: 50
+        description: 标签名称
+      color:
+        type: string
+        maxLength: 10
+        nullable: true
+        description: 标签颜色
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: file
+    orm: true
+    table: file_tags
+    indexes:
+      - name: idx_file_tags_user
+        columns:
+          - user_id
+      - name: idx_file_tags_user_name
+        columns:
+          - user_id
+          - name
+        unique: true
+        comment: 用户标签名唯一
+
+  FileTagAssignment:
+    description: 文件-标签关联模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 关联 ID
+      file_id:
+        type: bigint
+        foreignKey: FileItem
+        description: 文件 ID
+      tag_id:
+        type: bigint
+        foreignKey: FileTag
+        description: 标签 ID
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: file
+    orm: true
+    table: file_tag_assignments
+    indexes:
+      - name: idx_file_tag_assignments_file
+        columns:
+          - file_id
+      - name: idx_file_tag_assignments_tag
+        columns:
+          - tag_id
+      - name: idx_file_tag_assignments_unique
+        columns:
+          - file_id
+          - tag_id
+        unique: true
+        comment: 文件标签唯一
+
+  # ============================================================
+  # 文件访问日志模块 (file)
+  # ============================================================
+  AccessLog:
+    description: 文件访问日志模型
+    status: active
+    frontend_page: /admin/audit-logs
+    properties:
+      id:
+        type: bigint
+        description: 日志 ID
+      file_id:
+        type: bigint
+        nullable: true
+        foreignKey: FileItem
+        description: 文件 ID
+      user_id:
+        type: bigint
+        nullable: true
+        foreignKey: User
+        description: 访问用户 ID
+      anonymous_id:
+        type: string
+        maxLength: 64
+        nullable: true
+        description: 匿名访问标识
+      action:
+        type: string
+        maxLength: 50
+        description: 访问动作 (view/download/upload/delete/share/preview)
+      ip_address:
+        type: string
+        maxLength: 45
+        nullable: true
+        description: 访问 IP
+      user_agent:
+        type: text
+        nullable: true
+        description: 用户代理
+      referrer:
+        type: string
+        maxLength: 500
+        nullable: true
+        description: 来源页面
+      duration_ms:
+        type: integer
+        nullable: true
+        description: 访问耗时（毫秒）
+      success:
+        type: boolean
+        default: true
+        description: 是否成功
+      created_at:
+        type: string
+        format: date-time
+        description: 访问时间
+    module: file
+    orm: true
+    table: access_logs
+    indexes:
+      - name: idx_access_logs_file
+        columns:
+          - file_id
+        comment: 文件访问索引
+      - name: idx_access_logs_user
+        columns:
+          - user_id
+        comment: 用户访问索引
+      - name: idx_access_logs_action
+        columns:
+          - action
+        comment: 动作类型索引
+      - name: idx_access_logs_created
+        columns:
+          - created_at
+        order: DESC
+        comment: 时间索引
+
+  DownloadToken:
+    description: 一次性下载令牌模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 令牌 ID
+      token:
+        type: string
+        maxLength: 128
+        unique: true
+        description: 令牌字符串
+      file_id:
+        type: bigint
+        foreignKey: FileItem
+        description: 文件 ID
+      user_id:
+        type: bigint
+        nullable: true
+        foreignKey: User
+        description: 请求用户 ID
+      share_link_id:
+        type: bigint
+        nullable: true
+        foreignKey: ShareLink
+        description: 关联的分享链接 ID
+      ip_address:
+        type: string
+        maxLength: 45
+        nullable: true
+        description: 请求 IP
+      is_used:
+        type: boolean
+        default: false
+        description: 是否已使用
+      expires_at:
+        type: string
+        format: date-time
+        description: 过期时间
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      used_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 使用时间
+    module: file
+    orm: true
+    table: download_tokens
+    indexes:
+      - name: idx_download_tokens_token
+        columns:
+          - token
+        unique: true
+        comment: 令牌唯一索引
+      - name: idx_download_tokens_file
+        columns:
+          - file_id
+      - name: idx_download_tokens_used
+        columns:
+          - is_used
+
+  # ============================================================
+  # 存储配额模块 (file)
+  # ============================================================
+  StorageQuota:
+    description: 存储配额记录模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 配额记录 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        unique: true
+        description: 用户 ID
+      max_storage:
+        type: bigint
+        default: 1073741824
+        description: 最大存储空间（字节）
+      used_storage:
+        type: bigint
+        default: 0
+        description: 已用存储空间（字节）
+      max_file_size:
+        type: bigint
+        default: 104857600
+        description: 单文件大小限制（字节，默认100MB）
+      max_files_count:
+        type: integer
+        default: 10000
+        description: 最大文件数
+      files_count:
+        type: integer
+        default: 0
+        description: 当前文件数
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: file
+    orm: true
+    table: storage_quotas
+    indexes:
+      - name: idx_storage_quotas_user
+        columns:
+          - user_id
+        unique: true
+        comment: 用户配额唯一索引
+
+  # ============================================================
+  # 审计日志模块 (system)
+  # ============================================================
+  AuditLog:
+    description: 操作审计日志模型
+    status: active
+    frontend_page: /admin/audit-logs
+    properties:
+      id:
+        type: bigint
+        description: 日志 ID
+      user_id:
+        type: bigint
+        nullable: true
+        foreignKey: User
+        description: 操作用户 ID
+      user_name:
+        type: string
+        nullable: true
+        maxLength: 100
+        description: 操作用户名称
+      level:
+        type: string
+        maxLength: 20
+        default: info
+        description: 日志级别 (info/warning/error/critical)
+      description:
+        type: text
+        nullable: true
+        description: 日志详细描述
+      action:
+        type: string
+        maxLength: 100
+        description: 操作动作
+      resource_type:
+        type: string
+        maxLength: 50
+        nullable: true
+        description: 资源类型
+      resource_id:
+        type: bigint
+        nullable: true
+        description: 资源 ID
+      ip_address:
+        type: string
+        maxLength: 45
+        nullable: true
+        description: 操作 IP 地址
+      user_agent:
+        type: text
+        nullable: true
+        description: 用户代理字符串
+      request_data:
+        type: text
+        nullable: true
+        description: 请求数据快照 (JSON)
+      status:
+        type: string
+        maxLength: 20
+        default: success
+        description: 操作状态 (success/failure)
+      error_message:
+        type: text
+        nullable: true
+        description: 错误信息
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: system
+    orm: true
+    table: audit_logs
+    indexes:
+      - name: idx_audit_logs_user_id
+        columns:
+          - user_id
+        comment: 用户操作查询索引
+      - name: idx_audit_logs_action
+        columns:
+          - action
+        comment: 动作类型查询索引
+      - name: idx_audit_logs_created_at
+        columns:
+          - created_at
+        order: DESC
+        comment: 时间排序索引
+      - name: idx_audit_logs_resource
+        columns:
+          - resource_type
+          - resource_id
+        comment: 资源操作追踪索引
+
+  # ============================================================
+  # 系统设置模块 (system)
+  # ============================================================
+  SystemSettings:
+    description: 系统设置模型
+    status: active
+    frontend_page: /admin/settings
+    properties:
+      id:
+        type: integer
+        description: 设置 ID
+      setting_key:
+        type: string
+        maxLength: 100
+        description: 设置键
+      setting_value:
+        type: text
+        description: 设置值
+      setting_type:
+        type: string
+        default: string
+        description: 设置类型 (string/number/boolean/json/text)
+      description:
+        type: string
+        nullable: true
+        description: 描述
+      is_public:
+        type: boolean
+        default: false
+        description: 是否公开
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: system
+    orm: true
+    table: system_settings
+
+  # ============================================================
+  # 通知模块 (notification)
+  # ============================================================
+  Notification:
+    description: 通知模型
+    status: active
+    frontend_page: /admin/notifications
+    properties:
+      id:
+        type: bigint
+        description: 通知 ID
+      recipient:
+        type: bigint
+        foreignKey: User
+        description: 接收者
+      type:
+        type: string
+        maxLength: 100
+        description: 通知类型
+      title:
+        type: string
+        maxLength: 200
+        description: 标题
+      message:
+        type: text
+        description: 消息内容
+      is_read:
+        type: boolean
+        default: false
+        description: 是否已读
+      read_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 阅读时间
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        description: 更新时间
+    module: notification
+    orm: true
+    table: notifications
+    indexes:
+      - name: idx_notifications_recipient
+        columns:
+          - recipient
+        comment: 接收者索引
+      - name: idx_notifications_type
+        columns:
+          - type
+        comment: 通知类型索引
+      - name: idx_notifications_unread
+        columns:
+          - recipient
+          - is_read
+        comment: 用户未读通知索引
+
+  # ============================================================
+  # 搜索历史模块 (search)
+  # ============================================================
+  SearchHistory:
+    description: 搜索历史模型
+    status: active
+    frontend_page: /admin/search
+    properties:
+      id:
+        type: bigint
+        description: 搜索历史 ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 用户
+      keyword:
+        type: string
+        maxLength: 255
+        description: 搜索关键词
+      results_count:
+        type: integer
+        nullable: true
+        description: 结果数量
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: search
+    orm: true
+    table: search_history
+    indexes:
+      - name: idx_search_history_user
+        columns:
+          - user_id
+        comment: 用户搜索历史索引
+      - name: idx_search_history_created
+        columns:
+          - created_at
+        order: DESC
+        comment: 创建时间索引
+      - name: idx_search_history_keyword
+        columns:
+          - keyword
+        comment: 关键词索引
