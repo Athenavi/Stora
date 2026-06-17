@@ -26,7 +26,6 @@ from shared.services.users.session_management_service import session_management_
 from shared.services.users.sms_verification_service import sms_verification_service
 from shared.services.users.user_manager import create_user_account
 from src.api.v2._helpers import ok, fail
-from src.api.v2.auth import get_current_user
 from src.extensions import get_async_db_session as get_async_db
 from src.setting import settings
 from src.unified_logger import default_logger as logger
@@ -106,6 +105,23 @@ def decode_jwt_token(token: str) -> dict:
         return payload
     except InvalidTokenError as e:
         raise HTTPException(401, f"Invalid token: {e}")
+
+
+async def get_current_user(request: Request) -> UserModel:
+    """从请求中提取并验证 JWT token，返回用户模型"""
+    token = extract_token_from_request(request)
+    if not token:
+        raise HTTPException(401, "未提供认证令牌")
+    payload = decode_jwt_token(token)
+    user_id = int(payload.get("sub", 0))
+    if not user_id:
+        raise HTTPException(401, "无效的令牌载荷")
+    from src.extensions import get_async_db_session as get_async_db
+    async for db in get_async_db():
+        user = await db.get(UserModel, user_id)
+    if not user:
+        raise HTTPException(401, "用户不存在")
+    return user
 
 
 def extract_token_from_request(request: Request) -> Optional[str]:
