@@ -51,7 +51,8 @@ ROUTE_REGISTRY_V2 = [
     # ==================== GDPR 合规 ====================
     ("src.api.v2.compliance.compliance_api", "/api/v2", ["compliance-management-v2"], True),
 
-    # ==================== 缓存管理 ====================
+    # ==================== 审计日志 ====================
+    ("src.api.v2.system.audit", "/api/v2/audit-logs", ["audit-logs"], False),
     ("src.api.v2.admin.cache_management", "/api/v2/admin/caches", ["cache-admin"], False),
 
     # ==================== MCP AI 代理 ====================
