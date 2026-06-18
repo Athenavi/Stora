@@ -3,14 +3,15 @@
  */
 import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$, useLocation } from "@builder.io/qwik-city";
-import { getFile } from "~/lib/api";
+import { createServerApi } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button } from "~/components/ui/Button";
 
-export const useFileDetail = routeLoader$(async ({ url }) => {
+export const useFileDetail = routeLoader$(async ({ url, request }) => {
   const id = url.searchParams.get("id");
   if (!id) return null;
-  return await getFile(Number(id)).catch(() => null);
+  const api = createServerApi(request);
+  return await api.get(`/files/${id}`).catch(() => null);
 });
 
 export default component$(() => {
