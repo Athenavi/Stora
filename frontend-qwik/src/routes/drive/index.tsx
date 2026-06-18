@@ -3,17 +3,20 @@
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { listFiles, getFolderChildren, createFolder, updateFile, deleteFile, moveFiles, uploadFile, type FileItem, type Folder } from "~/lib/api";
+import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, deleteFile, moveFiles, uploadFile, type FileItem, type Folder } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton, Input } from "~/components/ui/Button";
 
-export const useFileList = routeLoader$(async ({ url }) => {
+export const useFileList = routeLoader$(async ({ url, request }) => {
   const folderId = url.searchParams.get("folder");
+  // SSR 期间使用服务器端 API 客户端（从 request cookie 获取 token）
+  const api = createServerApi(request);
+
   if (folderId) {
-    const d = await getFolderChildren(Number(folderId)).catch(() => null);
+    const d = await api.get(`/files/folders/${folderId}/children`).catch(() => null);
     return d || { folders: [], files: [], path: [{ id: 0, name: "我的文件" }] };
   }
-  const files = await listFiles({ page: 1, page_size: 50 }).catch(() => null);
+  const files = await api.get('/files?page=1&page_size=50').catch(() => null);
   return files ? { folders: [], files: files.items, path: [{ id: 0, name: "我的文件" }] } : null;
 });
 
