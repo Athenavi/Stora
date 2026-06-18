@@ -20,8 +20,8 @@ Stora API v2 路由规范配置
 # v2 路由注册表：(模块路径, v2前缀, 标签列表, 是否必需)
 ROUTE_REGISTRY_V2 = [
     # ==================== 核心模块 ====================
-    ("src.api.v2.home", "/api/v2/home", ["home"], True),
-    ("src.api.v2.dashboard", "/api/v2/dashboard", ["dashboard-v2"], True),
+    ("src.api.v2.home", "/api/v2", ["home"], True),
+    ("src.api.v2.dashboard", "/api/v2", ["dashboard-v2"], True),
 
     # ==================== 搜索 ====================
     ("src.api.v2.search", "/api/v2/search", ["search-v2"], True),

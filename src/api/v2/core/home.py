@@ -13,7 +13,7 @@ from src.extensions import get_async_db_session as get_async_db
 router = APIRouter(tags=["home"])
 
 
-@router.get("")
+@router.get("/home")
 async def get_home_data(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(jwt_required),
