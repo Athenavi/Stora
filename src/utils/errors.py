@@ -111,12 +111,12 @@ class StoraException(HTTPException):
         }
 
 
-def ok(data: Any = None, message: str = "") -> dict:
+def ok(data: Any = None, message: str = "", msg: str = "") -> dict:
     """统一成功响应"""
     return {
         "success": True,
         "code": ErrorCode.SUCCESS,
-        "message": message or None,
+        "message": message or msg or None,
         "data": data,
     }
 
