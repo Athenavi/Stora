@@ -121,8 +121,8 @@ def ok(data: Any = None, message: str = "", msg: str = "") -> dict:
     }
 
 
-def fail(code: int = ErrorCode.UNKNOWN_ERROR, message: Optional[str] = None) -> dict:
-    """统一失败响应 (用于非异常场景)"""
+def fail(message: str = "请求失败", code: int = ErrorCode.UNKNOWN_ERROR) -> dict:
+    """统一失败响应"""
     return {
         "success": False,
         "code": code,
