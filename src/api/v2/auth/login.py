@@ -15,7 +15,7 @@ from src.extensions import get_async_db_session as get_async_db
 router = APIRouter(tags=["auth"])
 
 
-@router.post("/api/v2/auth/register")
+@router.post("/register")
 async def register(
     username: str = Form(...),
     email: str = Form(...),
@@ -55,7 +55,7 @@ async def register(
     }, msg="注册成功")
 
 
-@router.post("/api/v2/auth/login")
+@router.post("/login")
 async def login(
     username: str = Form(...),
     password: str = Form(...),
@@ -94,7 +94,7 @@ async def login(
     })
 
 
-@router.get("/api/v2/auth/me")
+@router.get("/me")
 async def get_me(
     current_user: dict = Depends(jwt_required),
     db: AsyncSession = Depends(get_async_db),
@@ -117,7 +117,7 @@ async def get_me(
     })
 
 
-@router.post("/api/v2/auth/logout")
+@router.post("/logout")
 async def logout():
     """登出（客户端清除 token 即可）"""
     return ok(msg="已登出")

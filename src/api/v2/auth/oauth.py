@@ -23,7 +23,7 @@ from src.api.v2._helpers import ok, fail
 from src.extensions import get_async_db_session as get_async_db
 from src.setting import settings
 
-router = APIRouter(prefix="/auth/oauth", tags=["oauth"])
+router = APIRouter(prefix="/oauth", tags=["oauth"])
 
 PROVIDERS = {
     "github": {
