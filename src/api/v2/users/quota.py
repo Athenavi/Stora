@@ -10,7 +10,7 @@ from src.extensions import get_async_db_session as get_async_db
 router = APIRouter(tags=["quota"])
 
 
-@router.get("/api/v2/users/me/quota")
+@router.get("/me/quota")
 async def get_my_quota(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(jwt_required),
