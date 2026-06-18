@@ -89,7 +89,7 @@ async def upload_file(
         mime_type=file.content_type,
         file_type=file_type,
         file_hash=actual_hash,
-        storage_path=storage_path,
+        file_path=storage_path,
         storage_driver="local",
         file_url=f"/api/v2/files/download/{storage_name}",
     )
