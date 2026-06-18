@@ -1,13 +1,13 @@
 /**
- * Stora File Preview �?view files in the browser
+ * Stora File Preview — 基于 Flyfish File Viewer 的通用文件预览
  */
-import { component$, useSignal } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$, useLocation } from "@builder.io/qwik-city";
-import { getFile, type FileItem } from "~/lib/api";
+import { getFile } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button } from "~/components/ui/Button";
 
-export const useFileDetail = routeLoader$(async ({ url }) => {
+export const useFileDetail = routeLoader$(({ url }) => {
   const id = url.searchParams.get("id");
   if (!id) return null;
   return await getFile(Number(id)).catch(() => null);
@@ -15,14 +15,31 @@ export const useFileDetail = routeLoader$(async ({ url }) => {
 
 export default component$(() => {
   const file = useFileDetail();
-  if (!file.value) return <div class="p-6 text-slate-400">文件不存�?/div>;
+  const viewerRef = useSignal();
+
+  if (!file.value) return <div class="p-6 text-slate-400">文件不存在</div>;
 
   const f = file.value;
-  const isImage = f.file_type === "image";
-  const isVideo = f.file_type === "video";
-  const isAudio = f.file_type === "audio";
-  const isPdf = f.mime_type === "application/pdf" || f.filename?.endsWith(".pdf");
-  const isText = [".txt", ".md", ".json", ".xml", ".html", ".css", ".js", ".ts", ".py", ".md"].some(e => f.filename?.endsWith(e));
+  const fileUrl = `/api/v2/files/download/${f.id}`;
+  const previewUrl = `/api/v2/files/preview/${f.id}`;
+
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(async () => {
+    if (!viewerRef.value) return;
+    try {
+      const { mountViewerFrame } = await import('@flyfish-group/file-viewer-web');
+      mountViewerFrame(viewerRef.value, {
+        url: previewUrl,
+        name: f.filename,
+        options: {
+          theme: 'dark',
+          toolbar: { download: true, print: true },
+        },
+      });
+    } catch (e) {
+      console.error('Failed to mount file viewer:', e);
+    }
+  });
 
   return (
     <div class="flex flex-col h-full bg-slate-900">
@@ -33,35 +50,20 @@ export default component$(() => {
         </a>
         <span class="text-sm text-slate-200 font-medium truncate">{f.filename}</span>
         <div class="flex-1" />
-        <Button variant="secondary" size="sm" onClick$={() => window.open(`/api/v2/files/download/${f.id}`, "_blank")}>
+        <Button variant="secondary" size="sm" onClick$={() => window.open(fileUrl, "_blank")}>
           <Icon name="download" size={16} /> 下载
         </Button>
       </div>
 
-      {/* Preview area */}
-      <div class="flex-1 flex items-center justify-center p-8 overflow-auto">
-        {isImage && <img src={`/api/v2/files/preview/${f.id}`} alt={f.filename} class="max-w-full max-h-full object-contain rounded-lg shadow-2xl" />}
-        {isVideo && <video controls class="max-w-full max-h-full rounded-lg" src={`/api/v2/files/preview/${f.id}?t=stream`} />}
-        {isAudio && <audio controls class="w-full max-w-md" src={`/api/v2/files/preview/${f.id}?t=stream`} />}
-        {isPdf && <iframe src={`/api/v2/files/preview/${f.id}`} class="w-full h-full rounded-lg" />}
-        {isText && <div class="w-full max-w-4xl">加载�?..</div>}
-        {!isImage && !isVideo && !isAudio && !isPdf && !isText && (
-          <div class="text-center text-slate-500">
-            <div class="text-6xl mb-4">📄</div>
-            <p class="text-lg">不支持预览此文件类型</p>
-            <Button variant="primary" size="md" class="mt-4" onClick$={() => window.open(`/api/v2/files/download/${f.id}`, "_blank")}>
-              <Icon name="download" size={16} /> 下载文件
-            </Button>
-          </div>
-        )}
-      </div>
+      {/* 预览容器 */}
+      <div ref={viewerRef} class="flex-1 overflow-hidden" />
 
       {/* Info panel */}
       <div class="flex items-center gap-6 px-6 py-3 bg-slate-800 border-t border-slate-700 text-xs text-slate-400 shrink-0">
         <span>大小: {(f.file_size / 1024).toFixed(1)} KB</span>
         <span>类型: {f.file_type}</span>
         {f.mime_type && <span>MIME: {f.mime_type}</span>}
-        {f.width && f.height && <span>尺寸: {f.width}×{f.height}</span>}
+        {f.width and f.height and <span>尺寸: {f.width}x{f.height}</span>}
       </div>
     </div>
   );
