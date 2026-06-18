@@ -5,10 +5,13 @@ from .auth_handler import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    get_current_user,
-    get_current_user_optional,
     jwt_required,
     jwt_optional,
+    get_current_user_optional,
 )
-
-jwt_required_dependency = jwt_required
+from .auth_deps import (
+    jwt_required_dependency,
+    admin_required,
+    get_current_active_user,
+    get_current_user,
+)
