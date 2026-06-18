@@ -1,5 +1,5 @@
 /**
- * Stora Drive �?core file manager with rename, folder create, batch ops, drag-drop
+ * Stora Drive — core file manager with rename, folder create, batch ops, drag-drop
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
@@ -7,9 +7,8 @@ import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton, Input } from "~/components/ui/Button";
 
-export const useFileList = routeLoader$(async ({ url, request }) => {
+export const useFileList = routeLoader$(async ({ url }) => {
   const folderId = url.searchParams.get("folder");
-  // SSR 期间使用服务器端 API 客户端（�?request cookie 获取 token�?
   const api = createServerApi(request);
 
   if (folderId) {
@@ -27,7 +26,7 @@ function fmtSize(b: number): string {
 }
 
 const typeMeta: Record<string, { icon: string; color: string }> = {
-  image: { icon: "🖼�?, color: "bg-pink-50 text-pink-600" },
+  image: { icon: "🖼️", color: "bg-pink-50 text-pink-600" },
   video: { icon: "🎬", color: "bg-purple-50 text-purple-600" },
   audio: { icon: "🎵", color: "bg-blue-50 text-blue-600" },
   document: { icon: "📄", color: "bg-amber-50 text-amber-600" },
@@ -64,7 +63,7 @@ export default component$(() => {
         <div class="flex items-center gap-2 flex-1">
           <div class="relative max-w-sm">
             <Icon name="search" size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input type="text" placeholder="搜索文件�?.."
+            <input type="text" placeholder="搜索文件名..."
               onInput$={(e: any) => { if (e.target.value) nav(`/drive?search=${e.target.value}`); }}
               class="w-64 pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white placeholder:text-slate-400 transition-all" />
           </div>
@@ -81,19 +80,19 @@ export default component$(() => {
           <Icon name="upload" size={16} /> 上传
         </Button>
         <Button variant="secondary" size="sm" onClick$={() => { showNewFolder.value = true; newFolderName.value = ""; }}>
-          <Icon name="plus" size={16} /> 新建文件�?
+          <Icon name="plus" size={16} /> 新建文件夹
         </Button>
 
         {/* Batch operations */}
         {selIds.value.length > 0 && (
           <div class="flex items-center gap-2 ml-2 pl-3 border-l border-slate-200">
-            <span class="text-xs text-slate-500">{selIds.value.length} �?/span>
+            <span class="text-xs text-slate-500">{selIds.value.length} 项</span>
             <Button variant="ghost" size="sm" onClick$={async () => {
               const ids = [...selIds.value]; selIds.value = [];
               try { await moveFiles(ids, folderId); refresh(); } catch {}
             }}>移动</Button>
             <Button variant="ghost" size="sm" class="!text-red-500" onClick$={async () => {
-              if (!confirm("确认删除�?)) return;
+              if (!confirm("确认删除？")) return;
               for (const id of selIds.value) await deleteFile(id).catch(() => {});
               selIds.value = []; refresh();
             }}>删除</Button>
@@ -113,7 +112,7 @@ export default component$(() => {
             refresh();
           }}
         >
-          <div id="drop-hint" class="hidden border-2 border-dashed border-indigo-300 bg-indigo-50 rounded-xl p-4 text-center text-indigo-600 text-sm mb-3">📥 释放以上传文�?/div>
+          <div id="drop-hint" class="hidden border-2 border-dashed border-indigo-300 bg-indigo-50 rounded-xl p-4 text-center text-indigo-600 text-sm mb-3">📥 释放以上传文件</div>
           <div class="flex items-center gap-3">
             <input type="file" multiple class="text-sm" onChange$={async (e: any) => {
               for (const f of e.target.files || []) await uploadFile(f, folderId).catch(() => {});
@@ -130,13 +129,13 @@ export default component$(() => {
         {data.value?.path?.slice(1).map(p => (
           <><Icon name="chevronRight" size={14} class="text-slate-300" /><a key={p.id} href={`/drive?folder=${p.id}`} class="text-slate-500 hover:text-indigo-600">{p.name}</a></>
         ))}
-        {allItems.length > 0 && <><Icon name="chevronRight" size={14} class="text-slate-300" /><span class="text-slate-400">{allItems.length} �?/span></>}
+        {allItems.length > 0 && <><Icon name="chevronRight" size={14} class="text-slate-300" /><span class="text-slate-400">{allItems.length} 项</span></>}
       </div>
 
       {/* New Folder Dialog (P0.3) */}
       {showNewFolder.value && (
         <div class="px-6 py-3 border-b bg-white flex items-center gap-3">
-          <input type="text" bind:value={newFolderName} placeholder="文件夹名�?
+          <input type="text" bind:value={newFolderName} placeholder="文件夹名称"
             class="flex-1 max-w-xs px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             onKeyDown$={async (e: any) => {
               if (e.key === "Enter" && newFolderName.value) {
@@ -174,8 +173,8 @@ export default component$(() => {
         ) : allItems.length === 0 ? (
           <div class="flex flex-col items-center justify-center h-full text-slate-400">
             <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">📂</div>
-            <h3 class="text-lg font-semibold text-slate-500 mb-1">空目�?/h3>
-            <p class="text-sm text-slate-400 mb-6">拖拽文件到此处，或点击上传按�?/p>
+            <h3 class="text-lg font-semibold text-slate-500 mb-1">空目录</h3>
+            <p class="text-sm text-slate-400 mb-6">拖拽文件到此处，或点击上传按钮</p>
             <Button variant="primary" onClick$={() => showUpload.value = true}><Icon name="upload" size={16} /> 上传文件</Button>
           </div>
         ) : viewMode.value === "list" ? <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} folderId={folderId} /> : <GridView items={allItems} selIds={selIds} nav={nav} folderId={folderId} />}
@@ -192,7 +191,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
       <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 sticky top-0 bg-slate-50/95 backdrop-blur">
         <th class="w-10 px-4 py-3"><input type="checkbox" checked={selIds.value.length === items.length && items.length > 0}
           onChange$={() => selIds.value = selIds.value.length === items.length ? [] : items.map((x: any) => x.id)} class="rounded border-slate-300" /></th>
-        <th class="px-2 py-3">文件�?/th>
+        <th class="px-2 py-3">文件名</th>
         <th class="px-2 py-3 w-28">大小</th>
         <th class="px-2 py-3 w-24">类型</th>
         <th class="px-2 py-3 w-32">操作</th>
@@ -211,9 +210,9 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
               <td class="px-2 py-3 cursor-pointer" onClick$={() => nav(`/drive?folder=${item.id}`)}>
                 <div class="flex items-center gap-3"><div class="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center text-sm">📁</div><span class="text-slate-700 font-medium">{item.name}</span></div>
               </td>
-              <td class="px-2 py-3 text-slate-500">�?/td>
+              <td class="px-2 py-3 text-slate-500">—</td>
               <td class="px-2 py-3"><span class="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">folder</span></td>
-              <td class="px-2 py-3"><div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><Button variant="ghost" size="sm">重命�?/Button><Button variant="ghost" size="sm" class="!text-red-500">删除</Button></div></td>
+              <td class="px-2 py-3"><div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><Button variant="ghost" size="sm">重命名</Button><Button variant="ghost" size="sm" class="!text-red-500">删除</Button></div></td>
             </tr>
           );
         }
@@ -233,7 +232,8 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
             <td class="px-2 py-3"><span class="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">{item.file_type}</span></td>
             <td class="px-2 py-3">
               <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="ghost" size="sm" onClick$={() => { renameId.value = item.id; renameVal.value = item.filename; }}>重命�?/Button>
+                <Button variant="ghost" size="sm" onClick$={() => nav(`/view?id=${item.id}`)}>预览</Button>
+                <Button variant="ghost" size="sm" onClick$={() => { renameId.value = item.id; renameVal.value = item.filename; }}>重命名</Button>
                 <Button variant="ghost" size="sm" class="!text-red-500" onClick$={async () => { if (confirm("删除?")) { await deleteFile(item.id).catch(() => {}); location.reload(); } }}>删除</Button>
               </div>
             </td>
@@ -270,4 +270,3 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; folder
     })}
   </div>
 ));
-
