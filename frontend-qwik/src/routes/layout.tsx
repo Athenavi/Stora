@@ -8,19 +8,19 @@ import { api, isAuthenticated } from "~/lib/api";
 
 export default component$(() => {
   const loc = useLocation();
-  const path = loc.url.pathname;
+  const path = loc.url.pathname.replace(/\/+$/, "");
   const quota = useSignal<{ max_storage: number; used_storage: number; usage_percent: number } | null>(null);
 
   const isPublic =
     path === "/login" ||
     path === "/register" ||
-    path.startsWith("/s/");
+    path.startsWith("/s");
 
   // Auth guard — redirect unauthenticated users to /login
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
-    const p = loc.url.pathname;
-    const pub = p === "/login" || p === "/register" || p.startsWith("/s/");
+    const p = window.location.pathname.replace(/\/+$/, "");
+    const pub = p === "/login" || p === "/register" || p.startsWith("/s");
     if (!pub && !isAuthenticated()) {
       window.location.href = "/login";
     }
@@ -29,8 +29,8 @@ export default component$(() => {
   // Load quota on mount
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(async () => {
-    const p = loc.url.pathname;
-    const pub = p === "/login" || p === "/register" || p.startsWith("/s/");
+    const p = window.location.pathname.replace(/\/+$/, "");
+    const pub = p === "/login" || p === "/register" || p.startsWith("/s");
     if (pub) return;
     try { const q = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); quota.value = q; } catch {}
   });
