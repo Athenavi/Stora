@@ -14,7 +14,7 @@ from src.api.v2._helpers import ok, fail
 from src.auth import jwt_required_dependency as jwt_required
 from src.extensions import get_async_db_session as get_async_db
 
-router = APIRouter(prefix="/preview", tags=["preview"])
+router = APIRouter(tags=["preview"])
 
 THUMB_DIR = os.path.join(os.getcwd(), "storage", "thumbs")
 os.makedirs(THUMB_DIR, exist_ok=True)

@@ -15,7 +15,7 @@ from src.api.v2._helpers import ok, fail
 from src.auth import jwt_required_dependency as jwt_required
 from src.extensions import get_async_db_session as get_async_db
 
-router = APIRouter(prefix="/upload", tags=["upload"])
+router = APIRouter(tags=["upload"])
 
 UPLOAD_DIR = os.path.join(os.getcwd(), "storage", "uploads")
 CHUNK_DIR = os.path.join(os.getcwd(), "storage", "chunks")

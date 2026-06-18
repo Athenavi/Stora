@@ -13,7 +13,7 @@ from src.api.v2._helpers import ok
 from src.auth import jwt_required_dependency as jwt_required
 from src.extensions import get_async_db_session as get_async_db
 
-router = APIRouter(prefix="/search", tags=["search"])
+router = APIRouter(tags=["search"])
 
 
 @router.get("")
