@@ -4,6 +4,8 @@ SQLAlchemy 模型定义 - User
 生成时间：2026-06-17 15:54:31
 """
 
+from datetime import datetime
+
 from sqlalchemy import Column, Integer, BigInteger, String, Text, Boolean, DateTime, Index
 from sqlalchemy.orm import relationship
 
@@ -44,9 +46,9 @@ class User(Base):
     is_staff = Column(Boolean, default=False, doc='是否为工作人员')
 
 
-    date_joined = Column(String(255), nullable=True, doc='注册时间')
+    date_joined = Column(DateTime(timezone=True), default=datetime.utcnow, doc='注册时间')
 
-    last_login_at = Column(String(255), nullable=True, doc='上次登录时间')
+    last_login_at = Column(DateTime(timezone=True), nullable=True, doc='上次登录时间')
 
     last_login_ip = Column(String(255), nullable=True, doc='上次登录 IP')
 

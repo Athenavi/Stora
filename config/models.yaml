@@ -45,12 +45,11 @@ models:
         default: false
         description: 是否为工作人员
       date_joined:
-        type: string
-        format: date-time
+        type: datetime
+        default: now
         description: 注册时间
       last_login_at:
-        type: string
-        format: date-time
+        type: datetime
         nullable: true
         description: 上次登录时间
       last_login_ip:
