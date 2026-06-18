@@ -77,7 +77,7 @@ class TokenBlacklistMiddleware(BaseHTTPMiddleware):
                     async with db_manager.get_session() as db:
                         result = await db.execute(
                             select(TokenBlacklist).where(
-                                TokenBlacklist.token_hash == token_hash
+                                TokenBlacklist.token_jti == token_hash
                             )
                         )
                         blacklisted = result.scalar_one_or_none()
