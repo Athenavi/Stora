@@ -19,7 +19,9 @@ export default component$(() => {
   // Auth guard — redirect unauthenticated users to /login
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
-    if (!isPublic && !isAuthenticated()) {
+    const p = loc.url.pathname;
+    const pub = p === "/login" || p === "/register" || p.startsWith("/s/");
+    if (!pub && !isAuthenticated()) {
       window.location.href = "/login";
     }
   });
@@ -27,7 +29,9 @@ export default component$(() => {
   // Load quota on mount
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(async () => {
-    if (isPublic) return;
+    const p = loc.url.pathname;
+    const pub = p === "/login" || p === "/register" || p.startsWith("/s/");
+    if (pub) return;
     try { const q = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); quota.value = q; } catch {}
   });
 
