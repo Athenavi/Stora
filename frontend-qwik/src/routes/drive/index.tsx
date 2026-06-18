@@ -7,7 +7,7 @@ import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton, Input } from "~/components/ui/Button";
 
-export const useFileList = routeLoader$(async ({ url }) => {
+export const useFileList = routeLoader$(async ({ url, request }) => {
   const folderId = url.searchParams.get("folder");
   const api = createServerApi(request);
 
