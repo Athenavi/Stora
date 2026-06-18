@@ -63,7 +63,7 @@ export default component$(() => {
         <span>大小: {(f.file_size / 1024).toFixed(1)} KB</span>
         <span>类型: {f.file_type}</span>
         {f.mime_type && <span>MIME: {f.mime_type}</span>}
-        {f.width and f.height and <span>尺寸: {f.width}x{f.height}</span>}
+        {f.width && f.height && <span>尺寸: {f.width}x{f.height}</span>}
       </div>
     </div>
   );
