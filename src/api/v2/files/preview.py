@@ -26,18 +26,8 @@ TEXT_EXTENSIONS = {
 }
 
 
-@router.get("/{file_id}")
-async def preview_file(
-    file_id: int,
-    t: str = Query("raw", description="预览类型: raw/thumb/stream"),
-    db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(jwt_required),
-):
-    """文件预览 — 自动根据文件类型返回最好的预览方式"""
-    file = await db.get(FileItem, file_id)
-    if not file or file.user_id != current_user.id:
-        return fail("文件不存在")
-
+async def _do_preview(file: FileItem):
+    """核心预览逻辑 — 根据文件类型返回合适的响应"""
     storage_path = getattr(file, "storage_path", None)
     if not storage_path or not os.path.exists(storage_path):
         return fail("文件存储路径不存在")
@@ -69,6 +59,35 @@ async def preview_file(
 
     # ─── Fallback: force download ───
     return FileResponse(storage_path, media_type=mime, filename=file.filename)
+
+
+@router.get("/{file_id}")
+async def preview_file(
+    file_id: int,
+    t: str = Query("raw", description="预览类型: raw/thumb/stream"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """文件预览 — 自动根据文件类型返回最好的预览方式"""
+    file = await db.get(FileItem, file_id)
+    if not file or file.user_id != current_user.id:
+        return fail("文件不存在")
+    return await _do_preview(file)
+
+
+@router.get("/{file_id}/{file_name}")
+async def preview_file_with_name(
+    file_id: int,
+    file_name: str,
+    t: str = Query("raw", description="预览类型: raw/thumb/stream"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """文件预览（带文件名后缀，兼容 Flyfish Viewer 按扩展名识别文件类型）"""
+    file = await db.get(FileItem, file_id)
+    if not file or file.user_id != current_user.id:
+        return fail("文件不存在")
+    return await _do_preview(file)
 
 
 @router.get("/{file_id}/thumbnail")
