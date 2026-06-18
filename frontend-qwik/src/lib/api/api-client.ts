@@ -11,28 +11,29 @@ const BASE_URL = (typeof window !== 'undefined'
 
 let authToken: string | null = null;
 
-/** 设置 JWT token（登录成功后调用） */
+/** 设置 JWT token（登录成功后由后端 Set-Cookie 处理，仅做内存缓存） */
 export function setToken(token: string) {
   authToken = token;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.setItem('stora_token', token);
-  }
 }
 
 /** 清除 token（登出时调用） */
 export function clearToken() {
   authToken = null;
-  if (typeof localStorage !== 'undefined') {
-    localStorage.removeItem('stora_token');
+  // 清除浏览器 cookie
+  if (typeof document !== 'undefined') {
+    document.cookie = 'access_token=; Path=/; Max-Age=0; SameSite=Lax;';
   }
 }
 
-/** 从 localStorage 恢复 token */
-export function loadToken(): string | null {
-  if (typeof localStorage !== 'undefined') {
-    authToken = localStorage.getItem('stora_token');
-  }
-  return authToken;
+/** 从 cookie 读取 token（客户端浏览器环境） */
+function getTokenFromCookie(): string | null {
+  if (typeof document === 'undefined') return null;
+  return parseCookie(document.cookie, 'access_token');
+}
+
+/** 获取 token：优先内存缓存，回退到 cookie */
+function loadToken(): string | null {
+  return authToken || getTokenFromCookie();
 }
 
 /** 判断是否已登录 */
