@@ -75,21 +75,6 @@ async def preview_file(
     return await _do_preview(file)
 
 
-@router.get("/{file_id}/{file_name}")
-async def preview_file_with_name(
-    file_id: int,
-    file_name: str,
-    t: str = Query("raw", description="预览类型: raw/thumb/stream"),
-    db: AsyncSession = Depends(get_async_db),
-    current_user: User = Depends(jwt_required),
-):
-    """文件预览（带文件名后缀，兼容 Flyfish Viewer 按扩展名识别文件类型）"""
-    file = await db.get(FileItem, file_id)
-    if not file or file.user_id != current_user.id:
-        return fail("文件不存在")
-    return await _do_preview(file)
-
-
 @router.get("/{file_id}/thumbnail")
 async def file_thumbnail(
     file_id: int,
@@ -122,6 +107,21 @@ async def file_thumbnail(
             return fail(f"生成缩略图失败: {e}")
 
     return FileResponse(thumb_path, media_type="image/jpeg")
+
+
+@router.get("/{file_id}/{file_name}")
+async def preview_file_with_name(
+    file_id: int,
+    file_name: str,
+    t: str = Query("raw", description="预览类型: raw/thumb/stream"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """文件预览（带文件名后缀，兼容 Flyfish Viewer 按扩展名识别文件类型）"""
+    file = await db.get(FileItem, file_id)
+    if not file or file.user_id != current_user.id:
+        return fail("文件不存在")
+    return await _do_preview(file)
 
 
 # ─── Stream helpers ───
