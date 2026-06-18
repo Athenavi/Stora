@@ -25,6 +25,7 @@ asyncpg==0.31.0
 psycopg2-binary==2.9.12
 
 # Authentication & Security
+bcrypt==5.0.0
 pyjwt==2.13.0
 httpx-oauth==0.17.0
 fastapi-users[sqlalchemy]
