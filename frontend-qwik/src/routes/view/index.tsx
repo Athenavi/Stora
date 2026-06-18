@@ -22,7 +22,7 @@ export default component$(() => {
 
   const f = file.value;
   const fileUrl = `/api/v2/files/download/${f.id}`;
-  const previewUrl = `/api/v2/files/preview/${f.id}`;
+  const previewUrl = `/api/v2/files/preview/${f.id}/${encodeURIComponent(f.filename)}`;
 
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(async () => {
