@@ -54,7 +54,7 @@ export default defineConfig(({ command, mode }): UserConfig => {
       },
       proxy: {
         "/api": {
-          target: "http://localhost:8000",
+          target: "http://localhost:9421",
           changeOrigin: true,
         },
       },
