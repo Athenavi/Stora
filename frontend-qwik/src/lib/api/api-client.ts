@@ -108,9 +108,15 @@ function parseCookie(cookie: string, name: string): string | null {
 
 /**
  * 创建 SSR 环境下的 API 客户端
- * 在 Qwik routeLoader$ 中使用，从浏览器请求中提取 cookie 并转发到后端
+ * 在 Qwik routeLoader$ 中使用，从浏览器请求中提取 cookie 并转发到后端。
+ * 客户端导航时 request 为 undefined，回退到普通 api。
  */
-export function createServerApi(request: Request) {
+export function createServerApi(request?: Request) {
+  // 客户端导航时没有 request 对象，回退到普通 api
+  if (!request) {
+    return api;
+  }
+
   const cookie = request.headers.get('cookie') || '';
   const token = parseCookie(cookie, 'access_token');
 
