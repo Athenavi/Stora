@@ -44,7 +44,7 @@ export default component$(() => {
   const mobileMenuOpen = useSignal(false);
   const sidebarOpen = useSignal(true);
 
-  const nav = [
+  const navItems = [
     { href: "/drive", icon: "folder" as const, label: "我的文件", active: isDrive },
     { href: "/share", icon: "share" as const, label: "我的分享", active: isShare },
     { href: "/trash", icon: "trash" as const, label: "回收站", active: isTrash },
@@ -78,7 +78,7 @@ export default component$(() => {
         </div>
 
         <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
-          {nav.map((item) => (
+          {navItems.map((item) => (
             <Link
               key={item.href}
               href={item.href}
