@@ -7,7 +7,7 @@ import { getFile } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button } from "~/components/ui/Button";
 
-export const useFileDetail = routeLoader$(({ url }) => {
+export const useFileDetail = routeLoader$(async ({ url }) => {
   const id = url.searchParams.get("id");
   if (!id) return null;
   return await getFile(Number(id)).catch(() => null);
