@@ -1,0 +1,1 @@
+var e=class{worker=null;constructor(e){this.worker=e}defaults(e){return this.worker||e()}};function t(t,n=!1){return new e(null)}export{t};

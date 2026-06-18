@@ -1,0 +1,2 @@
+const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=["./OfdViewer-DbkG1-Bp.js","./package-DbhUOWuO.js","./reactivity.esm-bundler-Bfmlzvr-.js","./runtime-core.esm-bundler-CR6OOEFf.js","./package-BuR3Qm_h.css","./OfdViewer-Ulv-WZWh.css"])))=>i.map(i=>d[i]);
+import{k as e,r as t}from"./package-DbhUOWuO.js";import{d as n,u as r}from"./runtime-core.esm-bundler-CR6OOEFf.js";var i=n(()=>t(()=>import(`./OfdViewer-DbkG1-Bp.js`),__vite__mapDeps([0,1,2,3,4,5]),import.meta.url));async function a(t,n){let a=e({render:()=>r(i,{data:t},null)});return a.mount(n),a}export{a as default};
