@@ -1,4 +1,4 @@
-/**
+﻿/**
  * This is the base config for vite.
  * When building, the adapter config is used which loads this file and extends it.
  */
@@ -51,6 +51,12 @@ export default defineConfig(({ command, mode }): UserConfig => {
       headers: {
         // Don't cache the server response in dev mode
         "Cache-Control": "public, max-age=0",
+      },
+      proxy: {
+        "/api": {
+          target: "http://localhost:8000",
+          changeOrigin: true,
+        },
       },
     },
     preview: {
