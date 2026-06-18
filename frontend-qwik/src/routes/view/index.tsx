@@ -1,5 +1,5 @@
 /**
- * Stora File Preview — view files in the browser
+ * Stora File Preview �?view files in the browser
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useLocation } from "@builder.io/qwik-city";
@@ -7,15 +7,15 @@ import { getFile, type FileItem } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button } from "~/components/ui/Button";
 
-export const useFileDetail = routeLoader$(async ({ params }) => {
-  const id = params["id"];
+export const useFileDetail = routeLoader$(async ({ url }) => {
+  const id = url.searchParams.get("id");
   if (!id) return null;
   return await getFile(Number(id)).catch(() => null);
 });
 
 export default component$(() => {
   const file = useFileDetail();
-  if (!file.value) return <div class="p-6 text-slate-400">文件不存在</div>;
+  if (!file.value) return <div class="p-6 text-slate-400">文件不存�?/div>;
 
   const f = file.value;
   const isImage = f.file_type === "image";
@@ -44,7 +44,7 @@ export default component$(() => {
         {isVideo && <video controls class="max-w-full max-h-full rounded-lg" src={`/api/v2/files/preview/${f.id}?t=stream`} />}
         {isAudio && <audio controls class="w-full max-w-md" src={`/api/v2/files/preview/${f.id}?t=stream`} />}
         {isPdf && <iframe src={`/api/v2/files/preview/${f.id}`} class="w-full h-full rounded-lg" />}
-        {isText && <div class="w-full max-w-4xl">加载中...</div>}
+        {isText && <div class="w-full max-w-4xl">加载�?..</div>}
         {!isImage && !isVideo && !isAudio && !isPdf && !isText && (
           <div class="text-center text-slate-500">
             <div class="text-6xl mb-4">📄</div>
