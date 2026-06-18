@@ -2,14 +2,28 @@
  * Stora App Layout — enterprise sidebar + topbar
  */
 import { component$, useSignal, useVisibleTask$, Slot } from "@builder.io/qwik";
-import { useLocation, Link } from "@builder.io/qwik-city";
+import { useLocation, useNavigate, Link } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
-import { api } from "~/lib/api";
+import { api, isAuthenticated } from "~/lib/api";
 
 export default component$(() => {
   const loc = useLocation();
+  const nav = useNavigate();
   const path = loc.url.pathname;
   const quota = useSignal<{ max_storage: number; used_storage: number; usage_percent: number } | null>(null);
+
+  const isPublic =
+    path === "/login" ||
+    path === "/register" ||
+    path.startsWith("/s/");
+
+  // Auth guard — redirect unauthenticated users to /login
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(() => {
+    if (!isPublic && !isAuthenticated()) {
+      nav("/login");
+    }
+  });
 
   // Load quota on mount
   // eslint-disable-next-line qwik/no-use-visible-task
@@ -17,7 +31,7 @@ export default component$(() => {
     try { const q = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); quota.value = q; } catch {}
   });
 
-  if (path === "/login" || path === "/register") {
+  if (isPublic) {
     return <Slot />;
   }
 
