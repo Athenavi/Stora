@@ -119,10 +119,12 @@ export function createServerApi(request?: Request) {
 
   const cookie = request.headers.get('cookie') || '';
   const token = parseCookie(cookie, 'access_token');
+  // 使用请求的 origin 作为 API 请求的 base URL（Node.js fetch 需要绝对 URL）
+  const origin = new URL(request.url).origin;
 
   async function serverRequest<T>(method: string, path: string, body?: any): Promise<T> {
-    // SSR 期间使用完整路径，通过 Vite 代理转发到后端
-    const url = `/api/v2${path}`;
+    // SSR 期间使用完整 URL，通过 Vite 代理转发到后端
+    const url = `${origin}/api/v2${path}`;
     const headers: Record<string, string> = {
       'Cookie': cookie,
     };
