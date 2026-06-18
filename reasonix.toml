@@ -54,7 +54,7 @@ enabled = true   # language server tools; servers launch lazily when used
 # Rules are "Tool" or "Tool(specifier)"; e.g. Bash(go test:*), Edit(src/**).
 mode  = "ask"
 # deny = ["Bash(rm -rf*)", "Bash(git push*)"]   # hard-blocked in every mode
-allow = ["Bash(git stash:*)", "Edit", "Bash(git add -A && git commit -m \"fix: correct jwt_required import path in admin_settings\n\nChange from src.api.v2.auth to src.auth — jwt_required is defined\nin src.auth.auth_handler, not exported by the v2 auth package.\")"]
+allow = ["Bash(git stash:*)", "Edit", "Bash(git add -A && git commit -m \"fix: correct jwt_required import path in admin_settings\n\nChange from src.api.v2.auth to src.auth — jwt_required is defined\nin src.auth.auth_handler, not exported by the v2 auth package.\")", "explore"]
 # ask = ["Edit(src/**)"]   # force a prompt even if otherwise allowed
 
 [sandbox]
