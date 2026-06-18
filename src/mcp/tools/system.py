@@ -2,8 +2,9 @@
 MCP 系统管理工具处理器 — 设置/备份/Webhook/迁移
 """
 from sqlalchemy import select
-from src.utils.database.main import get_async_session_context
+
 from src.mcp.tools._perms import require_superuser
+from src.utils.database.main import get_async_session_context
 
 
 @require_superuser
@@ -45,7 +46,6 @@ async def update_settings(arguments: dict) -> dict:
 @require_superuser
 async def list_backups(arguments: dict) -> dict:
     """列出可用的数据库备份"""
-    import os
     from pathlib import Path
     backup_dir = Path("backups")
     if not backup_dir.exists():
@@ -64,7 +64,7 @@ async def list_backups(arguments: dict) -> dict:
 async def create_backup(arguments: dict) -> dict:
     """创建数据库备份"""
     from datetime import datetime
-    import subprocess, os
+    import os
     from src.setting import BaseConfig
 
     db_url = BaseConfig.SQLALCHEMY_DATABASE_URI or ""
@@ -78,7 +78,7 @@ async def create_backup(arguments: dict) -> dict:
 @require_superuser
 async def get_system_info(arguments: dict) -> dict:
     """获取系统信息（版本/资源/运行时间等）"""
-    import os, platform, time
+    import platform
     from src.setting import BaseConfig
     return {"success": True, "data": {
         "version": getattr(BaseConfig, 'VERSION', 'unknown'),
@@ -87,18 +87,6 @@ async def get_system_info(arguments: dict) -> dict:
         "db_url": str(BaseConfig.SQLALCHEMY_DATABASE_URI or "").split("@")[-1] if BaseConfig.SQLALCHEMY_DATABASE_URI else "unknown",
     }}
 
-
-@require_superuser
-async def list_webhooks(arguments: dict) -> dict:
-    """列出所有 Webhook 配置"""
-    async with get_async_session_context() as db:
-        from sqlalchemy import select
-        from shared.models.system import WebhookConfig
-        hooks = (await db.execute(select(WebhookConfig).limit(50))).scalars().all()
-        return {"success": True, "data": [{
-            "id": h.id, "name": h.name, "url": h.url,
-            "events": h.events, "is_active": h.is_active,
-        } for h in hooks]}
 
 
 @require_superuser

@@ -11,21 +11,6 @@ from sqlalchemy.orm import Session
 from shared.models.user import User
 
 
-def auth_by_uid(article_id: int, user_id: int, db: Session) -> bool:
-    try:
-        article_query = select(Article).where(
-            Article.id == article_id,
-            Article.user == user_id,
-            Article.status != -1  # 排除已删除的文章
-        )
-        article_result = db.execute(article_query)
-        article = article_result.scalar_one_or_none()
-        return article is not None
-    except SQLAlchemyError as e:
-        print(f"An error occurred: {e}")
-        return False
-
-
 def check_user_conflict(zone: str, value: str, db: Session) -> bool:
     try:
         if zone == 'username':

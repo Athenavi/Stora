@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Query, UploadFile, File
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models.media import Media
+from shared.models.file import FileItem
 from src.api.v2._base import ApiResponse
 from src.api.v3._deps import get_db, get_current_user
 from src.api.v3._permission import Permission
@@ -80,10 +80,10 @@ async def list_media(
     db: AsyncSession = Depends(get_db),
     _=Depends(Permission("media:view")),
 ):
-    query = select(Media)
+    query = select(FileItem)
 
     if media_type:
-        query = query.where(Media.media_type == media_type)
+        query = query.where(FileItem.media_type == media_type)
 
     total = await db.scalar(
         select(func.count()).select_from(query.subquery())
@@ -91,7 +91,7 @@ async def list_media(
 
     offset = (page - 1) * per_page
     result = await db.execute(
-        query.order_by(Media.created_at.desc()).offset(offset).limit(per_page)
+        query.order_by(FileItem.created_at.desc()).offset(offset).limit(per_page)
     )
     items = result.scalars().all()
 
@@ -162,7 +162,6 @@ async def upload_media(
         return ApiResponse(success=False, error=f"文件内容与声明类型不符")
 
     # 保存文件到存储
-    from src.api.v2.media_v1pack.upload_service import save_uploaded_file
     result = save_uploaded_file(
         file_content=content,
         filename=file.filename or "untitled",
@@ -176,7 +175,7 @@ async def upload_media(
     # 写入数据库
     from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
-    media = Media(
+    media = FileItem(
         filename=result["filename"],
         original_filename=file.filename,
         filepath=result["filepath"],
@@ -205,7 +204,7 @@ async def delete_media(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(Permission("media:delete")),
 ):
-    media = await db.get(Media, media_id)
+    media = await db.get(FileItem, media_id)
     if not media:
         return ApiResponse(success=False, error="文件不存在")
 
@@ -238,7 +237,7 @@ async def delete_media(
 # 辅助函数
 # ============================================================
 
-def _media_to_dict(m: Media) -> dict:
+def _media_to_dict(m: FileItem) -> dict:
     return {
         "id": m.id,
         "filename": m.filename,

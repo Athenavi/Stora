@@ -6,7 +6,7 @@ MCPServer 初始化时调用 register_all() 一次性注册全部工具。
 """
 from src.mcp.tools import article, content, analytics, media
 from src.mcp.tools import system, users_tools, security_tools
-from src.mcp.tools import workflow, notifications_tools, cache_tools
+from src.mcp.tools import notifications_tools, cache_tools
 
 
 # 工具定义列表：(name, description, parameters_dict, handler_func)

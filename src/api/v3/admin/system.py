@@ -44,64 +44,8 @@ async def get_settings(
     settings_result = await db.execute(select(SystemSettings))
     settings = settings_result.scalars().all()
 
-    # 菜单
-    menus_result = await db.execute(select(Menus).order_by(Menus.created_at.desc()))
-    menus = menus_result.scalars().all()
-
-    # 菜单项（按菜单分组）
-    menu_items = {}
-    for menu in menus:
-        items_result = await db.execute(
-            select(MenuItems).where(MenuItems.menu_id == menu.id).order_by(MenuItems.order_index)
-        )
-        menu_items[str(menu.id)] = items_result.scalars().all()
-
-    # 独立页面
-    pages_result = await db.execute(select(Pages).order_by(Pages.created_at.desc()))
-    pages = pages_result.scalars().all()
-
     return ApiResponse(success=True, data={
         "settings": {s.setting_key: s.setting_value for s in settings},
-        "menus": [{
-            "id": m.id,
-            "name": m.name,
-            "slug": m.slug,
-            "description": m.description,
-            "is_active": m.is_active,
-            "created_at": m.created_at.isoformat() if m.created_at else None,
-            "updated_at": m.updated_at.isoformat() if m.updated_at else None,
-        } for m in menus],
-        "menu_items": {
-            menu_id: [{
-                "id": item.id,
-                "title": item.title,
-                "url": item.url,
-                "target": item.target,
-                "parent_id": item.parent_id,
-                "order_index": item.order_index,
-                "is_active": item.is_active,
-                "menu_id": item.menu_id,
-                "created_at": item.created_at.isoformat() if item.created_at else None,
-            } for item in items] for menu_id, items in menu_items.items()
-        },
-        "pages": [{
-            "id": p.id,
-            "title": p.title,
-            "slug": p.slug,
-            "content": p.content,
-            "excerpt": p.excerpt,
-            "template": p.template,
-            "status": p.status,
-            "parent_id": p.parent_id,
-            "order_index": p.order_index,
-            "meta_title": p.meta_title,
-            "meta_description": p.meta_description,
-            "meta_keywords": p.meta_keywords,
-            "author": None,
-            "author_id": p.author_id,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-            "updated_at": p.updated_at.isoformat() if p.updated_at else None,
-        } for p in pages],
     })
 
 
@@ -136,6 +80,5 @@ async def update_settings(
 
     await db.commit()
     return ApiResponse(success=True, message="设置已更新")
-
 
 # ============================================================

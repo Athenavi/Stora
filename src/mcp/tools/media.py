@@ -2,9 +2,8 @@
 MCP 媒体管理工具处理器
 """
 from sqlalchemy import select
-from pathlib import Path
 
-from shared.models.media import Media
+from shared.models.file import FileItem
 from src.utils.database.main import get_async_session_context
 
 
@@ -14,10 +13,10 @@ async def list_media(arguments: dict) -> dict:
     media_type = arguments.get("media_type", "").strip().lower()
 
     async with get_async_session_context() as db:
-        q = select(Media).order_by(Media.created_at.desc()).limit(limit)
+        q = select(FileItem).order_by(FileItem.created_at.desc()).limit(limit)
         if media_type:
             prefix = {"image": "image", "video": "video", "audio": "audio", "document": "application"}.get(media_type, media_type)
-            q = q.where(Media.mime_type.startswith(prefix))
+            q = q.where(FileItem.mime_type.startswith(prefix))
 
         media_list = (await db.execute(q)).scalars().all()
         return {"success": True, "total": len(media_list), "media": [{
@@ -36,7 +35,7 @@ async def delete_media(arguments: dict) -> dict:
         raise ValueError("媒体ID不能为空")
 
     async with get_async_session_context() as db:
-        media = await db.scalar(select(Media).where(Media.id == int(media_id)))
+        media = await db.scalar(select(FileItem).where(FileItem.id == int(media_id)))
         if not media:
             raise ValueError(f"媒体 #{media_id} 不存在")
         await db.delete(media)

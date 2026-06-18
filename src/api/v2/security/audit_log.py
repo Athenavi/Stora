@@ -8,6 +8,7 @@ from functools import wraps
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.system import AuditLog as AuditLogModel

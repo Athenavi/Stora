@@ -14,7 +14,6 @@ from .user_entities import *
 
 __all__ = [
     # 从 user_entities 导入的函数
-    'auth_by_uid',
     'check_user_conflict',
     'db_save_bio',
     'change_username',

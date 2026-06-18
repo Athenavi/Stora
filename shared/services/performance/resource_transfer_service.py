@@ -12,7 +12,7 @@ import aiohttp
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from shared.models.media import Media, DownloadTask, FileHash
+from shared.models.file import DownloadTask, FileItem
 from src.unified_logger import default_logger as logger
 
 
@@ -61,7 +61,7 @@ class ResourceTransferService:
             logger.error(f"创建下载任务失败: {e}")
             raise
 
-    async def execute_download(self, task_id: int) -> Optional[Media]:
+    async def execute_download(self, task_id: int) -> Optional[FileItem]:
         """执行下载任务（支持断点续传）"""
         task = None
         temp_path = None
@@ -141,7 +141,7 @@ class ResourceTransferService:
             task: DownloadTask,
             temp_path: Path,
             resume_position: int = 0
-    ) -> Optional[Media]:
+    ) -> Optional[FileItem]:
         """带断点续传的下载"""
         headers = {}
         if resume_position > 0:
@@ -216,7 +216,7 @@ class ResourceTransferService:
             task: DownloadTask,
             temp_path: Path,
             file_size: int
-    ) -> Optional[Media]:
+    ) -> Optional[FileItem]:
         """完成下载，创建媒体记录"""
         try:
             # 读取文件数据
@@ -249,8 +249,8 @@ class ResourceTransferService:
                 file_hash, file_size, mime_type, str(final_path.relative_to(Path(".")))
             )
 
-            # 创建Media记录（允许重复 hash）
-            media = Media(
+            # 创建FileItem记录（允许重复 hash）
+            media = FileItem(
                 user=task.user_id,
                 hash=file_hash,
                 original_filename=task.filename or f"downloaded_{datetime.now().strftime('%Y%m%d_%H%M%S')}{ext}",

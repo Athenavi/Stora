@@ -2,6 +2,8 @@
 MCP 用户管理工具处理器 — CRUD / 角色 / 状态
 """
 from sqlalchemy import select, func
+
+from shared.models.file import FileItem
 from src.utils.database.main import get_async_session_context
 from src.mcp.tools._perms import require_superuser, require_self_or_admin
 
@@ -106,16 +108,15 @@ async def get_user_stats(arguments: dict) -> dict:
     async with get_async_session_context() as db:
         # [REMOVED] article model deleted in Stora refactor
         # [REMOVED] comment model deleted in Stora refactor
-        from shared.models.media import Media
         from sqlalchemy import func
 
-        articles = await db.scalar(select(func.count(Article.id)).where(Article.user == int(user_id))) or 0
-        comments = await db.scalar(select(func.count(Comment.id)).where(Comment.user_id == int(user_id))) or 0
-        media_count = await db.scalar(select(func.count(Media.id)).where(Media.user == int(user_id))) or 0
+        #articles = await db.scalar(select(func.count(Article.id)).where(Article.user == int(user_id))) or 0
+        #comments = await db.scalar(select(func.count(Comment.id)).where(Comment.user_id == int(user_id))) or 0
+        media_count = await db.scalar(select(func.count(FileItem.id)).where(FileItem.user == int(user_id))) or 0
 
         return {"success": True, "data": {
-            "user_id": user_id, "articles": articles,
-            "comments": comments, "media_files": media_count,
+            "user_id": user_id,
+            "media_files": media_count,
         }}
 
 
