@@ -458,25 +458,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except ImportError as e:
         print(f"[调度器初始化] ⚠️ 跳过: {e}")
 
-    if is_installed:
-        step_start = _time.monotonic()
-        await safe_run_async("定时发布调度器", _start_scheduled_publisher)
-        print(f"[lifespan] 定时发布调度器耗时: {_time.monotonic() - step_start:.2f}s")
-
-    # 4. 插件系统
-    try:
-        step_start = _time.monotonic()
-        safe_run("插件系统", _init_plugins)
-        print(f"[lifespan] 插件系统耗时: {_time.monotonic() - step_start:.2f}s")
-    except ImportError as e:
-        print(f"[插件系统] ⚠️ 跳过: {e}")
-
-    # 5. 下载队列处理器
-    if is_installed:
-        step_start = _time.monotonic()
-        await safe_run_async("下载队列处理器", _init_download_processor)
-        print(f"[lifespan] 下载队列处理器耗时: {_time.monotonic() - step_start:.2f}s")
-
     # 6. 权限缓存预热 + 广播订阅
     if is_installed:
         step_start = _time.monotonic()
@@ -497,20 +478,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await safe_run_async("调度器停止", lambda: __import__('src.scheduler').session_scheduler.scheduler.shutdown())
 
     if is_installed:
-        await safe_run_async("下载队列停止", _shutdown_download_processor)
         await safe_run_async("数据库连接关闭", _close_database)
 
 
 async def _init_database():
     from src.utils.database.unified_manager import db_manager
     db_manager.initialize()
-
-
-async def _start_scheduled_publisher():
-    from src.utils.database.unified_manager import db_manager
-    from shared.services.core.scheduler import start_scheduler, init_scheduler
-    init_scheduler(db_manager.async_session_factory, check_interval=60)
-    await start_scheduler()
 
 
 def _init_plugins():
@@ -520,11 +493,6 @@ def _init_plugins():
     except ImportError as e:
         print(f"[插件系统] 导入失败: {e}")
         return None
-
-
-async def _init_download_processor():
-    from shared.services.media.download_queue_processor import init_download_processor
-    await init_download_processor()
 
 
 async def _warm_permission_cache():
@@ -574,11 +542,6 @@ async def _start_redis_subscriber():
         print(f"[lifespan] Redis cache:invalidate 监听已启动")
     except Exception as e:
         print(f"[lifespan] Redis cache:invalidate 监听启动失败: {e}")
-
-
-async def _shutdown_download_processor():
-    from shared.services.media.download_queue_processor import shutdown_download_processor
-    await shutdown_download_processor()
 
 
 async def _close_database():
@@ -793,23 +756,6 @@ def register_error_handlers(app: FastAPI):
 
     @app.exception_handler(404)
     async def custom_404_handler(request: Request, exc: HTTPException):
-        # 1. 尝试 EventBus 事件拦截
-        try:
-            from shared.services.plugins.event_bus import event_bus
-            error_data = {
-                'url': str(request.url),
-                'ip': request.client.host if request.client else '',
-                'method': request.method,
-                'timestamp': datetime.now().isoformat(),
-            }
-            await event_bus.emit('response.404', error_data)
-            response_data = await event_bus.pipeline('response.404', error_data)
-            if isinstance(response_data, dict) and response_data.get('intercepted'):
-                return HTMLResponse(content=response_data.get('html_content', ''),
-                                    status_code=response_data.get('status_code', 404))
-        except Exception as e:
-            print(f"[Plugin] 404 hook error: {e}")
-
         # 2. API 请求返回 JSON
         if _is_api_request(request):
             return _api_error_response(404, "Page Not Found")
