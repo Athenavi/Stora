@@ -12,7 +12,7 @@ from src.api.v2._helpers import ok, fail
 from src.auth import jwt_required
 from src.extensions import get_async_db_session as get_async_db
 
-router = APIRouter(prefix="/api/v2/audit-logs", tags=["audit-logs"])
+router = APIRouter(tags=["audit-logs"])
 
 
 @router.get("")

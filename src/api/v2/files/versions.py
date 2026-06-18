@@ -16,7 +16,7 @@ from src.extensions import get_async_db_session as get_async_db
 router = APIRouter(prefix="", tags=["versions"])
 
 
-@router.get("/api/v2/files/{file_id}/versions")
+@router.get("/{file_id}/versions")
 async def list_versions(
     file_id: int,
     db: AsyncSession = Depends(get_async_db),
@@ -40,7 +40,7 @@ async def list_versions(
     } for v in versions])
 
 
-@router.post("/api/v2/files/{file_id}/versions")
+@router.post("/{file_id}/versions")
 async def create_version(
     file_id: int,
     change_note: Optional[str] = "",
@@ -71,7 +71,7 @@ async def create_version(
     return ok({"version_number": v.version_number}, msg="版本已创建")
 
 
-@router.post("/api/v2/files/versions/{version_id}/restore")
+@router.post("/versions/{version_id}/restore")
 async def restore_version(
     version_id: int,
     db: AsyncSession = Depends(get_async_db),

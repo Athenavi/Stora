@@ -13,7 +13,7 @@ from src.extensions import get_async_db_session as get_async_db
 router = APIRouter(tags=["compliance"])
 
 
-@router.get("/api/v2/compliance/consents")
+@router.get("/compliance/consents")
 async def list_consents(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(jwt_required),

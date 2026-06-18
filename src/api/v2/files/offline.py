@@ -14,7 +14,7 @@ from src.extensions import get_async_db_session as get_async_db
 router = APIRouter(prefix="", tags=["offline-download"])
 
 
-@router.post("/api/v2/offline-download")
+@router.post("/offline-download")
 async def create_offline_task(
     source_url: str = Form(...),
     filename: str = Form(""),
@@ -36,7 +36,7 @@ async def create_offline_task(
     return ok({"id": task.id, "filename": task.filename, "status": task.status})
 
 
-@router.get("/api/v2/offline-download/tasks")
+@router.get("/offline-download/tasks")
 async def list_offline_tasks(
     db: AsyncSession = Depends(get_async_db),
     current_user: dict = Depends(jwt_required),

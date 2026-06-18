@@ -14,7 +14,7 @@ from src.extensions import get_async_db_session as get_async_db
 router = APIRouter(tags=["dashboard"])
 
 
-@router.get("/api/v2/dashboard")
+@router.get("")
 async def get_dashboard(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(jwt_required),
