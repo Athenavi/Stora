@@ -41,5 +41,8 @@ htmlcov/
 # Qwik
 frontend-qwik/server/
 
+# Reasonix
+.reasonix/
+
 # Logs
 *.log
