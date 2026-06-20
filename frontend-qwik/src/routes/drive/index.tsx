@@ -1,7 +1,7 @@
 /**
  * Stora Drive — core file manager with rename, folder create, batch ops, drag-drop
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
 import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, type FileItem, type Folder } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
@@ -324,7 +324,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
     if (sortBy.value !== field) return "↕";
     return sortOrder.value === "asc" ? "↑" : "↓";
   };
-  const sortUrl = (field: string) => {
+  const sortUrl = $((field: string) => {
     const order = sortBy.value === field && sortOrder.value === "desc" ? "asc" : "desc";
     const params = new URLSearchParams(loc.url.search);
     params.set("sort_by", field);
