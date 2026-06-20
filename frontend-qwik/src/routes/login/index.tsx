@@ -1,7 +1,7 @@
 /**
  * Stora Login — Enterprise login page with password + email code tabs
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { useNavigate, useLocation } from "@builder.io/qwik-city";
 import { login, setToken, loginWithCode, sendCode } from "~/lib/api";
 import { Button } from "~/components/ui/Button";
@@ -34,15 +34,15 @@ export default component$(() => {
   const countdown = useSignal(0);
   const codeLoading = useSignal(false);
 
-  const doPasswordLogin = async () => {
+  const doPasswordLogin = $(async () => {
     if (!username.value || !password.value) { error.value = "请输入用户名和密码"; return; }
     error.value = ""; loading.value = true;
     try { await login(username.value, password.value); nav("/drive"); }
     catch (e: any) { error.value = e.message || "登录失败"; }
     finally { loading.value = false; }
-  };
+  });
 
-  const doSendCode = async () => {
+  const doSendCode = $(async () => {
     if (!codeEmail.value || !codeEmail.value.includes("@")) { error.value = "请输入有效邮箱"; return; }
     error.value = ""; codeLoading.value = true;
     try {
@@ -55,9 +55,9 @@ export default component$(() => {
       }, 1000);
     } catch (e: any) { error.value = e.message || "发送失败"; }
     finally { codeLoading.value = false; }
-  };
+  });
 
-  const doCodeLogin = async () => {
+  const doCodeLogin = $(async () => {
     if (!code.value) { error.value = "请输入验证码"; return; }
     error.value = ""; loading.value = true;
     try {
@@ -65,7 +65,7 @@ export default component$(() => {
       nav("/drive");
     } catch (e: any) { error.value = e.message || "登录失败"; }
     finally { loading.value = false; }
-  };
+  });
 
   return (
     <div class="min-h-screen flex bg-slate-50">
