@@ -153,5 +153,32 @@ export const completeUpload = (
 
 // ─── Download ───
 
+/** 批量下载：将选中文件打包为 ZIP */
+export function batchDownload(fileIds: number[], folderIds: number[] = []) {
+  // 使用原生 fetch 获取 blob 并触发下载（cookie 自动携带 JWT）
+  fetch('/api/v2/files/download/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ file_ids: fileIds, folder_ids: folderIds }),
+  })
+    .then(res => {
+      if (!res.ok) throw new Error('批量下载失败');
+      return res.blob();
+    })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `stora-batch-${fileIds.length}files.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    })
+    .catch(err => {
+      console.error('批量下载失败:', err);
+      alert('批量下载失败，请重试');
+    });
+}
+
 export const getDownloadToken = (fileId: number): Promise<{ token: string; expires_in: number }> =>
   api.get(`/files/download/token/${fileId}`);

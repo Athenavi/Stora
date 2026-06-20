@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, type FileItem, type Folder } from "~/lib/api";
+import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, type FileItem, type Folder } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton, Input } from "~/components/ui/Button";
 
@@ -149,8 +149,10 @@ export default component$(() => {
               try { await moveFiles(ids, folderId); refresh(); } catch {}
             }}>移动</Button>
             <Button variant="ghost" size="sm" onClick$={async () => {
-              // Batch download: open first selected file in new tab
-              if (selIds.value.length > 0) window.open(`/api/v2/files/download/${selIds.value[0]}`, "_blank");
+              // Batch download as ZIP
+              if (selIds.value.length > 0) {
+                batchDownload([...selIds.value]);
+              }
             }}>下载</Button>
             <Button variant="ghost" size="sm" onClick$={async () => {
               if (selIds.value.length > 0) nav(`/view?id=${selIds.value[0]}`);
