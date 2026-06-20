@@ -44,5 +44,8 @@ frontend-qwik/server/
 # Reasonix
 .reasonix/
 
+# Debug
+debug/
+
 # Logs
 *.log
