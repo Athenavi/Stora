@@ -16,7 +16,7 @@ import subprocess
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -50,103 +50,87 @@ def _check_ffmpeg() -> bool:
 
 async def _do_transcribe(task_id: int, file_path: str, file_id: int):
     """
-    后台执行语音转字幕（在 BackgroundTasks 中调用）
+    后台执行语音转字幕
 
     策略：
     1. 如果有 OPENAI_API_KEY → 使用 OpenAI Whisper API
     2. 否则尝试 faster-whisper（需要 pip install faster-whisper）
     3. 都不可用 → 标记失败
     """
-    from sqlalchemy import create_engine
-    from sqlalchemy.orm import Session as SASession
+    from src.extensions import get_async_session_context
+    from shared.models.file.transcription_task import TranscriptionTask as TT
 
-    # 使用同步连接更新进度
-    db_url = os.environ.get("DB_ENGINE", "postgresql") + "://" + \
-             os.environ.get("DB_USER", "postgres") + ":" + \
-             os.environ.get("DB_PASSWORD", "postgres") + "@" + \
-             os.environ.get("DB_HOST", "localhost") + ":" + \
-             os.environ.get("DB_PORT", "5432") + "/" + \
-             os.environ.get("DB_NAME", "stora")
-    engine = create_engine(db_url)
-    session = SASession(engine)
-
-    try:
-        # 更新状态为 processing
-        task = session.get(TranscriptionTask, task_id)
-        if not task:
-            return
-        task.status = "processing"
-        task.progress = 10
-        session.commit()
-
-        # 提取音频
-        audio_path = file_path + ".audio.wav"
-        if not _check_ffmpeg():
-            task.status = "failed"
-            task.error_message = "ffmpeg 不可用，无法提取音频"
-            session.commit()
-            return
-
-        subprocess.run(
-            ["ffmpeg", "-i", file_path, "-vn", "-acodec", "pcm_s16le",
-             "-ar", "16000", "-ac", "1", audio_path, "-y"],
-            capture_output=True, check=True
-        )
-        task.progress = 30
-        session.commit()
-
-        # 执行语音识别
-        api_key = _get_openai_api_key()
-        subtitle_path = file_path + ".srt"
-
-        if api_key:
-            # OpenAI Whisper API
-            result = _transcribe_with_openai(audio_path, api_key)
-        else:
-            # faster-whisper (本地)
-            result = _transcribe_with_local(audio_path)
-
-        if result is None:
-            task.status = "failed"
-            task.error_message = "转录失败：没有可用的语音识别后端（设置 OPENAI_API_KEY 或 pip install faster-whisper）"
-            session.commit()
-            return
-
-        segments, detected_lang = result
-        task.language = detected_lang
-        task.progress = 70
-
-        # 生成 SRT 文件
-        with open(subtitle_path, "w", encoding="utf-8") as f:
-            for i, seg in enumerate(segments, 1):
-                start = _fmt_srt_time(seg["start"])
-                end = _fmt_srt_time(seg["end"])
-                f.write(f"{i}\n{start} --> {end}\n{seg['text'].strip()}\n\n")
-
-        task.subtitle_path = subtitle_path
-        task.subtitle_format = "srt"
-        task.status = "completed"
-        task.progress = 100
-        session.commit()
-
-        # 清理临时音频
+    async with get_async_session_context() as db:
         try:
-            os.remove(audio_path)
-        except Exception:
-            pass
+            task = await db.get(TT, task_id)
+            if not task:
+                return
 
-    except Exception as e:
-        try:
-            task = session.get(TranscriptionTask, task_id)
-            if task:
+            task.status = "processing"
+            task.progress = 10
+            await db.commit()
+
+            # 提取音频
+            audio_path = file_path + ".audio.wav"
+            if not _check_ffmpeg():
+                task.status = "failed"
+                task.error_message = "ffmpeg 不可用，无法提取音频"
+                await db.commit()
+                return
+
+            subprocess.run(
+                ["ffmpeg", "-i", file_path, "-vn", "-acodec", "pcm_s16le",
+                 "-ar", "16000", "-ac", "1", audio_path, "-y"],
+                capture_output=True, check=True
+            )
+            task.progress = 30
+            await db.commit()
+
+            # 执行语音识别
+            api_key = _get_openai_api_key()
+            subtitle_path = file_path + ".srt"
+
+            if api_key:
+                result = _transcribe_with_openai(audio_path, api_key)
+            else:
+                result = _transcribe_with_local(audio_path)
+
+            if result is None:
+                task.status = "failed"
+                task.error_message = "转录失败：没有可用的语音识别后端（设置 OPENAI_API_KEY 或 pip install faster-whisper）"
+                await db.commit()
+                return
+
+            segments, detected_lang = result
+            task.language = detected_lang
+            task.progress = 70
+
+            # 生成 SRT 文件
+            with open(subtitle_path, "w", encoding="utf-8") as f:
+                for i, seg in enumerate(segments, 1):
+                    start = _fmt_srt_time(seg["start"])
+                    end = _fmt_srt_time(seg["end"])
+                    f.write(f"{i}\n{start} --> {end}\n{seg['text'].strip()}\n\n")
+
+            task.subtitle_path = subtitle_path
+            task.subtitle_format = "srt"
+            task.status = "completed"
+            task.progress = 100
+            await db.commit()
+
+            # 清理临时音频
+            try:
+                os.remove(audio_path)
+            except Exception:
+                pass
+
+        except Exception as e:
+            try:
                 task.status = "failed"
                 task.error_message = str(e)
-                session.commit()
-        except Exception:
-            pass
-    finally:
-        session.close()
-        engine.dispose()
+                await db.commit()
+            except Exception:
+                pass
 
 
 def _transcribe_with_openai(audio_path: str, api_key: str):
@@ -208,12 +192,11 @@ def _fmt_srt_time(seconds: float) -> str:
 @router.post("/{file_id}")
 async def create_transcription(
     file_id: int,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(jwt_required),
 ):
     """触发语音转字幕"""
-    from fastapi import BackgroundTasks
-
     file = await db.get(FileItem, file_id)
     if not file or file.user_id != current_user.id:
         return fail("文件不存在")
@@ -250,8 +233,7 @@ async def create_transcription(
     await db.refresh(task)
 
     # 后台执行
-    from src.app import async_tasks
-    async_tasks.add_task(_do_transcribe, task.id, storage_path, file_id)
+    background_tasks.add_task(_do_transcribe, task.id, storage_path, file_id)
 
     return ok({
         "task_id": task.id,
