@@ -16,6 +16,26 @@ from src.extensions import get_async_db_session as get_async_db
 router = APIRouter(prefix="", tags=["versions"])
 
 
+async def _save_version(file: FileItem, db: AsyncSession) -> Optional[FileVersion]:
+    """保存当前文件快照为新版本（可被其他模块调用）"""
+    # Get next version number
+    last = (await db.execute(
+        select(func.max(FileVersion.version_number)).where(FileVersion.file_id == file.id)
+    )).scalar() or 0
+
+    v = FileVersion(
+        file_id=file.id,
+        user_id=file.user_id,
+        version_number=last + 1,
+        file_size=file.file_size,
+        file_hash=file.file_hash,
+        storage_path=getattr(file, "file_path", None) or getattr(file, "storage_path", ""),
+        change_note="自动保存（在线编辑）",
+    )
+    db.add(v)
+    return v
+
+
 @router.get("/{file_id}/versions")
 async def list_versions(
     file_id: int,
@@ -86,12 +106,23 @@ async def restore_version(
     if not file or file.user_id != int(current_user.get("sub", 0)):
         return fail("无权限")
 
-    # Swap storage paths
-    old_path = getattr(file, "storage_path", "")
+    import os
+    import shutil
+
+    # Locate version storage path
+    version_path = getattr(v, "storage_path", "")
+    if not version_path or not os.path.exists(version_path):
+        return fail("版本文件已丢失，无法恢复")
+
+    # Save current file as new version before overwriting
+    current_path = getattr(file, "file_path", None) or getattr(file, "storage_path", "")
+    if current_path and os.path.exists(current_path):
+        # Copy current file over the version file (so it becomes the new "latest version")
+        shutil.copy2(current_path, version_path)
+
+    # Now point the file to the version storage
+    setattr(file, "file_path", version_path)
     file.file_hash = v.file_hash
     file.file_size = v.file_size
-    import os
-    if v.storage_path and os.path.exists(v.storage_path):
-        file.file_size = v.file_size  # Keep consistent
     await db.commit()
     return ok(msg=f"已回滚到版本 {v.version_number}")

@@ -80,6 +80,41 @@ async def get_file(
     return ok(_file_to_dict(file))
 
 
+@router.put("/{file_id}/content")
+async def update_file_content(
+    file_id: int,
+    content: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(jwt_required),
+):
+    """更新文本文件内容（用于在线编辑）"""
+    file = await db.get(FileItem, file_id)
+    if not file or file.user_id != current_user.id:
+        return fail("文件不存在")
+
+    file_path = getattr(file, "file_path", None) or getattr(file, "storage_path", None)
+    if not file_path:
+        return fail("文件存储路径不存在")
+
+    # Save old version before overwriting
+    from src.api.v2.files.versions import _save_version
+    try:
+        await _save_version(file, db)
+    except Exception:
+        pass  # Version saving is best-effort
+
+    # Write new content
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+    except Exception as e:
+        return fail(f"写入文件失败: {e}")
+
+    file.file_size = len(content.encode("utf-8"))
+    await db.commit()
+    return ok(msg="文件已保存")
+
+
 @router.patch("/{file_id}")
 async def update_file(
     file_id: int,
@@ -93,7 +128,21 @@ async def update_file(
     file = await db.get(FileItem, file_id)
     if not file or file.user_id != current_user.id:
         return fail("文件不存在")
-    if filename:
+
+    # Check for duplicate filename in same folder
+    if filename and filename != file.filename:
+        dup = (await db.execute(
+            select(FileItem).where(
+                FileItem.user_id == current_user.id,
+                FileItem.filename == filename,
+                FileItem.folder_id == file.folder_id,
+                FileItem.id != file_id,
+                FileItem.deleted_at.is_(None),
+            )
+        )).scalar_one_or_none()
+        if dup:
+            return fail("同一文件夹下已存在同名文件")
+
         file.filename = filename
     if description is not None:
         file.description = description
@@ -385,7 +434,7 @@ async def clear_trash(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(jwt_required),
 ):
-    """清空回收站"""
+    """清空回收站（物理删除文件并释放存储）"""
     result = await db.execute(
         select(FileItem).where(
             FileItem.user_id == current_user.id,
@@ -393,10 +442,35 @@ async def clear_trash(
         )
     )
     files = result.scalars().all()
+    import os
+    total_freed = 0
     for f in files:
+        # Decrement fingerprint ref count
+        if f.file_hash:
+            fp = (await db.execute(
+                select(FileFingerprint).where(FileFingerprint.hash == f.file_hash)
+            )).scalar_one_or_none()
+            if fp:
+                fp.reference_count -= 1
+                if fp.reference_count <= 0:
+                    file_path = getattr(f, "file_path", None) or getattr(f, "storage_path", None)
+                    if file_path and os.path.exists(file_path):
+                        total_freed += (f.file_size or 0)
+                        os.remove(file_path)
+                    await db.delete(fp)
+
         await db.delete(f)
+
+    # Update quota
+    quota = (await db.execute(
+        select(StorageQuota).where(StorageQuota.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if quota:
+        quota.used_storage = max(0, (quota.used_storage or 0) - total_freed)
+        quota.files_count = max(0, (quota.files_count or 0) - len(files))
+
     await db.commit()
-    return ok(msg=f"已清空 {len(files)} 个文件")
+    return ok(msg=f"已清空 {len(files)} 个文件，释放 {total_freed} 字节")
 
 
 # ─── Helpers ───
@@ -419,6 +493,8 @@ def _file_to_dict(f: FileItem) -> dict:
         "width": f.width,
         "height": f.height,
         "duration": f.duration,
+        "file_hash": f.file_hash,
+        "storage_driver": f.storage_driver,
         "created_at": str(f.created_at) if f.created_at else None,
         "updated_at": str(f.updated_at) if f.updated_at else None,
     }

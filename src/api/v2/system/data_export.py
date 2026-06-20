@@ -12,7 +12,7 @@ from shared.services.system.data_export_service import data_export_service
 from src.api.v2._helpers import ok, fail
 
 from shared.models.user import User as UserModel
-from src.auth.auth_deps import admin_required as admin_required_api
+from src.auth import admin_required as admin_required_api
 
 router = APIRouter(tags=["export"])
 

@@ -67,6 +67,7 @@ export default component$(() => {
                   {s.is_active && (
                     <button
                       onClick$={async () => {
+                        if (!confirm("确认撤销此分享链接？撤销后链接将立即失效。")) return;
                         try {
                           await revokeShare(s.id);
                           shares.value = shares.value.filter(x => x.id !== s.id);

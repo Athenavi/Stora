@@ -52,11 +52,12 @@ async def upload_file(
                 mime_type=file.content_type or fingerprint.mime_type,
                 file_hash=actual_hash,
                 storage_path=fingerprint.storage_path,
-                file_url=f"/files/{actual_hash}",
             )
             db.add(new_file)
             await db.commit()
             await db.refresh(new_file)
+            new_file.file_url = f"/api/v2/files/download/{new_file.id}"
+            await db.commit()
             return ok({"file": _file_to_dict(new_file), "instant": True})
     
     # Save file
@@ -91,14 +92,23 @@ async def upload_file(
         file_hash=actual_hash,
         file_path=storage_path,
         storage_driver="local",
-        file_url=f"/api/v2/files/download/{storage_name}",
     )
     db.add(new_file)
     await db.commit()
     await db.refresh(new_file)
     
-    # Update quota (placeholder)
-    current_user.used_storage = (current_user.used_storage or 0) + len(content)
+    # Set correct download URL with file ID
+    new_file.file_url = f"/api/v2/files/download/{new_file.id}"
+    
+    # Update quota via StorageQuota model
+    from shared.models import StorageQuota
+    quota = (await db.execute(
+        select(StorageQuota).where(StorageQuota.user_id == current_user.id)
+    )).scalar_one_or_none()
+    if quota:
+        quota.used_storage = (quota.used_storage or 0) + len(content)
+    
+    await db.commit()
     
     return ok({"file": _file_to_dict(new_file), "instant": False})
 
@@ -205,6 +215,11 @@ async def complete_upload(
             sha256.update(block)
     file_hash = sha256.hexdigest()
     
+    # Detect file type
+    file_type = _detect_file_type("", task.filename)
+    import mimetypes
+    mime_type = mimetypes.guess_type(task.filename)[0] or "application/octet-stream"
+    
     # Create file record
     new_file = FileItem(
         user_id=current_user.id,
@@ -212,16 +227,21 @@ async def complete_upload(
         filename=task.filename,
         original_filename=task.filename,
         file_size=task.total_size,
+        mime_type=mime_type,
+        file_type=file_type,
         file_hash=file_hash,
-        storage_path=storage_path,
+        file_path=storage_path,
         storage_driver="local",
-        file_url=f"/api/v2/files/download/{storage_name}",
     )
     db.add(new_file)
     
     task.status = "completed"
     await db.commit()
     await db.refresh(new_file)
+    
+    # Set correct download URL
+    new_file.file_url = f"/api/v2/files/download/{new_file.id}"
+    await db.commit()
     
     # Cleanup chunks
     import shutil
@@ -264,11 +284,19 @@ def _file_to_dict(f: FileItem) -> dict:
         "mime_type": f.mime_type,
         "file_type": f.file_type,
         "folder_id": f.folder_id,
-        "file_hash": f.file_hash,
-        "storage_driver": f.storage_driver,
+        "is_favorite": f.is_favorite,
+        "is_folder": f.is_folder,
         "thumbnail_url": f.thumbnail_url,
         "file_url": f.file_url,
+        "description": f.description,
+        "download_count": f.download_count,
+        "width": f.width,
+        "height": f.height,
+        "duration": f.duration,
+        "file_hash": f.file_hash,
+        "storage_driver": f.storage_driver,
         "created_at": str(f.created_at) if f.created_at else None,
+        "updated_at": str(f.updated_at) if f.updated_at else None,
     }
 
 

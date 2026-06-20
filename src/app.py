@@ -831,7 +831,7 @@ def create_app(config=None):
 
     # OpenAPI 元数据（精简但保留核心内容）
     app = FastAPI(
-        title="FastBlog API",
+        title="Stora API",
         version="1.0.0",
         lifespan=lifespan,
         docs_url="/api/v2/docs",
@@ -839,6 +839,28 @@ def create_app(config=None):
         openapi_url="/api/v2/openapi.json",
         swagger_ui_oauth2_redirect_url="/api/v2/docs/oauth2-redirect",
     )
+
+    # ── 公开健康检查端点（无需认证，可用于监控） ──
+    @app.get("/api/health", tags=["health"])
+    async def health_check():
+        """服务器健康检查 — 监控系统存活 + 数据库连接状态"""
+        status = {"status": "ok", "version": "1.0.0", "timestamp": __import__('datetime').datetime.now().isoformat()}
+        try:
+            from src.extensions import get_async_db_session
+            from sqlalchemy import text
+            async for db in get_async_db_session():
+                await db.execute(text("SELECT 1"))
+                break
+            status["database"] = "connected"
+        except Exception:
+            status["database"] = "disconnected"
+            status["status"] = "degraded"
+        return status
+
+    @app.get("/api/health/live", tags=["health"])
+    async def health_live():
+        """存活检查 — 仅返回服务是否运行"""
+        return {"status": "alive"}
 
     # 注册全局异常处理器
     from src.middleware.error_handler import register_error_handlers

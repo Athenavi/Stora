@@ -20,7 +20,7 @@ from src.mcp.agent import LLMConfig, run_agent, stream_agent
 from src.mcp.agent.format import format_tool_result
 from src.mcp._context import set_user_ctx, UserCtx
 from src.mcp.server import mcp_server
-from src.auth.auth_deps import jwt_required_dependency as jwt_required
+from src.auth import jwt_required_dependency as jwt_required
 from src.api.v2._base import ApiResponse
 
 logger = logging.getLogger("mcp_proxy")

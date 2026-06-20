@@ -1,7 +1,7 @@
 # FastBlog Development Makefile
 # Usage: make <target>
 
-.PHONY: help install dev test lint format clean docker-build docker-up docker-down dev-services-up dev-services-down dev-services-logs dev-services-search dev-services-tools pre-commit-install pre-commit-run
+.PHONY: help install dev test lint format clean pre-commit-install pre-commit-run
 
 # Default target
 help: ## Show this help message
@@ -16,7 +16,7 @@ help: ## Show this help message
 
 install: ## Install all dependencies (backend + frontend)
 	pip install -r requirements.txt
-	cd frontend-astro && npm install
+	cd frontend-qwik && npm install
 	@echo "✅ Dependencies installed successfully"
 
 install-backend: ## Install backend dependencies only
@@ -24,7 +24,7 @@ install-backend: ## Install backend dependencies only
 	@echo "✅ Backend dependencies installed"
 
 install-frontend: ## Install frontend dependencies only
-	cd frontend-astro && npm install
+	cd frontend-qwik && npm install
 	@echo "✅ Frontend dependencies installed"
 
 setup: ## Initial project setup (copy env, install deps)
@@ -40,14 +40,14 @@ dev: ## Start development server (backend)
 	python main.py --backend fastapi --env dev
 
 dev-frontend: ## Start frontend development server
-	cd frontend-astro && npm run dev
+	cd frontend-qwik && npm run dev
 
 dev-all: ## Start both backend and frontend (requires two terminals)
 	@echo "Starting backend on port 9421..."
 	@echo "Starting frontend on port 4321..."
 	@echo "Press Ctrl+C to stop"
 	python main.py --backend fastapi --env dev &
-	cd frontend-astro && npm run dev
+	cd frontend-qwik && npm run dev
 
 # ============================================================================
 # Testing
@@ -67,7 +67,7 @@ test-coverage: ## Run tests with coverage report
 	@echo "📊 Coverage report generated in htmlcov/"
 
 test-frontend: ## Run frontend tests
-	cd frontend-astro && npm test
+	cd frontend-qwik && npm test
 
 # ============================================================================
 # Code Quality
@@ -110,31 +110,6 @@ db-reset: ## Reset database (WARNING: destroys all data)
 	@sleep 3
 	alembic downgrade base
 	alembic upgrade head
-
-# ============================================================================
-# Docker
-# ============================================================================
-
-docker-build: ## Build Docker image
-	docker build -t fastblog:latest .
-	@echo "✅ Docker image built successfully"
-
-docker-up: ## Start all services with Docker Compose
-	docker-compose up -d
-	@echo "✅ Services started. Visit http://localhost:4321"
-
-docker-down: ## Stop all Docker services
-	docker-compose down
-
-docker-logs: ## View Docker logs
-	docker-compose logs -f
-
-docker-rebuild: ## Rebuild and restart Docker services
-	docker-compose up -d --build
-
-docker-clean: ## Clean Docker resources
-	docker system prune -f
-	docker volume prune -f
 
 # ============================================================================
 # Development Services (Docker)
@@ -183,7 +158,7 @@ pre-commit-update: ## Update pre-commit hooks
 # ============================================================================
 
 build: ## Build production assets
-	cd frontend-astro && npm run build
+	cd frontend-qwik && npm run build
 	@echo "✅ Production assets built"
 
 build-release: ## Build release package

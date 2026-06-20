@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 
 from src.api.v2._helpers import ok, fail
 from shared.services.system.workflow_engine import workflow_engine
-from src.auth.auth_deps import jwt_required_dependency as jwt_required
+from src.auth import jwt_required_dependency as jwt_required
 
 router = APIRouter(tags=["workflows"])
 

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 
 from shared.services.core.object_cache import object_cache_service
 from src.api.v2._helpers import ok, fail, _catch
-from src.auth.auth_deps import jwt_required_dependency as jwt_required
+from src.auth import jwt_required_dependency as jwt_required
 
 router = APIRouter()
 

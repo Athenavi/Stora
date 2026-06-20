@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 
 from shared.services.performance.performance_tracker import performance_tracker
 from src.api.v2._helpers import ok, fail, _catch
-from src.auth.auth_deps import jwt_required_dependency as jwt_required
+from src.auth import jwt_required_dependency as jwt_required
 
 router = APIRouter()
 

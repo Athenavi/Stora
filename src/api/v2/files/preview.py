@@ -26,10 +26,10 @@ TEXT_EXTENSIONS = {
 }
 
 
-async def _do_preview(file: FileItem):
+async def _do_preview(file: FileItem, range_header: str = None):
     """核心预览逻辑 — 根据文件类型返回合适的响应"""
-    storage_path = getattr(file, "storage_path", None)
-    if not storage_path or not os.path.exists(storage_path):
+    file_path = getattr(file, "file_path", None) or getattr(file, "storage_path", None)
+    if not file_path or not os.path.exists(file_path):
         return fail("文件存储路径不存在")
 
     file_type = file.file_type or "other"
@@ -38,16 +38,16 @@ async def _do_preview(file: FileItem):
 
     # ─── Image: return the file directly ───
     if file_type == "image":
-        return FileResponse(storage_path, media_type=mime)
+        return FileResponse(file_path, media_type=mime)
 
     # ─── Video/Audio: streaming ───
     if file_type in ("video", "audio"):
-        return _stream_media(storage_path, mime, file.filename)
+        return _stream_media(file_path, mime, file.filename, range_header)
 
     # ─── Text/Code: return as text ───
     if ext in TEXT_EXTENSIONS or file_type == "document" and ext in {".txt", ".md"}:
         try:
-            with open(storage_path, "r", encoding="utf-8", errors="replace") as f:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
             return Response(content=content, media_type="text/plain; charset=utf-8")
         except Exception:
@@ -55,15 +55,16 @@ async def _do_preview(file: FileItem):
 
     # ─── PDF ───
     if ext == ".pdf":
-        return FileResponse(storage_path, media_type="application/pdf")
+        return FileResponse(file_path, media_type="application/pdf")
 
     # ─── Fallback: force download ───
-    return FileResponse(storage_path, media_type=mime, filename=file.filename)
+    return FileResponse(file_path, media_type=mime, filename=file.filename)
 
 
 @router.get("/{file_id}")
 async def preview_file(
     file_id: int,
+    request: Request,
     t: str = Query("raw", description="预览类型: raw/thumb/stream"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(jwt_required),
@@ -72,7 +73,8 @@ async def preview_file(
     file = await db.get(FileItem, file_id)
     if not file or file.user_id != current_user.id:
         return fail("文件不存在")
-    return await _do_preview(file)
+    range_header = request.headers.get("range")
+    return await _do_preview(file, range_header)
 
 
 @router.get("/{file_id}/thumbnail")
@@ -92,8 +94,8 @@ async def file_thumbnail(
         return FileResponse(file.thumbnail_url)
 
     # Generate thumbnail for images
-    storage_path = getattr(file, "storage_path", None)
-    if not storage_path or not os.path.exists(storage_path):
+    file_path = getattr(file, "file_path", None) or getattr(file, "storage_path", None)
+    if not file_path or not os.path.exists(file_path):
         return fail("文件不存在")
 
     if file.file_type != "image":
@@ -102,7 +104,7 @@ async def file_thumbnail(
     thumb_path = os.path.join(THUMB_DIR, f"{file_id}_{size}.jpg")
     if not os.path.exists(thumb_path):
         try:
-            _generate_thumbnail(storage_path, thumb_path, size)
+            _generate_thumbnail(file_path, thumb_path, size)
         except Exception as e:
             return fail(f"生成缩略图失败: {e}")
 
@@ -113,6 +115,7 @@ async def file_thumbnail(
 async def preview_file_with_name(
     file_id: int,
     file_name: str,
+    request: Request,
     t: str = Query("raw", description="预览类型: raw/thumb/stream"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(jwt_required),
@@ -121,14 +124,30 @@ async def preview_file_with_name(
     file = await db.get(FileItem, file_id)
     if not file or file.user_id != current_user.id:
         return fail("文件不存在")
-    return await _do_preview(file)
+    range_header = request.headers.get("range")
+    return await _do_preview(file, range_header)
 
 
 # ─── Stream helpers ───
 
-def _stream_media(path: str, mime: str, filename: str):
-    """视频/音频流式传输"""
+def _stream_media(path: str, mime: str, filename: str, range_header: str = None):
+    """视频/音频流式传输（支持 HTTP Range 请求）"""
     file_size = os.path.getsize(path)
+    start, end = 0, file_size - 1
+
+    if range_header:
+        try:
+            range_val = range_header.strip().removeprefix("bytes=")
+            parts = range_val.split("-", 1)
+            start = int(parts[0]) if parts[0] else 0
+            if len(parts) > 1 and parts[1]:
+                end = int(parts[1])
+            if start > end or start >= file_size:
+                start, end = 0, file_size - 1
+        except (ValueError, IndexError):
+            start, end = 0, file_size - 1
+
+    content_length = end - start + 1
 
     async def iter_file(start: int, end: int):
         with open(path, "rb") as f:
@@ -141,14 +160,24 @@ def _stream_media(path: str, mime: str, filename: str):
                 remaining -= len(chunk)
                 yield chunk
 
+    is_partial = range_header is not None
+    headers = {
+        "Content-Disposition": f'inline; filename="{filename}"',
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(content_length),
+    }
+    if is_partial:
+        headers["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+        return StreamingResponse(
+            iter_file(start, end),
+            media_type=mime,
+            headers=headers,
+            status_code=206,
+        )
     return StreamingResponse(
-        iter_file(0, file_size - 1),
+        iter_file(start, end),
         media_type=mime,
-        headers={
-            "Content-Disposition": f'inline; filename="{filename}"',
-            "Accept-Ranges": "bytes",
-            "Content-Length": str(file_size),
-        },
+        headers=headers,
     )
 
 

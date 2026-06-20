@@ -24,7 +24,7 @@ def _build_router():
 
     router = APIRouter(tags=["system"])
 
-    from src.auth.auth_deps import admin_required as admin_required_api
+    from src.auth import admin_required as admin_required_api
 
     # ── 原生 V2 路由（已从 V1 迁移）────
 

@@ -32,6 +32,7 @@ ROUTE_REGISTRY_V2 = [
     # ==================== 文件管理 ====================
     ("src.api.v2.media", "/api/v2/media", ["media"], True),
     ("src.api.v2.files", "/api/v2", ["files"], True),
+    ("src.api.v2.files.webdav", "/api/v2", ["webdav"], False),
 
     # ==================== 安全与权限 ====================
     ("src.api.v2.security", "/api/v2/security", ["security-v2"], True),

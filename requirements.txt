@@ -87,3 +87,6 @@ secure-python-utils==0.1.4
 
 python-jose
 
+# Encryption (Vault private space)
+cryptography>=42.0.0
+

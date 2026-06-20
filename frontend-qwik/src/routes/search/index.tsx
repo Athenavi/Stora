@@ -1,8 +1,8 @@
 /**
  * Stora Search — file search results page
  */
-import { component$ } from "@builder.io/qwik";
-import { routeLoader$, useLocation } from "@builder.io/qwik-city";
+import { component$, useSignal } from "@builder.io/qwik";
+import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
 import { searchFiles, type FileItem } from "~/lib/api";
 import { Button, Skeleton } from "~/components/ui/Button";
 import { Icon } from "~/components/ui/Icon";
@@ -17,6 +17,7 @@ function fmtSize(b: number): string { if (!b) return "0 B"; const k = 1024; cons
 
 export default component$(() => {
   const data = useSearch();
+  const nav = useNavigate();
   const q = useLocation().url.searchParams.get("q") || "";
 
   return (
@@ -33,14 +34,15 @@ export default component$(() => {
         ) : (
           <div class="space-y-2">
             {data.value.items.map((f: FileItem) => (
-              <a key={f.id} href={`/drive`} class="flex items-center gap-4 px-4 py-3 bg-white rounded-lg border border-slate-200 hover:shadow-sm transition-all">
+              <div key={f.id} onClick$={() => nav(`/view?id=${f.id}`)}
+                class="flex items-center gap-4 px-4 py-3 bg-white rounded-lg border border-slate-200 hover:shadow-sm transition-all cursor-pointer">
                 <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-lg">📄</div>
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium text-slate-700 truncate">{f.filename}</p>
                   <p class="text-xs text-slate-400">{fmtSize(f.file_size)} · {f.file_type}</p>
                 </div>
                 <Icon name="chevronRight" size={16} class="text-slate-300" />
-              </a>
+              </div>
             ))}
           </div>
         )}

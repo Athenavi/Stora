@@ -2042,3 +2042,198 @@ models:
         columns:
           - keyword
         comment: 关键词索引
+
+  # ============================================================
+  # 私密空间模块 (vault)
+  # ============================================================
+  Vault:
+    description: 私密空间 vault
+    status: active
+    frontend_page: /vault
+    properties:
+      id:
+        type: bigint
+        description: Vault ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 所有者
+      name:
+        type: string
+        maxLength: 100
+        description: Vault 名称
+      password_hash:
+        type: string
+        maxLength: 128
+        sensitive: true
+        description: PBKDF2(password + salt)
+      salt:
+        type: string
+        maxLength: 64
+        sensitive: true
+        description: PBKDF2 盐值(hex)
+      master_key_encrypted:
+        type: text
+        sensitive: true
+        description: AES-GCM 加密的主密钥(hex)
+      master_key_nonce:
+        type: string
+        maxLength: 32
+        sensitive: true
+        description: 加密主密钥使用的 nonce(hex)
+      lock_timeout:
+        type: integer
+        default: 300
+        description: 自动锁定秒数，默认5分钟
+      file_count:
+        type: integer
+        default: 0
+        description: 文件数量(缓存)
+      total_size:
+        type: bigint
+        default: 0
+        description: 总大小(缓存)
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      updated_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 更新时间
+    module: vault
+    orm: true
+    table: vaults
+    indexes:
+      - name: idx_vaults_user
+        columns:
+          - user_id
+        comment: 用户 Vault 索引
+
+  VaultItem:
+    description: 私密空间文件记录 (独立于 file_items)
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 文件 ID
+      vault_id:
+        type: bigint
+        foreignKey: Vault
+        description: 所属 Vault
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 所有者
+      filename_encrypted:
+        type: string
+        maxLength: 512
+        description: 加密后的文件名(hex)
+      filename_nonce:
+        type: string
+        maxLength: 32
+        description: 文件名加密 nonce(hex)
+      mime_type:
+        type: string
+        maxLength: 100
+        nullable: true
+        description: MIME 类型
+      file_size:
+        type: bigint
+        default: 0
+        description: 明文文件大小
+      encrypted_size:
+        type: bigint
+        default: 0
+        description: 密文文件大小
+      storage_path:
+        type: string
+        maxLength: 500
+        description: 加密文件存储路径
+      file_nonce:
+        type: string
+        maxLength: 32
+        description: 文件内容加密 nonce(hex)
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+    module: vault
+    orm: true
+    table: vault_items
+    indexes:
+      - name: idx_vault_items_vault
+        columns:
+          - vault_id
+        comment: Vault 文件索引
+      - name: idx_vault_items_user
+        columns:
+          - user_id
+        comment: 用户文件索引
+
+  # ============================================================
+  # 转码任务模块 (file)
+  # ============================================================
+  TranscodeTask:
+    description: 视频转码任务模型
+    status: active
+    properties:
+      id:
+        type: bigint
+        description: 任务 ID
+      file_id:
+        type: bigint
+        foreignKey: FileItem
+        description: 源文件ID
+      user_id:
+        type: bigint
+        foreignKey: User
+        description: 用户ID
+      status:
+        type: string
+        maxLength: 20
+        default: pending
+        description: pending/processing/completed/failed
+      progress:
+        type: integer
+        default: 0
+        description: 进度 (0-100)
+      source_resolution:
+        type: string
+        maxLength: 20
+        nullable: true
+        description: 原始分辨率 (如 1920x1080)
+      output_files:
+        type: text
+        nullable: true
+        description: JSON [{label, path, size, width, height}]
+      error_message:
+        type: text
+        nullable: true
+        description: 错误信息
+      created_at:
+        type: string
+        format: date-time
+        description: 创建时间
+      completed_at:
+        type: string
+        format: date-time
+        nullable: true
+        description: 完成时间
+    module: file
+    orm: true
+    table: transcode_tasks
+    indexes:
+      - name: idx_transcode_file
+        columns:
+          - file_id
+        comment: 文件转码索引
+      - name: idx_transcode_user
+        columns:
+          - user_id
+        comment: 用户转码索引
+      - name: idx_transcode_status
+        columns:
+          - status
+        comment: 状态索引

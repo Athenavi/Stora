@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.models.security import FieldPermission
 from shared.models.rbac import UserRole
-from src.auth.auth_deps import jwt_required_dependency as jwt_required
+from src.auth import jwt_required_dependency as jwt_required
 from src.utils.database.main import get_async_session as get_async_db
 from src.utils.database.main import get_async_session_context
 

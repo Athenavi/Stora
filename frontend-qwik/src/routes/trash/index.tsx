@@ -95,7 +95,8 @@ export default component$(() => {
             <p class="text-sm text-slate-400">删除的文件将出现在这里</p>
           </div>
         ) : (
-          <table class="w-full">
+          <div class="overflow-x-auto">
+          <table class="w-full min-w-[600px]">
             <thead>
               <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 sticky top-0 bg-slate-50/95 backdrop-blur">
                 <th class="w-10 px-4 py-3">
@@ -146,6 +147,7 @@ export default component$(() => {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

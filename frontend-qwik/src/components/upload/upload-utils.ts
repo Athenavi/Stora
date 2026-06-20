@@ -13,9 +13,26 @@ const fileRefs = new Map<string, File>();
 
 export function storeFile(id: string, file: File) { fileRefs.set(id, file); }
 
-async function sha1MB(file: File): Promise<string> {
-  const buf = await file.slice(0, 1048576).arrayBuffer();
-  const h = await crypto.subtle.digest("SHA-256", buf);
+async function sha256Full(file: File): Promise<string> {
+  // Compute full-file SHA-256 hash using chunked reading to avoid memory blowup
+  const CHUNK_SIZE = 10 * 1024 * 1024; // 10MB
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const hashPromises: Promise<ArrayBuffer>[] = [];
+
+  for (let i = 0; i < totalChunks; i++) {
+    const start = i * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, file.size);
+    hashPromises.push(file.slice(start, end).arrayBuffer());
+  }
+
+  const chunks = await Promise.all(hashPromises);
+  const merged = new Uint8Array(chunks.reduce((acc, c) => acc + c.byteLength, 0));
+  let offset = 0;
+  for (const c of chunks) {
+    merged.set(new Uint8Array(c), offset);
+    offset += c.byteLength;
+  }
+  const h = await crypto.subtle.digest("SHA-256", merged);
   return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -29,7 +46,7 @@ export async function processUploadTask(
   try {
     t.status = "checking"; onProgress?.();
     if (file.size <= 524288000) {
-      const hash = await sha1MB(file);
+      const hash = await sha256Full(file);
       await checkUpload(hash, file.name, file.size).catch(() => null);
     }
     t.status = "uploading"; onProgress?.();

@@ -4,6 +4,8 @@
 import { component$, useSignal, useVisibleTask$, Slot } from "@builder.io/qwik";
 import { useLocation, Link } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
+import FolderTree from "~/components/ui/FolderTree";
+import TransferQueue from "~/components/ui/TransferQueue";
 import { api, isAuthenticated } from "~/lib/api";
 
 export default component$(() => {
@@ -43,6 +45,9 @@ export default component$(() => {
   const isShare = path.startsWith("/share");
   const isTrash = path.startsWith("/trash");
   const isFavorites = path.startsWith("/favorites");
+  const isVault = path.startsWith("/vault");
+  const isTags = path.startsWith("/tags");
+  const isPhotos = path.startsWith("/photos");
   const isAdmin = path.startsWith("/admin");
   const darkMode = useSignal(false);
   const mobileMenuOpen = useSignal(false);
@@ -53,6 +58,9 @@ export default component$(() => {
     { href: "/share", icon: "share" as const, label: "我的分享", active: isShare },
     { href: "/trash", icon: "trash" as const, label: "回收站", active: isTrash },
     { href: "/favorites", icon: "star" as const, label: "收藏夹", active: isFavorites },
+    { href: "/photos", icon: "image" as const, label: "照片墙", active: isPhotos },
+    { href: "/vault", icon: "lock" as const, label: "私密空间", active: isVault },
+    { href: "/tags", icon: "tag" as const, label: "标签", active: isTags },
     { href: "/admin", icon: "setting" as const, label: "管理面板", active: isAdmin },
   ];
 
@@ -81,7 +89,8 @@ export default component$(() => {
           </div>
         </div>
 
-        <nav class="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
+        <nav class="flex-1 overflow-y-auto scrollbar-thin">
+          <div class="px-3 py-4 space-y-1">
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -96,7 +105,9 @@ export default component$(() => {
               <span>{item.label}</span>
             </Link>
           ))}
-        </nav>
+          </div>
+          {/* Folder tree — only shown on drive page */}
+          {isDrive && <FolderTree />}
 
         <div class="px-4 py-4 border-t border-slate-800">
           <div class="flex items-center gap-3">
@@ -139,7 +150,7 @@ export default component$(() => {
           </button>
           <div class="flex-1" />
           <button onClick$={() => darkMode.value = !darkMode.value} class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title={darkMode.value ? "亮色模式" : "暗色模式"}>
-            {darkMode.value ? <Icon name="eye" size={20} /> : <Icon name="eye" size={20} />}
+            {darkMode.value ? <Icon name="sun" size={20} /> : <Icon name="moon" size={20} />}
           </button>
           <button class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="设置">
             <Icon name="setting" size={20} />
@@ -151,7 +162,9 @@ export default component$(() => {
 
         {/* Page content */}
         <main class="flex-1 overflow-auto scrollbar-thin">
-          <Slot />
+          <TransferQueue>
+            <Slot />
+          </TransferQueue>
         </main>
       </div>
     </div>

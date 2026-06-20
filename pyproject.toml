@@ -3,16 +3,16 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fastblog"
+name = "stora"
 version = "0.4.26.0610"
-description = "A modern, high-performance blog platform built with FastAPI and Astro"
+description = "Stora — self-hosted enterprise file storage and sharing platform"
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 authors = [
-    { name = "FastBlog Team", email = "team@fastblog.dev" },
+    { name = "Stora Team", email = "team@stora.dev" },
 ]
-keywords = ["blog", "cms", "fastapi", "astro", "headless"]
+keywords = ["storage", "file-sharing", "fastapi", "qwik", "self-hosted"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: FastAPI",
@@ -30,11 +30,10 @@ classifiers = [
 dynamic = ["dependencies"]
 
 [project.urls]
-Homepage = "https://github.com/Athenavi/fast_blog"
-Documentation = "https://github.com/Athenavi/fast_blog/tree/main/docs"
-Repository = "https://github.com/Athenavi/fast_blog"
-Issues = "https://github.com/Athenavi/fast_blog/issues"
-Changelog = "https://github.com/Athenavi/fast_blog/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/Athenavi/Stora"
+Documentation = "https://github.com/Athenavi/Stora/tree/main/docs"
+Repository = "https://github.com/Athenavi/Stora"
+Issues = "https://github.com/Athenavi/Stora/issues"
 
 [project.optional-dependencies]
 dev = [

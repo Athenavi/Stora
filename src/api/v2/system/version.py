@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from src.api.v2._helpers import ok
-from src.auth.auth_deps import admin_required as admin_required_api
+from src.auth import admin_required as admin_required_api
 
 router = APIRouter()
 
