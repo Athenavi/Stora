@@ -70,16 +70,27 @@ async def upload_file(
     # Detect file type
     file_type = _detect_file_type(file.content_type or "", file.filename)
     
-    # Save fingerprint
-    fingerprint = FileFingerprint(
-        hash=actual_hash,
-        file_size=len(content),
-        mime_type=file.content_type or "application/octet-stream",
-        storage_path=storage_path,
-        reference_count=1,
-    )
-    db.add(fingerprint)
-    
+    # Check for existing fingerprint (deduplication)
+    existing_fp = (await db.execute(
+        select(FileFingerprint).where(FileFingerprint.hash == actual_hash)
+    )).scalar_one_or_none()
+    if existing_fp:
+        fingerprint = existing_fp
+        fingerprint.reference_count += 1
+        os.remove(storage_path)  # remove duplicate file, reuse existing one
+    else:
+        fingerprint = FileFingerprint(
+            hash=actual_hash,
+            file_size=len(content),
+            mime_type=file.content_type or "application/octet-stream",
+            storage_path=storage_path,
+            reference_count=1,
+        )
+        db.add(fingerprint)
+
+    # Resolve storage path (use existing fingerprint's path if deduplicated)
+    resolved_storage_path = fingerprint.storage_path
+
     # Create file record
     new_file = FileItem(
         user_id=current_user.id,
@@ -90,7 +101,7 @@ async def upload_file(
         mime_type=file.content_type,
         file_type=file_type,
         file_hash=actual_hash,
-        file_path=storage_path,
+        file_path=resolved_storage_path,
         storage_driver="local",
     )
     db.add(new_file)
