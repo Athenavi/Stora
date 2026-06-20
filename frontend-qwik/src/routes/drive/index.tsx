@@ -330,7 +330,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
     params.set("sort_by", field);
     params.set("sort_order", order);
     return `/drive?${params.toString()}`;
-  };
+  });
 
   return (
   <div class="overflow-x-auto">
