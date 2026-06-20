@@ -34,7 +34,8 @@ async def _do_preview(file: FileItem, range_header: str = None):
 
     file_type = file.file_type or "other"
     mime = file.mime_type or "application/octet-stream"
-    ext = os.path.splitext(file.filename or "").lower()
+    _, ext = os.path.splitext(file.filename or "")
+    ext = ext.lower()
 
     # ─── Image: return the file directly ───
     if file_type == "image":
