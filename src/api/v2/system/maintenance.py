@@ -41,6 +41,16 @@ class ScheduleMaintenanceRequest(BaseModel):
     whitelist_ips: Optional[List[str]] = []
 
 
+@router.get("/public-status",
+            summary="获取维护状态（公开）",
+            description="不需要登录即可获取维护模式状态，供前端横幅轮询")
+@_catch
+async def get_public_maintenance_status_api():
+    """获取维护模式状态（公开）"""
+    status = maintenance_service.get_status()
+    return ok(data=status)
+
+
 @router.get("/status",
             summary="获取维护模式状态",
             description="获取当前维护模式的状态信息",

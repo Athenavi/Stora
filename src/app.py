@@ -695,6 +695,14 @@ def register_middleware(app: FastAPI):
     except Exception as e:
         print(f"[Brute Force] 加载失败: {e}")
 
+    # 维护模式中间件
+    try:
+        from src.middleware.maintenance_middleware import MaintenanceMiddleware
+        app.add_middleware(MaintenanceMiddleware)
+        print("[Maintenance] 已添加维护模式中间件")
+    except Exception as e:
+        print(f"[Maintenance] 加载失败: {e}")
+
 
 # ---------- 错误处理与静态文件 ----------
 def register_error_handlers(app: FastAPI):
