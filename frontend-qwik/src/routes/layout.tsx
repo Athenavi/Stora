@@ -1,5 +1,5 @@
 /**
- * Stora App Layout — enterprise sidebar + topbar
+ * Stora App Layout - enterprise sidebar + topbar
  */
 import { component$, useSignal, useVisibleTask$, Slot } from "@builder.io/qwik";
 import { useLocation, Link } from "@builder.io/qwik-city";
@@ -18,7 +18,7 @@ export default component$(() => {
     path === "/register" ||
     path.startsWith("/s");
 
-  // Auth guard — redirect unauthenticated users to /login
+  // Auth guard - redirect unauthenticated users to /login
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
     const p = window.location.pathname.replace(/\/+$/, "");
@@ -106,8 +106,9 @@ export default component$(() => {
             </Link>
           ))}
           </div>
-          {/* Folder tree — only shown on drive page */}
+          {/* Folder tree - only shown on drive page */}
           {isDrive && <FolderTree />}
+        </nav>
 
         <div class="px-4 py-4 border-t border-slate-800">
           <div class="flex items-center gap-3">
