@@ -12,6 +12,7 @@ export default component$(() => {
   const loc = useLocation();
   const path = loc.url.pathname.replace(/\/+$/, "");
   const quota = useSignal<{ max_storage: number; used_storage: number; usage_percent: number } | null>(null);
+  const maintenance = useSignal<{ enabled: boolean; message: string; scheduled_start?: string; scheduled_end?: string; time_until_maintenance?: number } | null>(null);
 
   const isPublic =
     path === "/login" ||
@@ -37,8 +38,41 @@ export default component$(() => {
     try { const q = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); quota.value = q; } catch {}
   });
 
+  // Poll maintenance status
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/v2/system/maintenance/public-status');
+        const json = await res.json();
+        if (json.success && json.data) {
+          maintenance.value = json.data;
+        }
+      } catch {}
+    };
+    poll();
+    const timer = setInterval(poll, 30000); // 30s polling
+    return () => clearInterval(timer);
+  });
+
   if (isPublic) {
-    return <Slot />;
+    // Show maintenance banner on public pages too
+    return (
+      <>
+        {maintenance.value?.enabled && (
+          <div class="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800 flex items-center justify-center gap-2">
+            <span>🔧</span>
+            <span>{maintenance.value.message || '系统正在维护中'}</span>
+            {maintenance.value.time_until_maintenance !== undefined && maintenance.value.time_until_maintenance > 0 && (
+              <span class="text-amber-600 font-mono">
+                即将于 {Math.ceil(maintenance.value.time_until_maintenance / 60)} 分钟后开始
+              </span>
+            )}
+          </div>
+        )}
+        <Slot />
+      </>
+    );
   }
 
   const isDrive = path.startsWith("/drive");
@@ -160,6 +194,19 @@ export default component$(() => {
             U
           </div>
         </header>
+
+        {/* Maintenance banner */}
+        {maintenance.value?.enabled && (
+          <div class="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800 flex items-center justify-center gap-2 shrink-0">
+            <span>🔧</span>
+            <span>{maintenance.value.message || '系统正在维护中'}</span>
+            {maintenance.value.time_until_maintenance !== undefined && maintenance.value.time_until_maintenance > 0 && (
+              <span class="text-amber-600 font-mono">
+                即将于 {Math.ceil(maintenance.value.time_until_maintenance / 60)} 分钟后开始
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Page content */}
         <main class="flex-1 overflow-auto scrollbar-thin">
