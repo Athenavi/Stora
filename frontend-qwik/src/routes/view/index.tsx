@@ -17,6 +17,9 @@ export const useFileDetail = routeLoader$(async ({ url, request }) => {
 const EDITABLE_EXTS = [".txt", ".md", ".json", ".xml", ".html", ".css", ".js", ".ts", ".py",
   ".java", ".cpp", ".h", ".c", ".rb", ".go", ".rs", ".sh", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log", ".csv", ".sql"];
 
+const OFFICE_EXTS = ["docx", "xlsx", "pptx", "doc", "xls", "ppt", "odt", "ods", "odp"];
+const isOffice = OFFICE_EXTS.includes(ext || "");
+
 export default component$(() => {
   const file = useFileDetail();
   const viewerRef = useSignal();
@@ -105,6 +108,16 @@ export default component$(() => {
         {isEditable && !editing.value && (
           <Button variant="secondary" size="sm" onClick$={startEditing}>
             <Icon name="edit" size={16} /> 编辑
+          </Button>
+        )}
+        {isOffice && (
+          <Button variant="secondary" size="sm" onClick$={async () => {
+            try {
+              const res = await api.get<{ editor_url: string }>(`/wopi/access/${f.id}`);
+              if (res?.editor_url) window.open(res.editor_url, "_blank");
+            } catch { alert("Office 编辑服务不可用"); }
+          }}>
+            <Icon name="file" size={16} /> 在 Office 中编辑
           </Button>
         )}
         {editing.value && (

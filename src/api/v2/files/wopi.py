@@ -26,6 +26,24 @@ router = APIRouter(prefix="/wopi", tags=["wopi"])
 WOPI_TOKEN_EXPIRY = 3600
 
 
+@router.get("/discovery")
+async def wopi_discovery():
+    """WOPI 发现端点 — 供 Collabora Online 自动配置"""
+    base_url = "/api/v2/wopi"
+    return Response(
+        content=f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<wopi-discovery>
+  <net-zone name="internal">
+    <app name="Collabora" favIconUrl="" checkFileInfoUrl="{base_url}/files/{{\"file_id\"}}" />
+  </net-zone>
+</wopi-discovery>""",
+        media_type="text/xml",
+        headers={
+            "X-WOPI-Version": "1.0",
+        },
+    )
+
+
 @router.get("/files/{file_id}")
 async def wopi_check_file_info(
     file_id: int,
