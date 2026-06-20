@@ -159,13 +159,46 @@ export function createServerApi(request?: Request) {
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>('GET', path),
-  post: <T>(path: string, body?: any) => request<T>('POST', path, body),
+  get: <T>(path: string, options?: { headers?: Record<string, string> }) => request<T>('GET', path, undefined, options),
+  post: <T>(path: string, body?: any, options?: { headers?: Record<string, string> }) => request<T>('POST', path, body, options),
   patch: <T>(path: string, body?: any) => request<T>('PATCH', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
 
-  /** 上传文件（FormData） */
+  /** 上传文件（FormData）支持进度回调 */
   upload: <T>(path: string, formData: FormData, onProgress?: (pct: number) => void) => {
+    if (onProgress && typeof XMLHttpRequest !== 'undefined') {
+      return new Promise<T>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', `${BASE_URL}${path}`);
+
+        const token = authToken || loadToken();
+        if (token) {
+          xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            onProgress(Math.round((e.loaded / e.total) * 100));
+          }
+        };
+
+        xhr.onload = () => {
+          try {
+            const json: ApiResponse<T> = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300 && json.success) {
+              resolve(json.data as T);
+            } else {
+              reject(new ApiError(xhr.status, json.message || '上传失败', json.data));
+            }
+          } catch {
+            reject(new ApiError(xhr.status, '响应解析失败'));
+          }
+        };
+
+        xhr.onerror = () => reject(new ApiError(0, '网络错误'));
+        xhr.send(formData);
+      });
+    }
     return request<T>('POST', path, formData, {});
   },
 };

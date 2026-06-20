@@ -33,6 +33,23 @@ export const login = async (username: string, password: string): Promise<LoginRe
   return res;
 };
 
+/** 发送验证码 */
+export const sendCode = (email: string) => {
+  const fd = new FormData();
+  fd.append('email', email);
+  return api.post('/auth/send-code', fd);
+};
+
+/** 验证码登录 */
+export const loginWithCode = async (email: string, code: string): Promise<LoginResponse> => {
+  const fd = new FormData();
+  fd.append('email', email);
+  fd.append('code', code);
+  const res = await api.post<LoginResponse>('/auth/login-with-code', fd);
+  setToken(res.access_token);
+  return res;
+};
+
 /** 注册 */
 export const register = (params: {
   username: string;

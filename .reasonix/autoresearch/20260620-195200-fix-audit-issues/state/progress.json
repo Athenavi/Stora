@@ -1,0 +1,30 @@
+{
+  "items": [
+    {"id": "fix-1", "title": "🔥 分享路由前后端不匹配", "category": "critical", "status": "fixed", "file": "src/api/v2/files/__init__.py", "note": "改为 prefix=/files，匹配前端 /files/shares"},
+    {"id": "fix-2", "title": "🔥 离线下载添加后台Worker", "category": "critical", "status": "fixed", "file": "src/api/v2/files/offline.py", "note": "添加 _do_download 后台任务 + BackgroundTasks"},
+    {"id": "fix-3", "title": "🔥 upload.py file_url路径错误", "category": "critical", "status": "fixed", "file": "src/api/v2/files/upload.py", "note": "所有3处 file_url 改为 commit 后通过 new_file.id 设置"},
+    {"id": "fix-4", "title": "🔥 User.used_storage字段不存在", "category": "critical", "status": "fixed", "file": "src/api/v2/files/upload.py", "note": "改为查询 StorageQuota 模型更新配额"},
+    {"id": "fix-5", "title": "⚠️ 视频流无Range请求支持", "category": "high", "status": "fixed", "file": "src/api/v2/files/preview.py", "note": "添加 range_header 解析, 206 Partial Content 响应"},
+    {"id": "fix-6", "title": "⚠️ sha1MB哈希不匹配", "category": "high", "status": "fixed", "file": "upload-utils.ts", "note": "改为 sha256Full 完整文件哈希, 函数名修正"},
+    {"id": "fix-7", "title": "⚠️ 4组_file_to_dict不一致", "category": "high", "status": "fixed", "file": "items.py/upload.py/search.py/share.py", "note": "统一为包含所有20个字段的完整版本"},
+    {"id": "fix-8", "title": "⚠️ clear_trash不释放存储", "category": "high", "status": "fixed", "file": "src/api/v2/files/items.py", "note": "添加引用计数递减+文件删除+配额更新"},
+    {"id": "fix-9", "title": "⚠️ Grid视图点击行为不一致", "category": "high", "status": "fixed", "file": "drive/index.tsx", "note": "Grid文件点击改为导航到预览而非多选切换"},
+    {"id": "fix-10", "title": "⚠️ 文件夹按钮缺onClick$", "category": "high", "status": "fixed", "file": "drive/index.tsx", "note": "添加重命名/删除事件+import updateFolder/deleteFolder"},
+    {"id": "fix-11", "title": "⚠️ 版本恢复不切换存储文件", "category": "high", "status": "fixed", "file": "src/api/v2/files/versions.py", "note": "添加 shutil.copy2 交换文件内容, setattr file_path"},
+    {"id": "fix-12", "title": "⚠️ 前端搜索未传参到后端API", "category": "high", "status": "fixed", "file": "drive/index.tsx", "note": "routeLoader$ 中解析 search 参数并调用搜索API"},
+    {"id": "fix-13", "title": "📌 WebDAV未注册到路由表", "category": "medium", "status": "fixed", "file": "src/api/v2/__init__.py", "note": "添加到 ROUTE_REGISTRY_V2"},
+    {"id": "fix-14", "title": "📌 搜索框无防抖", "category": "medium", "status": "fixed", "file": "drive/index.tsx", "note": "改为 onKeyDown$ 按 Enter 触发搜索"},
+    {"id": "fix-15", "title": "📌 api.upload onProgress未实现", "category": "medium", "status": "fixed", "file": "api-client.ts", "note": "添加 XMLHttpRequest 版上传+进度回调"},
+    {"id": "fix-16", "title": "📌 登录Content-Type问题", "category": "medium", "status": "not-a-bug", "file": "api-client.ts", "note": "代码正确：FormData 不设 Content-Type, 浏览器自动处理"},
+    {"id": "fix-17", "title": "📌 暗色模式图标相同", "category": "medium", "status": "fixed", "file": "layout.tsx", "note": "亮色→sun图标, 暗色→moon图标"},
+    {"id": "fix-18", "title": "📌 标签无API/UI", "category": "medium", "status": "skipped", "file": "", "note": "需创建完整 API+UI, 另做专题任务"},
+    {"id": "fix-19", "title": "📌 收藏无交互", "category": "medium", "status": "fixed", "file": "favorites/index.tsx + drive/index.tsx", "note": "添加取消收藏按钮+点击预览+Drive页面收藏按钮"},
+    {"id": "fix-20", "title": "💅 空状态描述不一致", "category": "low", "status": "fixed", "file": "trash/index.tsx, favorites/index.tsx", "note": "回收站/收藏页空状态已有处理, 收藏页添加导航按钮"},
+    {"id": "fix-21", "title": "💅 搜索结果不可直接操作", "category": "low", "status": "fixed", "file": "search/index.tsx", "note": "改为 onClick$ 导航到预览页而非跳转Drive根目录"},
+    {"id": "fix-22", "title": "💅 撤销分享无确认", "category": "low", "status": "fixed", "file": "share/index.tsx", "note": "添加 confirm() 弹窗"},
+    {"id": "fix-23", "title": "💅 表格视图响应式", "category": "low", "status": "fixed", "file": "drive/index.tsx, trash/index.tsx", "note": "表格包裹 overflow-x-auto + min-w-[600px]"},
+    {"id": "fix-24", "title": "💅 Breadcrumb无返回上级", "category": "low", "status": "fixed", "file": "drive/index.tsx", "note": "添加 ← 返回 按钮, 定位到父文件夹"},
+    {"id": "fix-25", "title": "📌 版本路由路径修正", "category": "medium", "status": "wontfix", "file": "", "note": "路径不影响功能, 无前端调用, 不做破坏性修改"},
+    {"id": "fix-26", "title": "⚠️ 重命名无重名检查", "category": "high", "status": "fixed", "file": "src/api/v2/files/items.py", "note": "update_file 中添加文件夹+文件名去重检查"}
+  ]
+}

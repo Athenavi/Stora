@@ -143,5 +143,4 @@ Apache 2.0
 
 ---
 
-> **Stora** 由 [FastBlog](https://github.com/Athenavi/fast_blog) v0.5.26.0617 重构而来。
-> 源仓库: [https://github.com/Athenavi/fast_blog/releases/tag/V0.5.26.0617](https://github.com/Athenavi/fast_blog/releases/tag/V0.5.26.0617)
+> **Stora** — 高性能自部署网盘，基于 FastAPI + Qwik 构建。
