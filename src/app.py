@@ -703,6 +703,14 @@ def register_middleware(app: FastAPI):
     except Exception as e:
         print(f"[Maintenance] 加载失败: {e}")
 
+    # 传输速率限制中间件
+    try:
+        from src.middleware.speed_limit import SpeedLimitMiddleware
+        app.add_middleware(SpeedLimitMiddleware)
+        print("[Speed Limit] 已添加传输速率限制中间件")
+    except Exception as e:
+        print(f"[Speed Limit] 加载失败: {e}")
+
 
 # ---------- 错误处理与静态文件 ----------
 def register_error_handlers(app: FastAPI):

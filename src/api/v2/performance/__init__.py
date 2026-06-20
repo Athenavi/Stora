@@ -27,8 +27,10 @@ def _build_router():
     from src.api.v2.performance.query_optimization import router as query_optimization_router
     from src.api.v2.performance.resource_optimization import router as resource_optimization_router
     from src.api.v2.performance.cdn_optimization import router as cdn_optimization_router
+    from src.api.v2.performance.bandwidth import router as bandwidth_router
 
     router.include_router(cache_management_router, prefix="/admin/caches")
+    router.include_router(bandwidth_router, prefix="")
     router.include_router(performance_monitor_router, prefix="/performance-monitor")
     router.include_router(performance_tracking_router, prefix="/performance-tracking")
     router.include_router(css_optimizer_router, prefix="/css-optimizer")
