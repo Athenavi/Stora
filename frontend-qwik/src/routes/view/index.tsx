@@ -169,6 +169,17 @@ export default component$(() => {
         {f.width && f.height && <span>尺寸: {f.width}x{f.height}</span>}
         {editing.value && <span>💡 Ctrl+S 保存</span>}
       </div>
+
+      {/* Image editor overlay */}
+      {showEditor.value && (
+        <ImageEditor
+          fileId={f.id}
+          imageUrl={fileUrl}
+          filename={f.filename}
+          onClose={() => showEditor.value = false}
+          onSaved={() => { location.reload(); }}
+        />
+      )}
     </div>
   );
 });
