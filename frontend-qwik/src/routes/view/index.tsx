@@ -93,58 +93,6 @@ export default component$(() => {
     transcodeLoading.value = false;
   };
 
-  const currentSrc = currentRes.value === "original"
-    ? previewUrl
-    : `/api/v2/files/transcode/${f.id}/stream/${currentRes.value}`;
-
-  if (!file.value) return <div class="p-6 text-slate-400">文件不存在</div>;
-
-  const f = file.value;
-  const fileUrl = `/api/v2/files/download/${f.id}`;
-  const previewUrl = `/api/v2/files/preview/${f.id}/${encodeURIComponent(f.filename)}`;
-  const isVideo = f.file_type === "video";
-  const isAudio = f.file_type === "audio";
-  const ext = f.filename?.split(".").pop()?.toLowerCase();
-  const isEditable = EDITABLE_EXTS.some(e => e.endsWith(ext || ""));
-
-  // eslint-disable-next-line qwik/no-use-visible-task
-  useVisibleTask$(async () => {
-    if (!viewerRef.value || isVideo || isAudio || editing.value) return;
-    try {
-      const { mountViewerFrame } = await import('@flyfish-group/file-viewer-web');
-      mountViewerFrame(viewerRef.value, {
-        url: previewUrl,
-        name: f.filename,
-        options: {
-          theme: 'dark',
-          toolbar: { download: true, print: true },
-        },
-      });
-    } catch (e) {
-      console.error('Failed to mount file viewer:', e);
-    }
-  });
-
-  const startEditing = async () => {
-    try {
-      const resp = await fetch(previewUrl);
-      const text = await resp.text();
-      editContent.value = text;
-      editing.value = true;
-    } catch {}
-  };
-
-  const saveContent = async () => {
-    saving.value = true;
-    try {
-      const fd = new URLSearchParams();
-      fd.set('content', editContent.value);
-      await api.put(`/files/${f.id}/content`, { content: editContent.value });
-      editing.value = false;
-    } catch {}
-    saving.value = false;
-  };
-
   return (
     <div class="flex flex-col h-full bg-slate-900">
       {/* Top bar */}
