@@ -12,6 +12,7 @@ from src.api.v2.files.versions import router as versions_router
 from src.api.v2.files.offline import router as offline_router
 from src.api.v2.files.tags import router as tags_router
 from src.api.v2.files.transcode import router as transcode_router
+from src.api.v2.files.transcribe import router as transcribe_router
 from src.api.v2.files.vault import router as vault_router
 from src.api.v2.share.share import router as share_router
 
@@ -27,6 +28,7 @@ def _build_router():
     router.include_router(offline_router, prefix="/files")
     router.include_router(tags_router, prefix="/files/tags")
     router.include_router(transcode_router, prefix="/files")
+    router.include_router(transcribe_router, prefix="/files")
     router.include_router(vault_router, prefix="/vaults")
     router.include_router(share_router, prefix="/files")
     return router

@@ -29,6 +29,9 @@ export default component$(() => {
   const resolutions = useSignal<{label:string;url:string}[]>([]);
   const currentRes = useSignal("original");
   const transcodeLoading = useSignal(false);
+  const showEditor = useSignal(false);
+  const subtitleAvailable = useSignal(false);
+  const subtitleLoading = useSignal(false);
 
   if (!file.value) return <div class="p-6 text-slate-400">文件不存在</div>;
 
@@ -68,6 +71,18 @@ export default component$(() => {
         options: { theme: 'dark', toolbar: { download: true, print: true } },
       });
     } catch (e) { console.error('Failed to mount file viewer:', e); }
+  });
+
+  // Check subtitle availability
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(async () => {
+    if (!isVideo) return;
+    try {
+      const st = await api.get<any>(`/files/transcribe/${f.id}/status`);
+      if (st.available && st.status === "completed") {
+        subtitleAvailable.value = true;
+      }
+    } catch {}
   });
 
   const startEditing = async () => {
@@ -120,6 +135,48 @@ export default component$(() => {
             <Icon name="file" size={16} /> 在 Office 中编辑
           </Button>
         )}
+        {f.file_type === "image" && (
+          <Button variant="secondary" size="sm" onClick$={() => showEditor.value = true}>
+            <Icon name="image" size={16} /> 编辑图片
+          </Button>
+        )}
+        {isVideo && subtitleAvailable.value && (
+          <Button variant="secondary" size="sm" onClick$={() => {
+            const video = document.querySelector('video');
+            const track = video?.querySelector('track');
+            if (track) track.track.mode = track.track.mode === 'showing' ? 'hidden' : 'showing';
+          }}>
+            <Icon name="file" size={16} /> 字幕
+          </Button>
+        )}
+        {isVideo && !subtitleAvailable.value && (
+          <Button variant="secondary" size="sm" loading={subtitleLoading.value} onClick$={async () => {
+            subtitleLoading.value = true;
+            try {
+              await api.post(`/files/transcribe/${f.id}`);
+              const poll = setInterval(async () => {
+                try {
+                  const st = await api.get<any>(`/files/transcribe/${f.id}/status`);
+                  if (st.status === "completed") {
+                    subtitleAvailable.value = true;
+                    subtitleLoading.value = false;
+                    clearInterval(poll);
+                    location.reload();
+                  } else if (st.status === "failed") {
+                    clearInterval(poll);
+                    subtitleLoading.value = false;
+                    alert("字幕生成失败: " + (st.error_message || "未知错误"));
+                  }
+                } catch { clearInterval(poll); subtitleLoading.value = false; }
+              }, 3000);
+            } catch (e: any) {
+              subtitleLoading.value = false;
+              alert(e.message || "创建转录任务失败");
+            }
+          }}>
+            <Icon name="file" size={16} /> 生成字幕
+          </Button>
+        )}
         {editing.value && (
           <>
             <Button variant="secondary" size="sm" onClick$={saveContent} loading={saving.value}>
@@ -140,6 +197,7 @@ export default component$(() => {
         <div class="flex-1 flex items-center justify-center bg-black">
           <video controls autoplay class="max-w-full max-h-full" preload="metadata">
             <source src={previewUrl} type={f.mime_type || "video/mp4"} />
+            {subtitleAvailable.value && <track kind="subtitles" src={`/api/v2/files/transcribe/${f.id}/subtitle`} srclang="zh" label="中文" default />}
           </video>
         </div>
       ) : isAudio ? (
