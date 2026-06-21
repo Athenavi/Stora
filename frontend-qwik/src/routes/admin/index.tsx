@@ -88,24 +88,24 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      <div class="px-6 py-4 border-b border-slate-200 bg-white">
+      <div class="px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
         <h1 class="text-lg font-semibold text-slate-900">管理面板</h1>
         <p class="text-sm text-slate-500 mt-0.5">系统管理和监控</p>
       </div>
 
-      {/* Tabs */}
-      <div class="flex gap-1 px-6 py-2 border-b border-slate-200 bg-white/80 shrink-0 overflow-x-auto">
+      {/* Tabs — scrollable on mobile */}
+      <div class="flex gap-1 px-4 sm:px-6 py-2 border-b border-slate-200 bg-white/80 shrink-0 overflow-x-auto scrollbar-thin">
         {tabs.map(t => (
           <button key={t.id} onClick$={() => activeTab.value = t.id}
-            class={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap
+            class={`flex items-center gap-2 px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap touch-target
               ${activeTab.value === t.id ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>
             <Icon name={t.icon} size={16} />
-            {t.label}
+            <span class="hidden xs:inline sm:inline">{t.label}</span>
           </button>
         ))}
       </div>
 
-      <div class="flex-1 overflow-auto p-6">
+      <div class="flex-1 overflow-auto p-4 sm:p-6">
         {activeTab.value === "overview" && <OverviewTab />}
         {activeTab.value === "users" && <UsersTab />}
         {activeTab.value === "audit" && <AuditTab />}
@@ -127,7 +127,7 @@ function OverviewTab() {
 
   return (
     <div class="space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-6">
         <StatCard label="总用户" value={String(s.total_users)} icon="user" color="bg-indigo-50 text-indigo-600" />
         <StatCard label="总文件" value={String(s.total_files)} icon="folder" color="bg-emerald-50 text-emerald-600" />
         <StatCard label="分享链接" value={String(s.total_shares)} icon="share" color="bg-amber-50 text-amber-600" />
@@ -135,7 +135,7 @@ function OverviewTab() {
       </div>
 
       {/* Storage bar */}
-      <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
         <h3 class="text-sm font-medium text-slate-700 mb-3">存储总览</h3>
         <div class="h-3 bg-slate-100 rounded-full overflow-hidden">
           <div class="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${s.total_storage > 0 ? Math.min((s.used_storage / s.total_storage) * 100, 100) : 0}%` }} />
@@ -151,14 +151,14 @@ function OverviewTab() {
 
 function StatCard({ label, value, icon, color }: { label: string; value: string; icon: string; color: string }) {
   return (
-    <div class="bg-white rounded-xl border border-slate-200 p-6">
-      <div class="flex items-center gap-3 mb-3">
-        <div class={`w-10 h-10 rounded-xl ${color} flex items-center justify-center`}>
-          <Icon name={icon as any} size={20} />
+    <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
+      <div class="flex items-center gap-3 mb-2 sm:mb-3">
+        <div class={`w-8 h-8 sm:w-10 sm:h-10 rounded-xl ${color} flex items-center justify-center`}>
+          <Icon name={icon as any} size={16} />
         </div>
       </div>
-      <div class="text-2xl font-bold text-slate-900">{value}</div>
-      <div class="text-sm text-slate-500 mt-1">{label}</div>
+      <div class="text-lg sm:text-2xl font-bold text-slate-900 truncate">{value}</div>
+      <div class="text-xs sm:text-sm text-slate-500 mt-1">{label}</div>
     </div>
   );
 }
@@ -172,6 +172,7 @@ function UsersTab() {
   const editActive = useSignal(false);
   const editQuota = useSignal("");
   const saving = useSignal(false);
+  const expandedId = useSignal(0);
 
   const doToggleActive = async (id: number, active: boolean) => {
     saving.value = true;
@@ -183,7 +184,7 @@ function UsersTab() {
   };
 
   const doSetQuota = async (id: number) => {
-    const bytes = parseInt(editQuota.value) * 1073741824; // GB to bytes
+    const bytes = parseInt(editQuota.value) * 1073741824;
     if (!bytes) return;
     saving.value = true;
     try {
@@ -199,65 +200,110 @@ function UsersTab() {
       {users.value.length === 0 ? (
         <div class="p-8 text-center text-slate-400 text-sm">暂无用户数据</div>
       ) : (
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[700px]">
-            <thead>
-              <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/95">
-                <th class="px-4 py-3">ID</th>
-                <th class="px-4 py-3">用户名</th>
-                <th class="px-4 py-3">邮箱</th>
-                <th class="px-4 py-3">状态</th>
-                <th class="px-4 py-3">角色</th>
-                <th class="px-4 py-3">已用/配额</th>
-                <th class="px-4 py-3">注册时间</th>
-                <th class="px-4 py-3 w-32">操作</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-50">
-              {users.value.map(u => (
-                <tr key={u.id} class="text-sm hover:bg-slate-50 transition-colors">
-                  <td class="px-4 py-3 text-slate-500">{u.id}</td>
-                  <td class="px-4 py-3">
-                    <span class="font-medium text-slate-700">{u.username || "—"}</span>
-                  </td>
-                  <td class="px-4 py-3 text-slate-500">{u.email || "—"}</td>
-                  <td class="px-4 py-3">
-                    <Badge variant={u.is_active ? "success" : "danger"}>{u.is_active ? "活跃" : "禁用"}</Badge>
-                  </td>
-                  <td class="px-4 py-3">
-                    {u.is_superuser ? <Badge variant="warning">管理员</Badge> : u.is_staff ? <Badge>员工</Badge> : <span class="text-slate-400">用户</span>}
-                  </td>
-                  <td class="px-4 py-3 text-slate-500 text-xs">
-                    <div class="flex items-center gap-2">
-                      <span>{fmtSize(u.used_storage)}</span>
-                      <span class="text-slate-300">/</span>
-                      {editId.value === u.id ? (
-                        <div class="flex items-center gap-1">
-                          <input type="number" bind:value={editQuota} class="w-20 px-2 py-1 text-xs rounded border border-slate-300" placeholder="GB" />
-                          <button onClick$={() => doSetQuota(u.id)} disabled={saving.value} class="text-indigo-600 hover:text-indigo-800 text-xs">保存</button>
-                          <button onClick$={() => editId.value = 0} class="text-slate-400 hover:text-slate-600 text-xs">取消</button>
-                        </div>
-                      ) : (
-                        <span>{fmtSize(u.total_storage)}</span>
-                      )}
-                    </div>
-                  </td>
-                  <td class="px-4 py-3 text-xs text-slate-400">{fmtDate(u.date_joined)}</td>
-                  <td class="px-4 py-3">
-                    <div class="flex gap-2">
-                      <button onClick$={() => doToggleActive(u.id, !u.is_active)} disabled={saving.value}
-                        class={`text-xs ${u.is_active ? 'text-red-600 hover:text-red-800' : 'text-green-600 hover:text-green-800'}`}>
-                        {u.is_active ? '禁用' : '启用'}
-                      </button>
-                      <button onClick$={() => { editId.value = u.id; editQuota.value = String(u.total_storage / 1073741824); }}
-                        class="text-xs text-indigo-600 hover:text-indigo-800">调整配额</button>
-                    </div>
-                  </td>
+        <>
+          {/* Desktop table */}
+          <div class="hidden sm:block overflow-x-auto">
+            <table class="w-full min-w-[700px]">
+              <thead>
+                <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/95">
+                  <th class="px-4 py-3">ID</th>
+                  <th class="px-4 py-3">用户名</th>
+                  <th class="px-4 py-3">邮箱</th>
+                  <th class="px-4 py-3">状态</th>
+                  <th class="px-4 py-3">角色</th>
+                  <th class="px-4 py-3">已用/配额</th>
+                  <th class="px-4 py-3">注册时间</th>
+                  <th class="px-4 py-3 w-32">操作</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody class="divide-y divide-slate-50">
+                {users.value.map(u => (
+                  <tr key={u.id} class="text-sm hover:bg-slate-50 transition-colors">
+                    <td class="px-4 py-3 text-slate-500">{u.id}</td>
+                    <td class="px-4 py-3">
+                      <span class="font-medium text-slate-700">{u.username || "—"}</span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-500">{u.email || "—"}</td>
+                    <td class="px-4 py-3">
+                      <Badge variant={u.is_active ? "success" : "danger"}>{u.is_active ? "活跃" : "禁用"}</Badge>
+                    </td>
+                    <td class="px-4 py-3">
+                      {u.is_superuser ? <Badge variant="warning">管理员</Badge> : u.is_staff ? <Badge>员工</Badge> : <span class="text-slate-400">用户</span>}
+                    </td>
+                    <td class="px-4 py-3 text-slate-500 text-xs">
+                      <div class="flex items-center gap-2">
+                        <span>{fmtSize(u.used_storage)}</span>
+                        <span class="text-slate-300">/</span>
+                        {editId.value === u.id ? (
+                          <div class="flex items-center gap-1">
+                            <input type="number" bind:value={editQuota} class="w-20 px-2 py-1 text-xs rounded border border-slate-300" placeholder="GB" />
+                            <button onClick$={() => doSetQuota(u.id)} disabled={saving.value} class="text-indigo-600 hover:text-indigo-800 text-xs touch-target">保存</button>
+                            <button onClick$={() => editId.value = 0} class="text-slate-400 hover:text-slate-600 text-xs touch-target">取消</button>
+                          </div>
+                        ) : (
+                          <span>{fmtSize(u.total_storage)}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 text-xs text-slate-400">{fmtDate(u.date_joined)}</td>
+                    <td class="px-4 py-3">
+                      <div class="flex gap-2">
+                        <button onClick$={() => doToggleActive(u.id, !u.is_active)} disabled={saving.value}
+                          class={`text-xs touch-target px-2 py-1 rounded ${u.is_active ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}>
+                          {u.is_active ? '禁用' : '启用'}
+                        </button>
+                        <button onClick$={() => { editId.value = u.id; editQuota.value = String(u.total_storage / 1073741824); }}
+                          class="text-xs text-indigo-600 hover:text-indigo-800 touch-target px-2 py-1 rounded hover:bg-indigo-50">调整配额</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card list */}
+          <div class="sm:hidden space-y-3 p-4">
+            {users.value.map(u => (
+              <div key={u.id} class="border border-slate-200 rounded-xl overflow-hidden">
+                <div class="flex items-center justify-between px-4 py-3 bg-slate-50/50">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-400">#{u.id}</span>
+                    <span class="text-sm font-medium text-slate-700">{u.username || "—"}</span>
+                  </div>
+                  <Badge variant={u.is_active ? "success" : "danger"}>{u.is_active ? "活跃" : "禁用"}</Badge>
+                </div>
+                <div class="px-4 py-3 space-y-2 text-sm">
+                  <div class="flex justify-between">
+                    <span class="text-slate-500">邮箱</span>
+                    <span class="text-slate-700">{u.email || "—"}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-500">角色</span>
+                    <span>{u.is_superuser ? "管理员" : u.is_staff ? "员工" : "用户"}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-500">存储</span>
+                    <span class="text-xs">{fmtSize(u.used_storage)} / {fmtSize(u.total_storage)}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-slate-500">注册</span>
+                    <span class="text-xs">{fmtDate(u.date_joined)}</span>
+                  </div>
+                </div>
+                <div class="flex border-t border-slate-100">
+                  <button onClick$={() => doToggleActive(u.id, !u.is_active)} disabled={saving.value}
+                    class={`flex-1 touch-target py-3 text-xs font-medium text-center ${u.is_active ? 'text-red-600' : 'text-green-600'}`}>
+                    {u.is_active ? '禁用' : '启用'}
+                  </button>
+                  <div class="w-px bg-slate-100" />
+                  <button onClick$={() => { editId.value = u.id; editQuota.value = String(u.total_storage / 1073741824); }}
+                    class="flex-1 touch-target py-3 text-xs font-medium text-indigo-600 text-center">调整配额</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -286,36 +332,59 @@ function AuditTab() {
       {logs.value.length === 0 ? (
         <div class="p-8 text-center text-slate-400 text-sm">暂无审计日志</div>
       ) : (
-        <div class="overflow-x-auto">
-          <table class="w-full min-w-[600px]">
-            <thead>
-              <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/95">
-                <th class="px-4 py-3">时间</th>
-                <th class="px-4 py-3">用户ID</th>
-                <th class="px-4 py-3">操作</th>
-                <th class="px-4 py-3">资源</th>
-                <th class="px-4 py-3">详情</th>
-                <th class="px-4 py-3">IP</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-slate-50">
-              {logs.value.map(l => (
-                <tr key={l.id} class="text-sm hover:bg-slate-50 transition-colors">
-                  <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(l.created_at)}</td>
-                  <td class="px-4 py-3 text-slate-500">#{l.user_id}</td>
-                  <td class="px-4 py-3">
-                    <span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs">
-                      {actions[l.action] || l.action}
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 text-slate-600 text-xs max-w-[150px] truncate">{l.resource || "—"}</td>
-                  <td class="px-4 py-3 text-slate-500 text-xs max-w-[200px] truncate">{l.detail || "—"}</td>
-                  <td class="px-4 py-3 text-xs text-slate-400 font-mono">{l.ip_address || "—"}</td>
+        <>
+          {/* Desktop table */}
+          <div class="hidden sm:block overflow-x-auto">
+            <table class="w-full min-w-[600px]">
+              <thead>
+                <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 bg-slate-50/95">
+                  <th class="px-4 py-3">时间</th>
+                  <th class="px-4 py-3">用户ID</th>
+                  <th class="px-4 py-3">操作</th>
+                  <th class="px-4 py-3">资源</th>
+                  <th class="px-4 py-3">详情</th>
+                  <th class="px-4 py-3">IP</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody class="divide-y divide-slate-50">
+                {logs.value.map(l => (
+                  <tr key={l.id} class="text-sm hover:bg-slate-50 transition-colors">
+                    <td class="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{fmtDate(l.created_at)}</td>
+                    <td class="px-4 py-3 text-slate-500">#{l.user_id}</td>
+                    <td class="px-4 py-3">
+                      <span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs">
+                        {actions[l.action] || l.action}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-600 text-xs max-w-[150px] truncate">{l.resource || "—"}</td>
+                    <td class="px-4 py-3 text-slate-500 text-xs max-w-[200px] truncate">{l.detail || "—"}</td>
+                    <td class="px-4 py-3 text-xs text-slate-400 font-mono">{l.ip_address || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile card list */}
+          <div class="sm:hidden space-y-2 p-4">
+            {logs.value.map(l => (
+              <div key={l.id} class="border border-slate-100 rounded-xl p-4 text-sm space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs text-slate-400">{fmtDate(l.created_at)}</span>
+                  <span class="text-xs text-slate-500">#{l.user_id}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-xs">
+                    {actions[l.action] || l.action}
+                  </span>
+                  {l.resource && <span class="text-xs text-slate-500 truncate">{l.resource}</span>}
+                </div>
+                {l.detail && <p class="text-xs text-slate-500">{l.detail}</p>}
+                {l.ip_address && <p class="text-xs text-slate-400 font-mono">{l.ip_address}</p>}
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -347,14 +416,14 @@ function SettingsTab() {
 
   return (
     <div class="space-y-6">
-      <div class="bg-white rounded-xl border border-slate-200 p-6">
+      <div class="bg-white rounded-xl border border-slate-200 p-4 sm:p-6">
         <h3 class="text-sm font-medium text-slate-700 mb-4">系统设置</h3>
         <div class="space-y-3 mb-4">
           {settings.value.map(s => (
             <div key={s.key} class="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-              <div>
-                <span class="text-sm font-mono text-slate-700">{s.key}</span>
-                <p class="text-xs text-slate-400 mt-0.5">{s.value}</p>
+              <div class="min-w-0">
+                <span class="text-sm font-mono text-slate-700 truncate block">{s.key}</span>
+                <p class="text-xs text-slate-400 mt-0.5 truncate">{s.value}</p>
               </div>
             </div>
           ))}
@@ -364,15 +433,15 @@ function SettingsTab() {
         <div class="border-t border-slate-100 pt-4">
           <h4 class="text-sm font-medium text-slate-700 mb-3">添加/更新设置</h4>
           {message.value && <p class="text-xs text-green-600 mb-2">{message.value}</p>}
-          <div class="flex gap-3 items-start">
+          <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
             <div class="flex-1">
               <Input bind:value={key} placeholder="设置键 (如 site_name)" label="键" />
             </div>
             <div class="flex-1">
               <Input bind:value={value} placeholder="设置值" label="值" />
             </div>
-            <div class="pt-6">
-              <Button size="sm" onClick$={doAdd} loading={saving.value}>保存</Button>
+            <div class="sm:pt-6">
+              <Button size="sm" onClick$={doAdd} loading={saving.value} class="w-full sm:w-auto">保存</Button>
             </div>
           </div>
         </div>

@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, type FileItem, type Folder } from "~/lib/api";
+import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, api, type FileItem, type Folder } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton, Input } from "~/components/ui/Button";
 
@@ -64,23 +64,40 @@ export default component$(() => {
   const renameId = useSignal(0);
   const renameVal = useSignal("");
   const searchHistory = useSignal<any[]>([]);
-  // Context menu state
+  // Context menu state (desktop floating + mobile action sheet)
   const ctxItem = useSignal<{ id: number; type: "file" | "folder"; name: string; fileType?: string } | null>(null);
   const ctxPos = useSignal({ x: 0, y: 0 });
+  const showActionSheet = useSignal(false);
 
   const doRename = (item: { id: number; type: string; name: string }) => {
     renameId.value = item.id;
     renameVal.value = item.name;
   };
 
+  const openCtx = (item: any, e: any) => {
+    if (window.innerWidth < 768) {
+      ctxItem.value = item;
+      showActionSheet.value = true;
+    } else {
+      ctxPos.value = { x: e.clientX, y: e.clientY };
+      ctxItem.value = item;
+    }
+  };
+
+  // Listen for FAB click from layout
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(() => {
+    const handler = () => { showUpload.value = !showUpload.value; };
+    window.addEventListener('stora:fab-click', handler);
+    return () => window.removeEventListener('stora:fab-click', handler);
+  });
+
   // Keyboard shortcuts (P1.10)
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
     const handler = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in inputs
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selIds.value.length > 0 && confirm(`确认删除 ${selIds.value.length} 项？`)) {
           selIds.value.forEach(id => deleteFile(id).catch(() => {}));
@@ -101,16 +118,17 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      {/* Toolbar */}
-      <div class="flex items-center gap-3 px-6 py-3 border-b border-slate-200 bg-white shrink-0 flex-wrap">
-        <div class="flex items-center gap-2 flex-1">
-          <div class="relative max-w-sm">
-            <Icon name="search" size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+      {/* Toolbar — responsive: icons on mobile, labels on desktop */}
+      <div class="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-3 border-b border-slate-200 bg-white shrink-0 flex-wrap min-h-[56px]">
+        {/* Search — collapsible on mobile */}
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+          <div class="relative flex-1 max-w-sm">
+            <Icon name="search" size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
             <input type="text" placeholder="搜索文件名..."
               onKeyDown$={(e: any) => { if (e.key === "Enter" && e.target.value) nav(`/drive?search=${e.target.value}`); }}
               onFocus$={async () => { try { const h = await api.get('/files/search/history?limit=5'); if (h?.length) searchHistory.value = h; } catch {} }}
               onBlur$={() => setTimeout(() => searchHistory.value = [], 200)}
-              class="w-64 pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white placeholder:text-slate-400 transition-all" />
+              class="w-full sm:w-64 pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white placeholder:text-slate-400 transition-all" />
             {searchHistory.value.length > 0 && (
               <div class="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 py-1">
                 {searchHistory.value.map((h: any) => (
@@ -126,49 +144,64 @@ export default component$(() => {
           </div>
         </div>
 
-        <div class="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+        {/* View mode toggle */}
+        <div class="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 shrink-0">
           <button onClick$={() => viewMode.value = "list"}
             class={`p-1.5 rounded-md ${viewMode.value === "list" ? "bg-white shadow-sm text-indigo-600" : "text-slate-400"}`}><Icon name="list" size={18} /></button>
           <button onClick$={() => viewMode.value = "grid"}
             class={`p-1.5 rounded-md ${viewMode.value === "grid" ? "bg-white shadow-sm text-indigo-600" : "text-slate-400"}`}><Icon name="grid" size={18} /></button>
         </div>
 
-        <Button variant="primary" size="sm" onClick$={() => showUpload.value = !showUpload.value}>
+        {/* Desktop action buttons — hidden on mobile (FAB takes over) */}
+        <Button variant="primary" size="sm" onClick$={() => showUpload.value = !showUpload.value} class="hidden sm:inline-flex">
           <Icon name="upload" size={16} /> 上传
         </Button>
-        <Button variant="secondary" size="sm" onClick$={() => { showNewFolder.value = true; newFolderName.value = ""; }}>
+        <Button variant="secondary" size="sm" onClick$={() => { showNewFolder.value = true; newFolderName.value = ""; }} class="hidden sm:inline-flex">
           <Icon name="plus" size={16} /> 新建文件夹
         </Button>
 
-        {/* Batch operations */}
-        {selIds.value.length > 0 && (
-          <div class="flex items-center gap-2 ml-2 pl-3 border-l border-slate-200">
-            <span class="text-xs text-slate-500">{selIds.value.length} 项</span>
-            <Button variant="ghost" size="sm" onClick$={async () => {
-              const ids = [...selIds.value]; selIds.value = [];
-              try { await moveFiles(ids, folderId); refresh(); } catch {}
-            }}>移动</Button>
-            <Button variant="ghost" size="sm" onClick$={async () => {
-              // Batch download as ZIP
-              if (selIds.value.length > 0) {
-                batchDownload([...selIds.value]);
-              }
-            }}>下载</Button>
-            <Button variant="ghost" size="sm" onClick$={async () => {
-              if (selIds.value.length > 0) nav(`/view?id=${selIds.value[0]}`);
-            }}>分享</Button>
-            <Button variant="ghost" size="sm" class="!text-red-500" onClick$={async () => {
-              if (!confirm("确认删除？")) return;
-              for (const id of selIds.value) await deleteFile(id).catch(() => {});
-              selIds.value = []; refresh();
-            }}>删除</Button>
-          </div>
-        )}
+        {/* Mobile compact actions */}
+        <button onClick$={() => showUpload.value = !showUpload.value} class="sm:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="上传">
+          <Icon name="upload" size={20} />
+        </button>
+        <button onClick$={() => { showNewFolder.value = true; newFolderName.value = ""; }} class="sm:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="新建文件夹">
+          <Icon name="plus" size={20} />
+        </button>
       </div>
 
-      {/* Upload zone (P0.5: integrated drag-drop) */}
+      {/* Mobile bottom action bar for batch operations */}
+      {selIds.value.length > 0 && (
+        <div class="bottom-action-bar lg:hidden">
+          <span class="text-sm font-medium text-slate-700 shrink-0">{selIds.value.length} 项</span>
+          <div class="flex-1" />
+          <button onClick$={async () => { const ids = [...selIds.value]; selIds.value = []; try { await moveFiles(ids, folderId); refresh(); } catch {} }}
+            class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg">移动</button>
+          <button onClick$={async () => { if (selIds.value.length > 0) batchDownload([...selIds.value]); }}
+            class="touch-target px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg">下载</button>
+          <button onClick$={async () => { if (!confirm("确认删除？")) return; for (const id of selIds.value) await deleteFile(id).catch(() => {}); selIds.value = []; refresh(); }}
+            class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg">删除</button>
+        </div>
+      )}
+
+      {/* Desktop batch operations — inline */}
+      {selIds.value.length > 0 && (
+        <div class="hidden lg:flex items-center gap-2 px-6 py-2 bg-indigo-50/80 border-b border-indigo-100 shrink-0 animate-slide-down">
+          <span class="text-sm font-medium text-indigo-700">{selIds.value.length} 项已选</span>
+          <div class="flex-1" />
+          <button onClick$={async () => { const ids = [...selIds.value]; selIds.value = []; try { await moveFiles(ids, folderId); refresh(); } catch {} }}
+            class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">移动</button>
+          <button onClick$={async () => { if (selIds.value.length > 0) batchDownload([...selIds.value]); }}
+            class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">下载</button>
+          <button onClick$={async () => { if (selIds.value.length > 0) nav(`/view?id=${selIds.value[0]}`); }}
+            class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">分享</button>
+          <button onClick$={async () => { if (!confirm("确认删除？")) return; for (const id of selIds.value) await deleteFile(id).catch(() => {}); selIds.value = []; refresh(); }}
+            class="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 rounded-lg transition-colors">删除</button>
+        </div>
+      )}
+
+      {/* Upload zone */}
       {showUpload.value && (
-        <div class="px-6 py-3 border-b bg-white"
+        <div class="px-4 sm:px-6 py-3 border-b bg-white"
           preventdefault:dragover preventdefault:drop
           onDragOver$={() => document.getElementById("drop-hint")!.classList.remove("hidden")}
           onDragLeave$={() => document.getElementById("drop-hint")!.classList.add("hidden")}
@@ -190,26 +223,29 @@ export default component$(() => {
       )}
 
       {/* Breadcrumb */}
-      <div class="flex items-center gap-1.5 px-6 py-2.5 text-sm border-b border-slate-100 bg-white/80 shrink-0">
+      <div class="flex items-center gap-1.5 px-4 sm:px-6 py-2.5 text-sm border-b border-slate-100 bg-white/80 shrink-0 overflow-x-auto">
         {folderId && (
           <button onClick$={() => {
             const idx = (data.value?.path || []).findIndex(p => p.id === folderId);
             const parent = idx > 0 ? data.value?.path[idx - 1] : null;
             nav(parent ? `/drive?folder=${parent.id}` : "/drive");
-          }} class="flex items-center gap-1 px-2 py-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors mr-1">
+          }} class="flex items-center gap-1 px-2 py-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors mr-1 shrink-0 touch-target">
             <Icon name="chevronLeft" size={14} /> 返回
           </button>
         )}
-        <a href="/drive" class="text-slate-500 hover:text-indigo-600 font-medium">我的文件</a>
+        <a href="/drive" class="text-slate-500 hover:text-indigo-600 font-medium shrink-0">我的文件</a>
         {data.value?.path?.slice(1).map(p => (
-          <><Icon name="chevronRight" size={14} class="text-slate-300" /><a key={p.id} href={`/drive?folder=${p.id}`} class="text-slate-500 hover:text-indigo-600">{p.name}</a></>
+          <span class="flex items-center gap-1.5 min-w-0" key={p.id}>
+            <Icon name="chevronRight" size={14} class="text-slate-300 shrink-0" />
+            <a href={`/drive?folder=${p.id}`} class="text-slate-500 hover:text-indigo-600 truncate">{p.name}</a>
+          </span>
         ))}
-        {allItems.length > 0 && <><Icon name="chevronRight" size={14} class="text-slate-300" /><span class="text-slate-400">{allItems.length} 项</span></>}
+        {allItems.length > 0 && <><Icon name="chevronRight" size={14} class="text-slate-300 shrink-0" /><span class="text-slate-400 shrink-0">{allItems.length} 项</span></>}
       </div>
 
-      {/* New Folder Dialog (P0.3) */}
+      {/* New Folder Dialog */}
       {showNewFolder.value && (
-        <div class="px-6 py-3 border-b bg-white flex items-center gap-3">
+        <div class="px-4 sm:px-6 py-3 border-b bg-white flex items-center gap-3">
           <input type="text" bind:value={newFolderName} placeholder="文件夹名称"
             class="flex-1 max-w-xs px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             onKeyDown$={async (e: any) => {
@@ -224,9 +260,9 @@ export default component$(() => {
         </div>
       )}
 
-      {/* Rename Dialog (P0.2) */}
+      {/* Rename Dialog */}
       {renameId.value > 0 && (
-        <div class="px-6 py-3 border-b bg-white flex items-center gap-3">
+        <div class="px-4 sm:px-6 py-3 border-b bg-white flex items-center gap-3">
           <input type="text" bind:value={renameVal} placeholder="新文件名"
             class="flex-1 max-w-xs px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             onKeyDown$={async (e: any) => {
@@ -242,33 +278,34 @@ export default component$(() => {
       )}
 
       {/* Filter tabs */}
-      <div class="flex gap-1 px-6 py-2 border-b border-slate-100 bg-white/60 shrink-0 overflow-x-auto">
+      <div class="flex gap-1 px-4 sm:px-6 py-2 border-b border-slate-100 bg-white/60 shrink-0 overflow-x-auto scrollbar-thin">
         {["all", "image", "video", "audio", "document", "archive"].map(ft => (
           <button key={ft} onClick$={() => { const p = folderId ? `?folder=${folderId}${ft !== "all" ? `&type=${ft}` : ""}` : `${ft !== "all" ? `?type=${ft}` : ""}`; nav(`/drive${p}`); }}
-            class={`px-3 py-1 text-xs font-medium rounded-full transition-colors whitespace-nowrap ${(!loc.url.searchParams.get("type") && ft === "all") || loc.url.searchParams.get("type") === ft ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:text-slate-700 hover:bg-slate-100"}`}>
-            {{ all: "全部", image: "🖼 图片", video: "🎬 视频", audio: "🎵 音频", document: "📄 文档", archive: "📦 压缩包" }[ft]}
+            class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors whitespace-nowrap touch-target ${(!loc.url.searchParams.get("type") && ft === "all") || loc.url.searchParams.get("type") === ft ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:text-slate-700 hover:bg-slate-100"}`}>
+            {{ all: "全部", image: "🖼 图片", video: "🎬 视频", audio: "🎵 音频", document: "📄 文档", archive: "📦 压缩包", other: "📎 其他" }[ft] || ft}
           </button>
         ))}
       </div>
 
       {/* Content */}
-      <div class="flex-1 overflow-auto scrollbar-thin">
+      <div class={`flex-1 overflow-auto scrollbar-thin ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
         {!data.value ? (
           <div class="p-6 space-y-3">{[1,2,3,4,5].map(i => <div key={i} class="flex items-center gap-4 px-4 py-3"><Skeleton class="w-5 h-5 rounded" /><Skeleton class="w-10 h-10 rounded-lg" /><div class="flex-1 space-y-2"><Skeleton class="h-4 w-48" /><Skeleton class="h-3 w-24" /></div></div>)}</div>
         ) : allItems.length === 0 ? (
-          <div class="flex flex-col items-center justify-center h-full text-slate-400">
+          <div class="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
             <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">📂</div>
             <h3 class="text-lg font-semibold text-slate-500 mb-1">空目录</h3>
             <p class="text-sm text-slate-400 mb-6">拖拽文件到此处，或点击上传按钮</p>
-            <Button variant="primary" onClick$={() => showUpload.value = true}><Icon name="upload" size={16} /> 上传文件</Button>
+            <Button variant="primary" class="hidden sm:inline-flex" onClick$={() => showUpload.value = true}><Icon name="upload" size={16} /> 上传文件</Button>
+            <button onClick$={() => showUpload.value = true} class="sm:hidden touch-target px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-medium">上传文件</button>
           </div>
         ) : viewMode.value === "list" ? <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} folderId={folderId}
-          onContextItem$={(item: any) => { ctxPos.value = { x: item.clientX, y: item.clientY }; ctxItem.value = item; }} /> : <GridView items={allItems} selIds={selIds} nav={nav} folderId={folderId}
-          onContextItem$={(item: any) => { ctxPos.value = { x: item.clientX, y: item.clientY }; ctxItem.value = item; }} />}
+          onContextItem$={(item: any, e: any) => openCtx(item, e)} /> : <GridView items={allItems} selIds={selIds} nav={nav} folderId={folderId}
+          onContextItem$={(item: any, e: any) => openCtx(item, e)} />}
       </div>
 
-      {/* Context menu overlay */}
-      {ctxItem.value && (
+      {/* Desktop context menu overlay */}
+      {ctxItem.value && !showActionSheet.value && (
         <>
           <div class="fixed inset-0 z-50" onClick$={() => ctxItem.value = null} onContextMenu$={(e: any) => { e.preventDefault(); ctxItem.value = null; }} />
           <div class="fixed z-50 min-w-[180px] bg-white rounded-xl shadow-lg border border-slate-200 py-1.5"
@@ -276,36 +313,75 @@ export default component$(() => {
             {ctxItem.value.type === "file" ? (
               <>
                 <button onClick$={() => { nav(`/view?id=${ctxItem.value!.id}`); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50">👁 预览</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">👁 预览</button>
                 <button onClick$={() => { window.open(`/api/v2/files/download/${ctxItem.value!.id}`, "_blank"); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50">⬇ 下载</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">⬇ 下载</button>
                 <div class="h-px bg-slate-100 my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50">✏ 重命名</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">✏ 重命名</button>
                 <button onClick$={async () => {
                   const id = ctxItem.value!.id;
                   ctxItem.value = null;
                   updateFile(id, { is_favorite: true }).catch(() => {});
-                }} class="w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50">⭐ 收藏</button>
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">⭐ 收藏</button>
                 <div class="h-px bg-slate-100 my-1" />
                 <button onClick$={async () => {
                   if (confirm("删除?")) { await deleteFile(ctxItem.value!.id).catch(() => {}); location.reload(); }
                   ctxItem.value = null;
-                }} class="w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50">🗑 删除</button>
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50 touch-target">🗑 删除</button>
               </>
             ) : (
               <>
                 <button onClick$={() => { nav(`/drive?folder=${ctxItem.value!.id}`); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50">📂 打开</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">📂 打开</button>
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50">✏ 重命名</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">✏ 重命名</button>
                 <div class="h-px bg-slate-100 my-1" />
                 <button onClick$={async () => {
                   if (confirm("删除?")) { await deleteFolder(ctxItem.value!.id).catch(() => {}); location.reload(); }
                   ctxItem.value = null;
-                }} class="w-full text-left px-4 py-2 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50">🗑 删除</button>
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50 touch-target">🗑 删除</button>
               </>
             )}
+          </div>
+        </>
+      )}
+
+      {/* Mobile action sheet (replaces context menu on small screens) */}
+      {ctxItem.value && showActionSheet.value && (
+        <>
+          <div class="action-sheet-overlay" onClick$={() => { ctxItem.value = null; showActionSheet.value = false; }} />
+          <div class="action-sheet">
+            <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
+            <p class="text-xs text-slate-400 text-center mb-3">{ctxItem.value.type === "file" ? ctxItem.value.name : ctxItem.value.name}</p>
+            {ctxItem.value.type === "file" ? (
+              <div class="space-y-1">
+                <button onClick$={() => { nav(`/view?id=${ctxItem.value!.id}`); ctxItem.value = null; showActionSheet.value = false; }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">👁 预览</button>
+                <button onClick$={() => { window.open(`/api/v2/files/download/${ctxItem.value!.id}`, "_blank"); ctxItem.value = null; showActionSheet.value = false; }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">⬇ 下载</button>
+                <div class="h-px bg-slate-100 my-1" />
+                <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; showActionSheet.value = false; }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">✏ 重命名</button>
+                <button onClick$={async () => { await updateFile(ctxItem.value!.id, { is_favorite: true }).catch(() => {}); ctxItem.value = null; showActionSheet.value = false; }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">⭐ 收藏</button>
+                <div class="h-px bg-slate-100 my-1" />
+                <button onClick$={async () => { if (confirm("删除?")) { await deleteFile(ctxItem.value!.id).catch(() => {}); location.reload(); } ctxItem.value = null; showActionSheet.value = false; }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50 rounded-lg touch-target">🗑 删除</button>
+              </div>
+            ) : (
+              <div class="space-y-1">
+                <button onClick$={() => { nav(`/drive?folder=${ctxItem.value!.id}`); ctxItem.value = null; showActionSheet.value = false; }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">📂 打开</button>
+                <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; showActionSheet.value = false; }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">✏ 重命名</button>
+                <div class="h-px bg-slate-100 my-1" />
+                <button onClick$={async () => { if (confirm("删除?")) { await deleteFolder(ctxItem.value!.id).catch(() => {}); location.reload(); } ctxItem.value = null; showActionSheet.value = false; }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50 rounded-lg touch-target">🗑 删除</button>
+              </div>
+            )}
+            <button onClick$={() => { ctxItem.value = null; showActionSheet.value = false; }}
+              class="w-full mt-3 px-4 py-3 text-sm font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl touch-target">取消</button>
           </div>
         </>
       )}
@@ -354,7 +430,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
           return (
             <tr key={`f-${item.id}`} draggable class={`group text-sm transition-colors ${sel ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}
               onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-              onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name, clientX: e.clientX, clientY: e.clientY }); }}>
+              onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}>
               <td class="px-4 py-3" onClick$={(e: any) => e.stopPropagation()}>
                 <input type="checkbox" checked={sel}
                   onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="rounded border-slate-300" />
@@ -373,7 +449,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
         return (
           <tr key={item.id} draggable class={`group text-sm transition-colors ${sel ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}
             onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-            onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type, clientX: e.clientX, clientY: e.clientY }); }}>
+            onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>
             <td class="px-4 py-3"><input type="checkbox" checked={sel}
               onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="rounded border-slate-300" /></td>
             <td class="px-2 py-3 cursor-pointer" onClick$={() => nav(`/view?id=${item.id}`)}>
@@ -407,12 +483,12 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
 // ─── Grid View ───
 
 export const GridView = component$<{ items: any[]; selIds: any; nav: any; folderId?: number; onContextItem$?: any }>(({ items, selIds, nav, onContextItem$ }) => (
-  <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 p-6">
+  <div class="card-grid p-4 sm:p-6">
     {items.map((item: any) => {
       if (item.t === "f") return (
         <div key={`f-${item.id}`} draggable onClick$={() => nav(`/drive?folder=${item.id}`)}
           onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-          onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name, clientX: e.clientX, clientY: e.clientY }); }}
+          onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}
           class="bg-white rounded-xl border-2 border-slate-100 hover:border-amber-300 hover:shadow-sm transition-all cursor-pointer p-3">
           <div class="aspect-square rounded-lg bg-amber-50 flex items-center justify-center text-5xl mb-2.5">📁</div>
           <p class="text-xs font-medium text-slate-700 truncate text-center">{item.name}</p>
@@ -423,9 +499,8 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; folder
       return (
         <div key={item.id} draggable onClick$={() => nav(`/view?id=${item.id}`)}
           onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-          onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type, clientX: e.clientX, clientY: e.clientY }); }}
-          class={`bg-white rounded-xl border-2 transition-all cursor-pointer p-3 relative ${sel ? "border-indigo-500 shadow-md" : "border-slate-100 hover:border-slate-200 hover:shadow-sm"}`}
-          onContextMenu$={(e: any) => { e.preventDefault(); alert("右键菜单待实现"); }}>
+          onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}
+          class={`bg-white rounded-xl border-2 transition-all cursor-pointer p-3 relative ${sel ? "border-indigo-500 shadow-md" : "border-slate-100 hover:border-slate-200 hover:shadow-sm"}`}>
           <div class={`aspect-square rounded-lg flex items-center justify-center text-4xl mb-2.5 overflow-hidden ${tc.color}`}>
             {item.file_type === "image" ? (
               <img src={`/api/v2/files/preview/${item.id}/thumbnail?size=256`} alt={item.filename}

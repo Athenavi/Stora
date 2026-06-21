@@ -47,15 +47,19 @@ export default component$(() => {
   const groups = usePhotos();
   const nav = useNavigate();
   const lightbox = useSignal<Photo | null>(null);
+  const touchStartX = useSignal(0);
+  const currentPhotoIndex = useSignal(0);
+  // Flatten all photos for swipe navigation
+  const allPhotos = groups.value.flatMap(g => g.photos);
 
   return (
     <div class="flex flex-col h-full">
-      <div class="px-6 py-4 border-b border-slate-200 bg-white">
+      <div class="px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
         <h1 class="text-lg font-semibold text-slate-900">照片墙</h1>
-        <p class="text-sm text-slate-500 mt-0.5">{groups.value.reduce((s, g) => s + g.photos.length, 0)} 张照片</p>
+        <p class="text-sm text-slate-500 mt-0.5">{allPhotos.length} 张照片</p>
       </div>
 
-      <div class="flex-1 overflow-auto scrollbar-thin p-6">
+      <div class="flex-1 overflow-auto scrollbar-thin p-4 sm:p-6">
         {groups.value.length === 0 ? (
           <div class="flex flex-col items-center justify-center h-full text-slate-400">
             <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">📷</div>
@@ -72,7 +76,10 @@ export default component$(() => {
                 <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
                   {group.photos.map(photo => (
                     <div key={photo.id}
-                      onClick$={() => lightbox.value = photo}
+                      onClick$={() => {
+                        lightbox.value = photo;
+                        currentPhotoIndex.value = allPhotos.findIndex(p => p.id === photo.id);
+                      }}
                       class="aspect-square rounded-xl overflow-hidden bg-slate-100 cursor-pointer hover:ring-2 hover:ring-indigo-400 transition-all group relative">
                       <img
                         src={`/api/v2/files/preview/${photo.id}/thumbnail?size=400`}
@@ -92,22 +99,59 @@ export default component$(() => {
         )}
       </div>
 
-      {/* Lightbox */}
+      {/* Enhanced Lightbox with swipe support */}
       {lightbox.value && (
-        <div class="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-8"
-          onClick$={() => lightbox.value = null}>
+        <div class="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
+          onClick$={() => lightbox.value = null}
+          onTouchStart$={(e: any) => touchStartX.value = e.touches[0].clientX}
+          onTouchEnd$={(e: any) => {
+            const dx = e.changedTouches[0].clientX - touchStartX.value;
+            if (Math.abs(dx) > 60) {
+              const dir = dx > 0 ? -1 : 1;
+              const newIdx = currentPhotoIndex.value + dir;
+              if (newIdx >= 0 && newIdx < allPhotos.length) {
+                currentPhotoIndex.value = newIdx;
+                lightbox.value = allPhotos[newIdx];
+              }
+            }
+          }}>
+          {/* Close button - touch friendly */}
           <button onClick$={() => lightbox.value = null}
-            class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors">
-            ✕
+            class="absolute top-4 right-4 w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors z-10 touch-target"
+            aria-label="关闭">
+            <Icon name="close" size={24} />
           </button>
+
+          {/* Previous - desktop hover, always visible on mobile */}
+          {currentPhotoIndex.value > 0 && (
+            <button onClick$={(e: any) => { e.stopPropagation(); currentPhotoIndex.value--; lightbox.value = allPhotos[currentPhotoIndex.value]; }}
+              class="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors touch-target"
+              aria-label="上一张">
+              <Icon name="chevronLeft" size={24} />
+            </button>
+          )}
+
           <img
             src={`/api/v2/files/preview/${lightbox.value.id}/${encodeURIComponent(lightbox.value.filename)}`}
             alt={lightbox.value.filename}
-            class="max-w-full max-h-full object-contain rounded-lg"
+            class="max-w-full max-h-full object-contain rounded-lg px-12 sm:px-16"
             onClick$={(e: any) => e.stopPropagation()}
           />
-          <div class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/60 text-white text-sm px-4 py-2 rounded-full">
-            {lightbox.value.filename} · {lightbox.value.width && lightbox.value.height ? `${lightbox.value.width}×${lightbox.value.height}` : ""}
+
+          {/* Next */}
+          {currentPhotoIndex.value < allPhotos.length - 1 && (
+            <button onClick$={(e: any) => { e.stopPropagation(); currentPhotoIndex.value++; lightbox.value = allPhotos[currentPhotoIndex.value]; }}
+              class="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors touch-target"
+              aria-label="下一张">
+              <Icon name="chevronRight" size={24} />
+            </button>
+          )}
+
+          {/* Bottom info bar */}
+          <div class="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs sm:text-sm px-4 py-2 rounded-full whitespace-nowrap max-w-[90vw] truncate">
+            {lightbox.value.filename}
+            {lightbox.value.width && lightbox.value.height ? ` · ${lightbox.value.width}×${lightbox.value.height}` : ""}
+            <span class="hidden sm:inline"> · {currentPhotoIndex.value + 1}/{allPhotos.length}</span>
           </div>
         </div>
       )}

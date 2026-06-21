@@ -68,8 +68,8 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-white">
-        <div>
+      <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
+        <div class="min-w-0">
           <h1 class="text-lg font-semibold text-slate-900">标签管理</h1>
           <p class="text-sm text-slate-500 mt-0.5">管理文件标签，快速分类和筛选</p>
         </div>
@@ -80,26 +80,28 @@ export default component$(() => {
 
       {/* Create/Edit form */}
       {showCreate.value && (
-        <div class="px-6 py-4 border-b border-slate-200 bg-slate-50/80 flex items-center gap-4 flex-wrap">
+        <div class="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/80 flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
           <input type="text" bind:value={name} placeholder="标签名称"
-            class="w-48 px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            class="w-full sm:w-48 px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             onKeyDown$={(e: any) => { if (e.key === "Enter") createOrUpdate(); }} />
-          <div class="flex gap-1.5">
+          <div class="flex gap-1.5 overflow-x-auto scrollbar-thin pb-1 w-full sm:w-auto">
             {TAG_COLORS.map(c => (
               <button key={c} onClick$={() => color.value = c}
-                class={`w-6 h-6 rounded-full border-2 transition-all ${color.value === c ? "border-slate-900 scale-110" : "border-transparent"}`}
-                style={{ backgroundColor: c }} />
+                class={`w-8 h-8 rounded-full border-2 transition-all shrink-0 touch-target ${color.value === c ? "border-slate-900 scale-110" : "border-transparent"}`}
+                style={{ backgroundColor: c }} aria-label={`颜色 ${c}`} />
             ))}
           </div>
-          <Button size="sm" onClick$={createOrUpdate} loading={loading.value}>
-            {editId.value > 0 ? "更新" : "创建"}
-          </Button>
-          <Button variant="ghost" size="sm" onClick$={() => { showCreate.value = false; editId.value = 0; }}>取消</Button>
+          <div class="flex gap-2">
+            <Button size="sm" onClick$={createOrUpdate} loading={loading.value}>
+              {editId.value > 0 ? "更新" : "创建"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick$={() => { showCreate.value = false; editId.value = 0; }}>取消</Button>
+          </div>
         </div>
       )}
 
       {/* Tag list */}
-      <div class="flex-1 overflow-auto p-6">
+      <div class="flex-1 overflow-auto p-4 sm:p-6">
         {items.value.length === 0 ? (
           <div class="flex flex-col items-center justify-center h-full text-slate-400">
             <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl mb-4">🏷️</div>
