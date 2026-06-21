@@ -18,7 +18,6 @@ const EDITABLE_EXTS = [".txt", ".md", ".json", ".xml", ".html", ".css", ".js", "
   ".java", ".cpp", ".h", ".c", ".rb", ".go", ".rs", ".sh", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log", ".csv", ".sql"];
 
 const OFFICE_EXTS = ["docx", "xlsx", "pptx", "doc", "xls", "ppt", "odt", "ods", "odp"];
-const isOffice = OFFICE_EXTS.includes(ext || "");
 
 export default component$(() => {
   const file = useFileDetail();
@@ -42,6 +41,7 @@ export default component$(() => {
   const isAudio = f.file_type === "audio";
   const ext = f.filename?.split(".").pop()?.toLowerCase();
   const isEditable = EDITABLE_EXTS.some(e => e.endsWith(ext || ""));
+  const isOffice = OFFICE_EXTS.includes(ext || "");
 
   // Check for transcoded resolutions on video files
   // eslint-disable-next-line qwik/no-use-visible-task
