@@ -12,6 +12,7 @@ import (
 
 	authapi "github.com/Athenavi/Stora/internal/api/v2/auth"
 	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
+	shareapi "github.com/Athenavi/Stora/internal/api/v2/share"
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/config"
@@ -93,6 +94,14 @@ func main() {
 
 	// Initialize file API handlers
 	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder)
+	vaultHandler := fileapi.NewVaultHandler(db)
+	transcodeHandler := fileapi.NewTranscodeHandler(db)
+	versionHandler := fileapi.NewVersionHandler(db)
+	batchHandler := fileapi.NewBatchHandler(db)
+	trashHandler := fileapi.NewTrashHandler(db)
+
+	// Initialize share handler
+	shareHandler := shareapi.NewHandler(db)
 
 	// API v2 routes
 	r.Route("/api/v2", func(r chi.Router) {
@@ -137,7 +146,36 @@ func main() {
 			// Tags
 			r.Get("/files/tags", fileHandler.ListTags)
 			r.Post("/files/tags", fileHandler.CreateTag)
+
+			// Vault
+			r.Get("/vaults", vaultHandler.ListVaults)
+			r.Post("/vaults", vaultHandler.CreateVault)
+			r.Get("/vaults/{vaultId}/items", vaultHandler.ListVaultItems)
+			r.Post("/vaults/{vaultId}/items", vaultHandler.CreateVaultItem)
+
+			// Transcoding
+			r.Post("/files/{id}/transcode", transcodeHandler.StartTranscode)
+
+			// Versions
+			r.Get("/files/{id}/versions", versionHandler.ListVersions)
+
+			// Batch operations
+			r.Post("/files/batch/delete", batchHandler.BatchDelete)
+			r.Post("/files/batch/move", batchHandler.BatchMove)
+
+			// Trash
+			r.Get("/trash", trashHandler.ListTrash)
+			r.Post("/trash/{id}/restore", trashHandler.RestoreFile)
+			r.Post("/trash/empty", trashHandler.EmptyTrash)
+
+			// Share links
+			r.Get("/share/links", shareHandler.ListShareLinks)
+			r.Post("/share/links", shareHandler.CreateShareLink)
+			r.Delete("/share/links/{id}", shareHandler.DeleteShareLink)
 		})
+
+		// Public share access (no auth required)
+		r.Get("/share/{token}", shareHandler.AccessShareLink)
 	})
 
 	// Start server
