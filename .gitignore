@@ -30,8 +30,8 @@ frontend-qwik/node_modules/
 frontend-qwik/dist/
 frontend-qwik/.vite/
 
-# Storage
-storage/
+# Storage (upload root)
+/storage/
 
 # Tests
 .pytest_cache/
