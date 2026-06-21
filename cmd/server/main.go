@@ -21,6 +21,7 @@ import (
 	"github.com/Athenavi/Stora/pkg/database"
 	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/Athenavi/Stora/pkg/utils"
+	"github.com/Athenavi/Stora/pkg/utils/cleanup"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -97,6 +98,7 @@ func main() {
 
 	// Initialize file API handlers
 	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder)
+	uploadHandler := fileapi.NewUploadHandler(db, store, cfg.TempFolder)
 	vaultHandler := fileapi.NewVaultHandler(db)
 	transcodeHandler := fileapi.NewTranscodeHandler(db)
 	versionHandler := fileapi.NewVersionHandler(db)
@@ -108,6 +110,16 @@ func main() {
 
 	// Initialize admin handler
 	adminHandler := adminapi.NewHandler(db)
+
+	// Setup cleanup notifier and scheduler
+	notifier := cleanup.NewCleanupNotifier()
+	notifier.Register(&cleanup.TempDirCleaner{})
+	notifier.Register(&cleanup.UploadChunkCleaner{DB: db})
+	notifier.Register(&cleanup.OrphanFileItemCleaner{DB: db, ExpireHours: cfg.UploadExpireHours})
+
+	scheduler := cleanup.NewCleanupScheduler(db, notifier, cfg.UploadExpireHours)
+	scheduler.Start()
+	defer scheduler.Stop()
 
 	// API v2 routes
 	r.Route("/api/v2", func(r chi.Router) {
@@ -158,6 +170,11 @@ func main() {
 			r.Get("/files", fileHandler.ListFiles)
 			r.Get("/files/{id}", fileHandler.GetFile)
 			r.Post("/files/upload", fileHandler.UploadFile)
+			r.Post("/files/upload/init", uploadHandler.InitUpload)
+			r.Put("/files/upload/{uploadId}/chunk/{index}", uploadHandler.UploadChunk)
+			r.Get("/files/upload/{uploadId}/status", uploadHandler.UploadStatus)
+			r.Post("/files/upload/{uploadId}/complete", uploadHandler.CompleteUpload)
+			r.Delete("/files/upload/{uploadId}", uploadHandler.CancelUpload)
 			r.Delete("/files/{id}", fileHandler.DeleteFile)
 			r.Put("/files/{id}/rename", fileHandler.RenameFile)
 			r.Put("/files/{id}/favorite", fileHandler.ToggleFavorite)
