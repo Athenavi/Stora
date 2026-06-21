@@ -52,3 +52,5 @@ debug/
 
 # Logs
 *.log
+
+server.exe
