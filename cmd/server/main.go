@@ -13,6 +13,7 @@ import (
 	authapi "github.com/Athenavi/Stora/internal/api/v2/auth"
 	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
 	shareapi "github.com/Athenavi/Stora/internal/api/v2/share"
+	adminapi "github.com/Athenavi/Stora/internal/api/v2/admin"
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/config"
@@ -103,6 +104,9 @@ func main() {
 	// Initialize share handler
 	shareHandler := shareapi.NewHandler(db)
 
+	// Initialize admin handler
+	adminHandler := adminapi.NewHandler(db)
+
 	// API v2 routes
 	r.Route("/api/v2", func(r chi.Router) {
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -172,6 +176,37 @@ func main() {
 			r.Get("/share/links", shareHandler.ListShareLinks)
 			r.Post("/share/links", shareHandler.CreateShareLink)
 			r.Delete("/share/links/{id}", shareHandler.DeleteShareLink)
+
+			// Notifications
+			r.Get("/notifications", adminHandler.ListNotifications)
+			r.Put("/notifications/{id}/read", adminHandler.MarkRead)
+
+			// 2FA
+			r.Post("/auth/2fa/setup", adminHandler.Setup2FA)
+			r.Post("/auth/2fa/disable", adminHandler.Disable2FA)
+
+			// Admin (requires superuser)
+			r.Group(func(r chi.Router) {
+				r.Use(middleware.RequireAdmin)
+
+				// User management
+				r.Get("/admin/users", adminHandler.ListUsers)
+				r.Put("/admin/users/{id}", adminHandler.UpdateUser)
+
+				// Roles
+				r.Get("/admin/roles", adminHandler.ListRoles)
+				r.Post("/admin/roles", adminHandler.CreateRole)
+
+				// Settings
+				r.Get("/admin/settings", adminHandler.ListSettings)
+				r.Put("/admin/settings", adminHandler.UpdateSetting)
+
+				// Audit logs
+				r.Get("/admin/audit-logs", adminHandler.ListAuditLogs)
+
+				// Sensitive words
+				r.Get("/admin/sensitive-words", adminHandler.ListSensitiveWords)
+			})
 		})
 
 		// Public share access (no auth required)
