@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/models"
 	"golang.org/x/crypto/bcrypt"
@@ -153,7 +154,11 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
-	userID := r.Context().Value("user_id").(int64)
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 
 	var user models.User
 	err := h.db.QueryRow(

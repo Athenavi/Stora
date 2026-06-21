@@ -11,10 +11,12 @@ import (
 	"time"
 
 	authapi "github.com/Athenavi/Stora/internal/api/v2/auth"
+	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/config"
 	"github.com/Athenavi/Stora/pkg/database"
+	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -83,8 +85,14 @@ func main() {
 	// Initialize JWT manager
 	jwtManager := auth.NewJWTManager(cfg.SecretKey, cfg.JWTExpiration, cfg.JWTRefreshExpiration)
 
+	// Initialize storage driver
+	store := storage.NewLocalDriver(cfg.TempFolder, "/files")
+
 	// Initialize auth API handlers
 	authHandler := authapi.NewHandler(db, jwtManager)
+
+	// Initialize file API handlers
+	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder)
 
 	// API v2 routes
 	r.Route("/api/v2", func(r chi.Router) {
@@ -106,8 +114,29 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.AuthMiddleware(jwtManager))
 
+			// Auth (authenticated)
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)
+
+			// Files
+			r.Get("/files", fileHandler.ListFiles)
+			r.Get("/files/{id}", fileHandler.GetFile)
+			r.Post("/files/upload", fileHandler.UploadFile)
+			r.Delete("/files/{id}", fileHandler.DeleteFile)
+			r.Put("/files/{id}/rename", fileHandler.RenameFile)
+			r.Put("/files/{id}/favorite", fileHandler.ToggleFavorite)
+			r.Put("/files/{id}/move", fileHandler.MoveFile)
+			r.Get("/files/{id}/download", fileHandler.DownloadFile)
+			r.Get("/files/search", fileHandler.Search)
+
+			// Folders
+			r.Get("/files/folders/tree", fileHandler.ListFolders)
+			r.Post("/files/folders", fileHandler.CreateFolder)
+			r.Delete("/files/folders/{id}", fileHandler.DeleteFolder)
+
+			// Tags
+			r.Get("/files/tags", fileHandler.ListTags)
+			r.Post("/files/tags", fileHandler.CreateTag)
 		})
 	})
 
