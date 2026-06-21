@@ -13,7 +13,8 @@ export interface FileItem {
   mime_type?: string;
   file_type: string;
   folder_id?: number | null;
-  is_favorite: boolean;
+  is_folder?: boolean;
+  is_favorite?: boolean;
   file_hash?: string;
   thumbnail_url?: string;
   file_url?: string;

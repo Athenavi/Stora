@@ -113,8 +113,8 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		FileSize  *int64  `json:"file_size"`
 		MimeType  *string `json:"mime_type"`
 		FileType  *string `json:"file_type"`
-		IsFolder  bool    `json:"is_folder"`
-		IsFav     bool    `json:"is_favorite"`
+		IsFolder  *bool   `json:"is_folder"`
+		IsFav     *bool   `json:"is_favorite"`
 		ThumbURL  *string `json:"thumbnail_url"`
 		Width     *int    `json:"width"`
 		Height    *int    `json:"height"`
@@ -153,8 +153,8 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 		FileSize  *int64   `json:"file_size"`
 		MimeType  *string  `json:"mime_type"`
 		FileType  *string  `json:"file_type"`
-		IsFolder  bool     `json:"is_folder"`
-		IsFav     bool     `json:"is_favorite"`
+		IsFolder  *bool    `json:"is_folder"`
+		IsFav     *bool    `json:"is_favorite"`
 		FilePath  *string  `json:"-"`
 		FileURL   *string  `json:"file_url"`
 		ThumbURL  *string  `json:"thumbnail_url"`
