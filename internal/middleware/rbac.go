@@ -3,6 +3,8 @@ package middleware
 import (
 	"context"
 	"net/http"
+
+	"github.com/Athenavi/Stora/pkg/utils"
 )
 
 type roleContextKey string
@@ -15,7 +17,7 @@ const (
 func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !IsAdmin(r.Context()) {
-			http.Error(w, `{"error":"forbidden: admin role required"}`, http.StatusForbidden)
+			utils.WriteError(w, http.StatusForbidden, "admin role required")
 			return
 		}
 		next.ServeHTTP(w, r)

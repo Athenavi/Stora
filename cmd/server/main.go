@@ -20,6 +20,7 @@ import (
 	"github.com/Athenavi/Stora/pkg/config"
 	"github.com/Athenavi/Stora/pkg/database"
 	"github.com/Athenavi/Stora/pkg/storage"
+	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -212,6 +213,14 @@ func main() {
 
 		// Public share access (no auth required)
 		r.Get("/share/{token}", shareHandler.AccessShareLink)
+
+		// Maintenance public status
+		r.Get("/system/maintenance/public-status", func(w http.ResponseWriter, r *http.Request) {
+			utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+				"maintenance_mode": false,
+				"message":          "",
+			})
+		})
 	})
 
 	// API v3 (mobile)

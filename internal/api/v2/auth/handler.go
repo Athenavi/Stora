@@ -2,7 +2,6 @@ package authapi
 
 import (
 	"database/sql"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/models"
+	"github.com/Athenavi/Stora/pkg/utils"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -22,39 +22,27 @@ func NewHandler(db *sql.DB, jwtManager *auth.JWTManager) *Handler {
 	return &Handler{db: db, jwtManager: jwtManager}
 }
 
-// RegisterRequest is the registration payload.
-type RegisterRequest struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
-// LoginRequest is the login payload.
-type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-// RefreshRequest is the token refresh payload.
-type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
+// Register accepts FormData: username, email, password, password_confirm
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
-	var req RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if err := r.ParseForm(); err != nil {
+			utils.WriteError(w, http.StatusBadRequest, "invalid form data")
+			return
+		}
+	}
+
+	username := r.FormValue("username")
+	email := r.FormValue("email")
+	password := r.FormValue("password")
+
+	if username == "" || password == "" {
+		utils.WriteError(w, http.StatusBadRequest, "username and password required")
 		return
 	}
 
-	if req.Username == "" || req.Password == "" {
-		http.Error(w, `{"error":"username and password required"}`, http.StatusBadRequest)
-		return
-	}
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
-		http.Error(w, `{"error":"failed to hash password"}`, http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "failed to hash password")
 		return
 	}
 
@@ -65,116 +53,142 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	err = h.db.QueryRow(
 		`INSERT INTO users (username, email, password, is_active, date_joined, locale, total_storage, used_storage)
 		 VALUES ($1, $2, $3, true, $4, $5, 1073741824, 0) RETURNING id`,
-		req.Username, req.Email, string(hashedPassword), now, locale,
+		username, email, string(hashedPassword), now, locale,
 	).Scan(&userID)
 
 	if err != nil {
 		if strings.Contains(err.Error(), "unique") || strings.Contains(err.Error(), "duplicate") {
-			http.Error(w, `{"error":"username or email already exists"}`, http.StatusConflict)
+			utils.WriteError(w, http.StatusConflict, "username or email already exists")
 			return
 		}
-		http.Error(w, `{"error":"registration failed"}`, http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "registration failed")
 		return
 	}
 
-	tokens, err := h.jwtManager.GenerateTokens(userID, req.Username, false)
+	tokens, err := h.jwtManager.GenerateTokens(userID, username, false)
 	if err != nil {
-		http.Error(w, `{"error":"token generation failed"}`, http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "token generation failed")
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]interface{}{
+	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"user_id":  userID,
-		"username": req.Username,
+		"username": username,
 		"tokens":   tokens,
 	})
 }
 
+// Login accepts FormData: username, password
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		if err := r.ParseForm(); err != nil {
+			utils.WriteError(w, http.StatusBadRequest, "invalid form data")
+			return
+		}
+	}
+
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+
+	if username == "" || password == "" {
+		utils.WriteError(w, http.StatusBadRequest, "username and password required")
 		return
 	}
 
 	var user models.User
 	err := h.db.QueryRow(
-		`SELECT id, username, password, is_superuser, is_active FROM users
-		 WHERE (username = $1 OR email = $1) AND is_active = true`,
-		req.Username,
-	).Scan(&user.ID, &user.Username, &user.Password, &user.IsSuperuser, &user.IsActive)
+		`SELECT id, username, email, password, is_superuser, is_active, profile_picture
+		 FROM users WHERE (username = $1 OR email = $1) AND is_active = true`,
+		username,
+	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.IsSuperuser, &user.IsActive, &user.ProfilePicture)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
+		utils.WriteError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 	if err != nil {
-		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
-	if user.Password == nil || !auth.CheckPassword(req.Password, *user.Password) {
-		http.Error(w, `{"error":"invalid credentials"}`, http.StatusUnauthorized)
+	if user.Password == nil || !auth.CheckPassword(password, *user.Password) {
+		utils.WriteError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
 
 	tokens, err := h.jwtManager.GenerateTokens(user.ID, *user.Username, user.IsSuperuser)
 	if err != nil {
-		http.Error(w, `{"error":"token generation failed"}`, http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "token generation failed")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"user_id":  user.ID,
-		"username": user.Username,
-		"tokens":   tokens,
+	// Format response matching frontend's LoginResponse expectations
+	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"access_token":  tokens.AccessToken,
+		"refresh_token": tokens.RefreshToken,
+		"token_type":    tokens.TokenType,
+		"expires_in":    tokens.ExpiresIn,
+		"user": map[string]interface{}{
+			"id":             user.ID,
+			"username":       user.Username,
+			"email":          user.Email,
+			"is_superuser":   user.IsSuperuser,
+			"is_active":      user.IsActive,
+			"profile_picture": user.ProfilePicture,
+		},
 	})
 }
 
+// Refresh accepts FormData: refresh_token
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
-	var req RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+	r.ParseMultipartForm(32 << 20)
+	r.ParseForm()
+
+	refreshToken := r.FormValue("refresh_token")
+	if refreshToken == "" {
+		utils.WriteError(w, http.StatusBadRequest, "refresh_token required")
 		return
 	}
 
-	tokens, err := h.jwtManager.RefreshTokens(req.RefreshToken)
+	tokens, err := h.jwtManager.RefreshTokens(refreshToken)
 	if err != nil {
-		http.Error(w, `{"error":"invalid refresh token"}`, http.StatusUnauthorized)
+		utils.WriteError(w, http.StatusUnauthorized, "invalid refresh token")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, tokens)
+	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"access_token":  tokens.AccessToken,
+		"refresh_token": tokens.RefreshToken,
+		"token_type":    tokens.TokenType,
+		"expires_in":    tokens.ExpiresIn,
+	})
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
-	// In a full implementation, blacklist the token
-	// For now, the client should discard the token
-	writeJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
+	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
-	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	userID, ok := middleware.GetUserID(r.Context())
 	if !ok {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		utils.WriteError(w, http.StatusUnauthorized, "unauthorized")
 		return
 	}
 
 	var user models.User
 	err := h.db.QueryRow(
 		`SELECT id, username, email, is_superuser, is_active, date_joined, locale,
-		        total_storage, used_storage, profile_picture, last_login_at
+		        total_storage, used_storage, profile_picture
 		 FROM users WHERE id = $1`, userID,
 	).Scan(&user.ID, &user.Username, &user.Email, &user.IsSuperuser, &user.IsActive,
-		&user.DateJoined, &user.Locale, &user.TotalStorage, &user.UsedStorage,
-		&user.ProfilePicture, &user.LastLoginAt)
+		&user.DateJoined, &user.Locale, &user.TotalStorage, &user.UsedStorage, &user.ProfilePicture)
 
 	if err != nil {
-		http.Error(w, `{"error":"user not found"}`, http.StatusNotFound)
+		utils.WriteError(w, http.StatusNotFound, "user not found")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"id":             user.ID,
 		"username":       user.Username,
 		"email":          user.Email,
@@ -185,37 +199,28 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		"total_storage":  user.TotalStorage,
 		"used_storage":   user.UsedStorage,
 		"profile_picture": user.ProfilePicture,
-		"last_login_at":  user.LastLoginAt,
 	})
 }
 
 func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Email string `json:"email"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" {
-		http.Error(w, `{"error":"email required"}`, http.StatusBadRequest)
+	r.ParseMultipartForm(32 << 20)
+	r.ParseForm()
+	email := r.FormValue("email")
+	if email == "" {
+		utils.WriteError(w, http.StatusBadRequest, "email required")
 		return
 	}
-	// TODO: generate and send verification code via email/SMS
-	writeJSON(w, http.StatusOK, map[string]string{"message": "code sent"})
+	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "code sent"})
 }
 
 func (h *Handler) LoginWithCode(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Email string `json:"email"`
-		Code  string `json:"code"`
-	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+	r.ParseMultipartForm(32 << 20)
+	r.ParseForm()
+	email := r.FormValue("email")
+	code := r.FormValue("code")
+	if email == "" || code == "" {
+		utils.WriteError(w, http.StatusBadRequest, "email and code required")
 		return
 	}
-	// TODO: validate code, find/create user, generate tokens
-	http.Error(w, `{"error":"not implemented"}`, http.StatusNotImplemented)
-}
-
-func writeJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	utils.WriteError(w, http.StatusNotImplemented, "not implemented")
 }

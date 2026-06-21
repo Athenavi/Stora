@@ -14,6 +14,7 @@ import (
 
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/storage"
+	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -100,7 +101,7 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.db.Query(query, args...)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -193,16 +194,14 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 
-	// Parse multipart form (max 500MB)
-	r.Body = http.MaxBytesReader(w, r.Body, 500<<20)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, `{"error":"file too large or invalid form"}`, http.StatusBadRequest)
+		utils.WriteError(w, http.StatusBadRequest, "file too large or invalid form")
 		return
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
-		http.Error(w, `{"error":"file field required"}`, http.StatusBadRequest)
+		utils.WriteError(w, http.StatusBadRequest, "file field required")
 		return
 	}
 	defer file.Close()
@@ -564,7 +563,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	reader, err := h.storage.Retrieve(filePath)
 	if err != nil {
-		http.Error(w, `{"error":"file not found on storage"}`, http.StatusNotFound)
+		utils.WriteError(w, http.StatusNotFound, "file not found on storage")
 		return
 	}
 	defer reader.Close()
