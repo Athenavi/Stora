@@ -123,6 +123,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Format response matching frontend's LoginResponse expectations
+	setAuthCookie(w, tokens.AccessToken, tokens.ExpiresIn)
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
@@ -223,4 +224,16 @@ func (h *Handler) LoginWithCode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	utils.WriteError(w, http.StatusNotImplemented, "not implemented")
+}
+
+// setAuthCookie sets the access_token as an HTTP-only cookie for SSR support.
+func setAuthCookie(w http.ResponseWriter, token string, expiresIn int) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    token,
+		Path:     "/",
+		MaxAge:   expiresIn,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }

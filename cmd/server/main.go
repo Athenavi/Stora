@@ -133,6 +133,27 @@ func main() {
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)
 
+			// User quota
+			r.Get("/users/me/quota", func(w http.ResponseWriter, r *http.Request) {
+				userID, ok := middleware.GetUserID(r.Context())
+				if !ok {
+					utils.WriteError(w, http.StatusUnauthorized, "unauthorized")
+					return
+				}
+				var total, used int64
+				err := db.QueryRow(
+					`SELECT total_storage, used_storage FROM users WHERE id = $1`, userID,
+				).Scan(&total, &used)
+				if err != nil {
+					utils.WriteError(w, http.StatusNotFound, "user not found")
+					return
+				}
+				utils.WriteJSON(w, http.StatusOK, map[string]int64{
+					"total_storage": total,
+					"used_storage":  used,
+				})
+			})
+
 			// Files
 			r.Get("/files", fileHandler.ListFiles)
 			r.Get("/files/{id}", fileHandler.GetFile)

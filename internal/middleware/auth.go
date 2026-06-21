@@ -18,22 +18,34 @@ const (
 )
 
 // AuthMiddleware validates JWT tokens and injects user info into the context.
+// It checks Authorization header first, then falls back to access_token cookie.
 func AuthMiddleware(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tokenString := ""
+
+			// Try Authorization header first
 			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				utils.WriteError(w, http.StatusUnauthorized, "missing authorization header")
+			if authHeader != "" {
+				parts := strings.SplitN(authHeader, " ", 2)
+				if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+					tokenString = parts[1]
+				}
+			}
+
+			// Fall back to cookie
+			if tokenString == "" {
+				if c, err := r.Cookie("access_token"); err == nil {
+					tokenString = c.Value
+				}
+			}
+
+			if tokenString == "" {
+				utils.WriteError(w, http.StatusUnauthorized, "missing authorization")
 				return
 			}
 
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-				utils.WriteError(w, http.StatusUnauthorized, "invalid authorization format")
-				return
-			}
-
-			claims, err := jwtManager.ValidateToken(parts[1])
+			claims, err := jwtManager.ValidateToken(tokenString)
 			if err != nil {
 				utils.WriteError(w, http.StatusUnauthorized, "invalid or expired token")
 				return
