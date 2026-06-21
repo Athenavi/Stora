@@ -163,6 +163,7 @@ func main() {
 			r.Put("/files/{id}/favorite", fileHandler.ToggleFavorite)
 			r.Put("/files/{id}/move", fileHandler.MoveFile)
 			r.Get("/files/{id}/download", fileHandler.DownloadFile)
+			r.Get("/files/preview/{id}/{filename}", fileHandler.PreviewFile)
 			r.Get("/files/search", fileHandler.Search)
 
 			// Folders
@@ -234,6 +235,9 @@ func main() {
 
 		// Public share access (no auth required)
 		r.Get("/share/{token}", shareHandler.AccessShareLink)
+
+		// File preview (optional auth for <img> tags)
+		r.With(middleware.OptionalAuthMiddleware(jwtManager)).Get("/files/preview/{id}/{filename}", fileHandler.PreviewFile)
 
 		// Maintenance public status
 		r.Get("/system/maintenance/public-status", func(w http.ResponseWriter, r *http.Request) {

@@ -580,6 +580,46 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, reader)
 }
 
+// PreviewFile serves a file for inline preview (optional auth, works for <img> tags).
+func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	var filePath, mimeType, filename string
+	var err error
+
+	// If user is authenticated, check ownership; otherwise serve by ID only
+	if userID, ok := middleware.GetUserID(r.Context()); ok {
+		err = h.db.QueryRow(
+			`SELECT file_path, mime_type, COALESCE(original_filename, filename)
+			 FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
+			fileID, userID,
+		).Scan(&filePath, &mimeType, &filename)
+	} else {
+		err = h.db.QueryRow(
+			`SELECT file_path, mime_type, COALESCE(original_filename, filename)
+			 FROM file_items WHERE id = $1 AND deleted_at IS NULL AND is_folder = false`,
+			fileID,
+		).Scan(&filePath, &mimeType, &filename)
+	}
+
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found"})
+		return
+	}
+
+	reader, err := h.storage.Retrieve(filePath)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found on storage"})
+		return
+	}
+	defer reader.Close()
+
+	w.Header().Set("Content-Type", mimeType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
+	w.WriteHeader(http.StatusOK)
+	io.Copy(w, reader)
+}
+
 // ---------- Utilities ----------
 
 func detectFileType(mimeType, filename string) string {
