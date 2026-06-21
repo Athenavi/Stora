@@ -117,7 +117,7 @@ func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 		CreatedAt     *string `json:"created_at"`
 	}
 
-	var links []Link
+	var links = make([]Link, 0)
 	for rows.Next() {
 		var l Link
 		rows.Scan(&l.ID, &l.Token, &l.FileID, &l.DownloadCount, &l.MaxDownloads, &l.ExpiresAt, &l.IsActive, &l.CreatedAt, &l.Filename)

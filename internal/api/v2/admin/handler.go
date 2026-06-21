@@ -45,7 +45,7 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		TotalStorage int64      `json:"total_storage"`
 		UsedStorage  int64      `json:"used_storage"`
 	}
-	var users []User
+	var users = make([]User, 0)
 	for rows.Next() {
 		var u User
 		rows.Scan(&u.ID, &u.Username, &u.Email, &u.IsActive, &u.IsSuperuser, &u.IsStaff,
@@ -98,7 +98,7 @@ func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description"`
 		IsSystem    bool    `json:"is_system"`
 	}
-	var roles []Role
+	var roles = make([]Role, 0)
 	for rows.Next() {
 		var r Role
 		rows.Scan(&r.ID, &r.Name, &r.Slug, &r.Description, &r.IsSystem)
@@ -207,7 +207,7 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		IPAddress *string `json:"ip_address"`
 		CreatedAt *string `json:"created_at"`
 	}
-	var logs []Log
+	var logs = make([]Log, 0)
 	for rows.Next() {
 		var l Log
 		rows.Scan(&l.ID, &l.UserID, &l.Action, &l.Resource, &l.Detail, &l.IPAddress, &l.CreatedAt)
@@ -244,7 +244,7 @@ func (h *Handler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 		IsRead    bool    `json:"is_read"`
 		CreatedAt *string `json:"created_at"`
 	}
-	var notifications []Notification
+	var notifications = make([]Notification, 0)
 	for rows.Next() {
 		var n Notification
 		rows.Scan(&n.ID, &n.Type, &n.Title, &n.Body, &n.IsRead, &n.CreatedAt)
@@ -292,7 +292,7 @@ func (h *Handler) ListSensitiveWords(w http.ResponseWriter, r *http.Request) {
 		Level       int     `json:"level"`
 		IsActive    bool    `json:"is_active"`
 	}
-	var words []Word
+	var words = make([]Word, 0)
 	for rows.Next() {
 		var w Word
 		rows.Scan(&w.ID, &w.Word, &w.Replacement, &w.Level, &w.IsActive)

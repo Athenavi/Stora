@@ -45,7 +45,7 @@ func (h *VaultHandler) ListVaults(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description"`
 		CreatedAt   *string `json:"created_at"`
 	}
-	var vaults []Vault
+	var vaults = make([]Vault, 0)
 	for rows.Next() {
 		var v Vault
 		rows.Scan(&v.ID, &v.Name, &v.Description, &v.CreatedAt)
@@ -96,7 +96,7 @@ func (h *VaultHandler) ListVaultItems(w http.ResponseWriter, r *http.Request) {
 		CreatedAt *string `json:"created_at"`
 		UpdatedAt *string `json:"updated_at"`
 	}
-	var items []Item
+	var items = make([]Item, 0)
 	for rows.Next() {
 		var it Item
 		rows.Scan(&it.ID, &it.Name, &it.Type, &it.CreatedAt, &it.UpdatedAt)
@@ -202,7 +202,7 @@ func (h *VersionHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 		FileSize  int64   `json:"file_size"`
 		CreatedAt *string `json:"created_at"`
 	}
-	var versions []Version
+	var versions = make([]Version, 0)
 	for rows.Next() {
 		var v Version
 		rows.Scan(&v.ID, &v.Version, &v.FileSize, &v.CreatedAt)
@@ -289,7 +289,7 @@ func (h *TrashHandler) ListTrash(w http.ResponseWriter, r *http.Request) {
 		FileSize  int64   `json:"file_size"`
 		DeletedAt *string `json:"deleted_at"`
 	}
-	var items []TrashItem
+	var items = make([]TrashItem, 0)
 	for rows.Next() {
 		var t TrashItem
 		rows.Scan(&t.ID, &t.Filename, &t.FileType, &t.FileSize, &t.DeletedAt)

@@ -21,7 +21,7 @@ export const useFileList = routeLoader$(async ({ url, request }) => {
   }
   if (search) {
     const d = await api.get(`/files/search?q=${encodeURIComponent(search)}&page=1&page_size=50`).catch(() => null);
-    return d ? { folders: [], files: d.items, path: [{ id: 0, name: `搜索: ${search}` }] } : null;
+    return d ? { folders: [], files: d.items || [], path: [{ id: 0, name: `搜索: ${search}` }] } : null;
   }
   const typeParam = fileType ? `&file_type=${fileType}` : "";
   const sortParam = `&sort_by=${sortBy}&sort_order=${sortOrder}`;
@@ -52,8 +52,8 @@ export default component$(() => {
 
   const allItems: ({ t: "f" } & Folder | { t: "d" } & FileItem)[] = [];
   if (data.value) {
-    for (const f of data.value.folders) allItems.push({ t: "f" as const, ...f });
-    for (const f of data.value.files) allItems.push({ t: "d" as const, ...f });
+    for (const f of data.value.folders || []) allItems.push({ t: "f" as const, ...f });
+    for (const f of data.value.files || []) allItems.push({ t: "d" as const, ...f });
   }
 
   const viewMode = useSignal<"list" | "grid">("list");

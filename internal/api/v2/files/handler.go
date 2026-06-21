@@ -123,7 +123,7 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt *string `json:"updated_at"`
 	}
 
-	var items []FileItem
+	var items = make([]FileItem, 0)
 	for rows.Next() {
 		var item FileItem
 		rows.Scan(&item.ID, &item.Filename, &item.OrigName, &item.FileSize, &item.MimeType,
@@ -379,7 +379,7 @@ func (h *Handler) ListFolders(w http.ResponseWriter, r *http.Request) {
 		Children []Folder `json:"children,omitempty"`
 	}
 
-	var folders []Folder
+	var folders = make([]Folder, 0)
 	folderMap := make(map[int64]*Folder)
 
 	for rows.Next() {
@@ -474,7 +474,7 @@ func (h *Handler) ListTags(w http.ResponseWriter, r *http.Request) {
 		Name  string  `json:"name"`
 		Color *string `json:"color"`
 	}
-	var tags []Tag
+	var tags = make([]Tag, 0)
 	for rows.Next() {
 		var t Tag
 		rows.Scan(&t.ID, &t.Name, &t.Color)
