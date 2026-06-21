@@ -1,146 +1,160 @@
-# Stora — Store everything. Recall everything.
+# Stora
 
-> 存你所存，想你所想。
+**Self-hosted enterprise file storage and sharing platform — now in Go.**
 
-**Stora** 是一个高性能、自部署的网盘应用，基于 FastAPI + Qwik 构建。
-
-## 技术栈
-
-| 分层 | 技术 |
-|------|------|
-| **后端** | Python 3.14+ · FastAPI · SQLAlchemy 2.0 · PostgreSQL |
-| **前端** | Qwik · Tailwind CSS v4 · TypeScript |
-| **存储** | 本地存储 / S3 兼容 (MinIO, S3, R2) |
-| **搜索** | Meilisearch（可选） |
-| **缓存** | Redis（可选） |
-
-## 快速开始
-
-### 前置要求
-
-- Python 3.14+
-- PostgreSQL 16+
-- Node.js 20+
-
-### 1. 克隆并安装后端
-
-```bash
-git clone https://github.com/athenavi/stora.git
-cd stora
-
-python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # Linux/Mac
-
-pip install -r requirements.txt
-```
-
-### 2. 配置数据库
-
-```bash
-# 创建数据库
-createdb stora
-
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 设置数据库连接
-```
-
-### 3. 运行迁移
-
-```bash
-alembic upgrade head
-```
-
-### 4. 启动后端
-
-```bash
-uvicorn main:app --reload --port 8000
-```
-
-### 5. 启动前端
-
-```bash
-cd frontend-qwik
-npm install
-npm run dev
-```
-
-## API 文档
-
-启动后端后访问 `http://localhost:8000/docs` 查看交互式 API 文档。
-
-### 核心端点
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/v2/files` | GET | 文件列表（分页/搜索/筛选） |
-| `/api/v2/files/upload` | POST | 单文件上传（支持秒传） |
-| `/api/v2/files/upload/init` | POST | 初始化分片上传 |
-| `/api/v2/files/upload/chunk` | POST | 上传分片 |
-| `/api/v2/files/upload/complete` | POST | 合并分片 |
-| `/api/v2/files/folders` | POST | 创建文件夹 |
-| `/api/v2/files/folders/tree` | GET | 文件夹树 |
-| `/api/v2/files/{id}/download` | GET | 下载文件 |
-| `/api/v2/files/search` | GET | 搜索文件 |
-| `/api/v2/files/shares` | POST | 创建分享链接 |
-| `/api/v2/auth/login` | POST | 登录 |
-| `/api/v2/auth/register` | POST | 注册 |
-
-## 核心功能
-
-### ✅ 已完成
-
-- [x] 文件/文件夹 CRUD
-- [x] 单文件上传 + 分片上传
-- [x] 文件秒传（SHA256 去重）
-- [x] 文件下载（含一次性令牌）
-- [x] 文件夹树形导航
-- [x] 文件搜索
-- [x] 分享链接（密码保护/过期时间/下载限制）
-- [x] 用户认证（JWT）
-- [x] RBAC 角色权限
-- [x] 双因素认证 (2FA)
-- [x] 存储配额管理
-- [x] 回收站
-- [x] 文件版本历史
-- [x] 文件标签
-- [x] 审计日志
-- [x] 操作通知
-- [x] GDPR 合规
-
-### 🚧 开发中
-
-- [ ] 文件预览（图片/视频/文档/音频）
-- [ ] S3/MinIO 存储驱动
-- [ ] 在线文档编辑
-- [ ] WebDAV 协议支持
-- [ ] 移动客户端
-
-## 项目结构
-
-```
-stora/
-├── config/               # 配置 (models.yaml)
-├── shared/               # 共享层
-│   ├── models/           # SQLAlchemy ORM 模型 (33 个)
-│   ├── services/         # 业务服务 (12 个模块)
-│   └── defs/             # 自定义方法定义
-├── src/                  # 后端源码
-│   ├── api/v2/           # API v2 路由 (16 个模块)
-│   ├── api/v3/           # API v3 移动端路由
-│   ├── auth/             # 认证模块
-│   └── middleware/        # 中间件
-├── frontend-qwik/        # Qwik 前端
-├── scripts/              # 工具脚本
-├── alembic_migrations/   # 数据库迁移
-└── main.py               # 应用入口
-```
-
-## 许可证
-
-Apache 2.0
+> **Active backend:** Go (Chi + sqlx + PostgreSQL)  
+> **Frontend:** Qwik  
+> **Previous backend:** Python/FastAPI (archived)
 
 ---
 
-> **Stora** — 高性能自部署网盘，基于 FastAPI + Qwik 构建。
+## Architecture
+
+```
+cmd/
+  server/          # Main server entry point (port 9421)
+  cli/             # CLI commands
+internal/
+  api/
+    v2/
+      auth/        # JWT auth, OAuth, verification code login
+      files/       # File CRUD, upload, download, search, tags, folders
+      share/       # Share links, user-to-user sharing
+      admin/       # User/role management, system settings, audit logs
+    v3/mobile/     # Mobile-optimized endpoints
+  middleware/       # Auth, RBAC, CORS, security middleware
+  services/        # Business logic layer
+pkg/
+  config/          # Environment-based configuration (viper)
+  database/        # PostgreSQL + Redis connection pools
+  models/          # Data models (Go structs, 33 tables)
+  auth/            # JWT tokens, bcrypt passwords
+  storage/         # Local filesystem + S3/MinIO adapters
+  cache/           # Multi-level caching
+  utils/           # Shared utilities
+```
+
+## Quick Start
+
+```bash
+# Prerequisites: Go 1.26+, PostgreSQL 15+, Redis 7+
+
+# Clone and configure
+cp .env.example .env
+# Edit .env with your database credentials
+
+# Run
+cd cmd/server && go run main.go
+
+# Server starts at http://localhost:9421
+# Health check: http://localhost:9421/api/health
+```
+
+## API Endpoints
+
+### Public
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/health` | Health check (DB connectivity) |
+| GET | `/api/health/live` | Liveness probe |
+| GET | `/api/v2` | API version info |
+| POST | `/api/v2/auth/register` | User registration |
+| POST | `/api/v2/auth/login` | Login (password or email) |
+| POST | `/api/v2/auth/refresh` | Refresh access token |
+| POST | `/api/v2/auth/send-code` | Send verification code |
+| POST | `/api/v2/auth/login-with-code` | Login with verification code |
+| GET | `/api/v2/share/{token}` | Access shared file (public) |
+
+### Authenticated
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v2/auth/me` | Current user profile |
+| POST | `/api/v2/auth/logout` | Logout |
+| POST | `/api/v2/auth/2fa/setup` | Enable 2FA |
+| POST | `/api/v2/auth/2fa/disable` | Disable 2FA |
+| GET | `/api/v2/files` | List files (paginated, filterable) |
+| GET | `/api/v2/files/{id}` | Get file details |
+| POST | `/api/v2/files/upload` | Upload file |
+| DELETE | `/api/v2/files/{id}` | Soft-delete file |
+| PUT | `/api/v2/files/{id}/rename` | Rename file |
+| PUT | `/api/v2/files/{id}/favorite` | Toggle favorite |
+| PUT | `/api/v2/files/{id}/move` | Move to folder |
+| GET | `/api/v2/files/{id}/download` | Download file |
+| GET | `/api/v2/files/search` | Search files |
+| POST | `/api/v2/files/{id}/transcode` | Start video transcoding |
+| GET | `/api/v2/files/{id}/versions` | List file versions |
+| POST | `/api/v2/files/batch/delete` | Batch delete |
+| POST | `/api/v2/files/batch/move` | Batch move |
+| GET | `/api/v2/files/folders/tree` | Folder tree |
+| POST | `/api/v2/files/folders` | Create folder |
+| DELETE | `/api/v2/files/folders/{id}` | Delete folder |
+| GET | `/api/v2/files/tags` | List tags |
+| POST | `/api/v2/files/tags` | Create tag |
+| GET | `/api/v2/vaults` | List vaults |
+| POST | `/api/v2/vaults` | Create vault |
+| GET | `/api/v2/vaults/{id}/items` | List vault items |
+| POST | `/api/v2/vaults/{id}/items` | Create vault item (AES-256 encrypted) |
+| GET | `/api/v2/trash` | List trash |
+| POST | `/api/v2/trash/{id}/restore` | Restore from trash |
+| POST | `/api/v2/trash/empty` | Empty trash |
+| GET | `/api/v2/share/links` | List share links |
+| POST | `/api/v2/share/links` | Create share link |
+| DELETE | `/api/v2/share/links/{id}` | Delete share link |
+| GET | `/api/v2/notifications` | List notifications |
+| PUT | `/api/v2/notifications/{id}/read` | Mark notification read |
+
+### Admin (superuser required)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v2/admin/users` | List all users |
+| PUT | `/api/v2/admin/users/{id}` | Update user |
+| GET | `/api/v2/admin/roles` | List roles |
+| POST | `/api/v2/admin/roles` | Create role |
+| GET | `/api/v2/admin/settings` | List system settings |
+| PUT | `/api/v2/admin/settings` | Update setting |
+| GET | `/api/v2/admin/audit-logs` | View audit logs |
+| GET | `/api/v2/admin/sensitive-words` | List sensitive words |
+
+### Mobile (v3)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v3/auth/login` | Mobile login |
+
+## Database
+
+**33 tables** covering:
+- **Users & Auth:** `users`, `user_sessions`, `user_blocks`, `login_attempts`, `token_blacklist`
+- **Files:** `file_items`, `folders`, `file_versions`, `file_tags`, `file_tag_assignments`, `file_fingerprints`, `file_optimizations`, `access_logs`, `trash_items`, `upload_tasks`, `upload_chunks`, `download_tokens`, `download_tasks`
+- **Security:** `audit_logs`, `sensitive_words`, `gdpr_consents`, `field_permissions`
+- **Sharing:** `share_links`, `file_shares`
+- **RBAC:** `roles`, `capabilities`, `role_capabilities`, `user_role_assignments`, `permission_audit_logs`
+- **System:** `system_settings`, `notifications`, `search_history`, `storage_quotas`
+- **Vault:** `vaults`, `vault_items`, `transcode_tasks`, `transcription_tasks`, `storage_plans`
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|-----------|
+| Language | Go 1.26 |
+| HTTP Router | Chi v5 |
+| Database | PostgreSQL 15+ (sqlx) |
+| Cache | Redis 7+ (go-redis) |
+| Auth | JWT (golang-jwt), bcrypt |
+| Storage | Local FS / S3 / MinIO (minio-go) |
+| Config | Viper + .env |
+| Encryption | AES-256-GCM (vault) |
+| Transcoding | FFmpeg |
+
+## CLI
+
+```bash
+go run cmd/cli/main.go
+# or build:
+go build -o stora-cli cmd/cli/main.go
+./stora-cli health    # Check database connectivity
+./stora-cli users     # List all users
+```
+
+## License
+
+Apache-2.0
