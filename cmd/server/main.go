@@ -52,6 +52,19 @@ func main() {
 		defer database.CloseRedis()
 	}
 
+	// Auto-migrate: add missing columns that Go code references
+	migrations := []string{
+		`ALTER TABLE file_items ADD COLUMN IF NOT EXISTS description TEXT`,
+		`ALTER TABLE upload_tasks ADD COLUMN IF NOT EXISTS upload_id VARCHAR(255)`,
+	}
+	for _, m := range migrations {
+		if _, err := db.Exec(m); err != nil {
+			log.Printf("[Server] Migration warning (%s): %v", m[:60], err)
+		} else {
+			log.Printf("[Server] Migration OK: %s", m[:60])
+		}
+	}
+
 	// Create router
 	r := chi.NewRouter()
 
