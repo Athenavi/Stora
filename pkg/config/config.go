@@ -37,7 +37,8 @@ type Config struct {
 	JWTExpiration        time.Duration
 	JWTRefreshExpiration time.Duration
 
-	// Storage
+	// Upload
+	UploadExpireHours int    // hours before incomplete uploads are cleaned up
 	StorageDriver   string       // "local" or "s3"
 	StorageObjectsDir string     // content-addressed objects root, e.g. "storage/objects"
 	TempFolder      string       // temp dir for chunked upload assembly
@@ -87,6 +88,7 @@ func Load() *Config {
 
 		StorageDriver:      getEnv("STORAGE_DRIVER", "local"),
 		StorageObjectsDir:  getEnv("STORAGE_OBJECTS_DIR", "storage/objects"),
+		UploadExpireHours:  getEnvInt("UPLOAD_EXPIRE_HOURS", 144),
 		TempFolder:         getEnv("TEMP_FOLDER", "temp/upload"),
 
 		S3Endpoint:  getEnv("S3_ENDPOINT", ""),
