@@ -38,8 +38,9 @@ type Config struct {
 	JWTRefreshExpiration time.Duration
 
 	// Storage
-	StorageDriver string       // "local" or "s3"
-	TempFolder    string
+	StorageDriver   string       // "local" or "s3"
+	StorageObjectsDir string     // content-addressed objects root, e.g. "storage/objects"
+	TempFolder      string       // temp dir for chunked upload assembly
 
 	// S3
 	S3Endpoint  string
@@ -84,8 +85,9 @@ func Load() *Config {
 		JWTExpiration:        time.Duration(getEnvInt("JWT_EXPIRATION_DELTA", 7200)) * time.Second,
 		JWTRefreshExpiration: time.Duration(getEnvInt("REFRESH_TOKEN_EXPIRATION_DELTA", 64800)) * time.Second,
 
-		StorageDriver: getEnv("STORAGE_DRIVER", "local"),
-		TempFolder:    getEnv("TEMP_FOLDER", "temp/upload"),
+		StorageDriver:      getEnv("STORAGE_DRIVER", "local"),
+		StorageObjectsDir:  getEnv("STORAGE_OBJECTS_DIR", "storage/objects"),
+		TempFolder:         getEnv("TEMP_FOLDER", "temp/upload"),
 
 		S3Endpoint:  getEnv("S3_ENDPOINT", ""),
 		S3Region:    getEnv("S3_REGION", "us-east-1"),

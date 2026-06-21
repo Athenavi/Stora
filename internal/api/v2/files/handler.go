@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -215,40 +214,50 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filename := header.Filename
-	fileSize := header.Size
 	mimeType := header.Header.Get("Content-Type")
 	fileType := detectFileType(mimeType, filename)
 
-	// Generate storage path
-	ext := filepath.Ext(filename)
-	storedName := fmt.Sprintf("%d_%s%s", time.Now().UnixNano(), strings.TrimSuffix(filename, ext), ext)
-	storagePath := fmt.Sprintf("uploads/%d/%s/%s", userID, time.Now().Format("2006/01"), storedName)
-
-	// Store file
-	if err := h.storage.Store(storagePath, file); err != nil {
-		http.Error(w, `{"error":"storage failed"}`, http.StatusInternalServerError)
+	// Compute SHA256 hash and store via content-addressable path (objects/{hash[:2]}/{hash[2:]})
+	fileHash, storagePath, err := h.storage.StoreHash(file)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "storage failed")
 		return
 	}
 
-	// Save to database
+	fileSize := header.Size
+
+	// Dedup: check file_fingerprints table
 	now := time.Now().Format(time.RFC3339)
+	var existingID int64
+	if err := h.db.QueryRow(`SELECT id FROM file_fingerprints WHERE hash = $1`, fileHash).Scan(&existingID); err == nil {
+		// File content already exists — increment reference count
+		h.db.Exec(`UPDATE file_fingerprints SET reference_count = reference_count + 1, updated_at = $1 WHERE id = $2`, now, existingID)
+	} else {
+		// New content — create fingerprint record
+		h.db.Exec(
+			`INSERT INTO file_fingerprints (hash, file_size, mime_type, storage_path, reference_count, created_at, updated_at)
+			 VALUES ($1, $2, $3, $4, 1, $5, $5)`,
+			fileHash, fileSize, mimeType, storagePath, now,
+		)
+	}
+
+	// Save file item
 	var fileID int64
 	err = h.db.QueryRow(
 		`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
-		                         mime_type, file_type, storage_driver, is_folder, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'local', false, $9, $9) RETURNING id`,
-		userID, folderID, filename, filename, storagePath, fileSize, mimeType, fileType, now,
+		                         mime_type, file_type, storage_driver, file_hash, is_folder, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'local', $9, false, $10, $10) RETURNING id`,
+		userID, folderID, filename, filename, storagePath, fileSize, mimeType, fileType, fileHash, now,
 	).Scan(&fileID)
 
 	if err != nil {
-		h.storage.Delete(storagePath)
-		http.Error(w, `{"error":"database insert failed"}`, http.StatusInternalServerError)
+		utils.WriteError(w, http.StatusInternalServerError, "database insert failed")
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
-		"id":       fileID,
-		"filename": filename,
+		"id":        fileID,
+		"filename":  filename,
 		"file_size": fileSize,
 		"file_type": fileType,
 	})
@@ -568,12 +577,6 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Close()
 
-	// Get file info for Content-Length
-	info, err := os.Stat(filepath.Join("storage", filePath))
-	if err == nil {
-		w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
-	}
-
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.WriteHeader(http.StatusOK)
@@ -612,7 +615,7 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 		// Debug: log the path we tried
 		localDrv, ok := h.storage.(*storage.LocalDriver)
 		if ok {
-			fullPath := filepath.Join(localDrv.BasePath, filePath)
+			fullPath := filepath.Join(localDrv.ObjectsPath, filePath)
 			http.Error(w, fmt.Sprintf(`{"success":false,"message":"file not found at %s"}`, fullPath), http.StatusNotFound)
 		} else {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found on storage"})

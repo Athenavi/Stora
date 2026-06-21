@@ -90,7 +90,7 @@ func main() {
 	jwtManager := auth.NewJWTManager(cfg.SecretKey, cfg.JWTExpiration, cfg.JWTRefreshExpiration)
 
 	// Initialize storage driver
-	store := storage.NewLocalDriver(cfg.TempFolder, "/files")
+	store := storage.NewLocalDriver(cfg.StorageObjectsDir, "/files")
 
 	// Initialize auth API handlers
 	authHandler := authapi.NewHandler(db, jwtManager)
