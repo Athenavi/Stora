@@ -74,7 +74,7 @@ export default component$(() => {
     renameVal.value = item.name;
   };
 
-  const openCtx = (item: any, e: any) => {
+  const openCtx = $((item: any, e: any) => {
     if (window.innerWidth < 768) {
       ctxItem.value = item;
       showActionSheet.value = true;
@@ -82,7 +82,7 @@ export default component$(() => {
       ctxPos.value = { x: e.clientX, y: e.clientY };
       ctxItem.value = item;
     }
-  };
+  });
 
   // Listen for FAB click from layout
   // eslint-disable-next-line qwik/no-use-visible-task
