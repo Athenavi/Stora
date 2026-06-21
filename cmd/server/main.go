@@ -10,10 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	authapi "github.com/Athenavi/Stora/internal/api/v2/auth"
+	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/config"
 	"github.com/Athenavi/Stora/pkg/database"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 )
 
@@ -46,11 +49,11 @@ func main() {
 	r := chi.NewRouter()
 
 	// Middleware
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(chimw.Logger)
+	r.Use(chimw.Recoverer)
+	r.Use(chimw.RequestID)
+	r.Use(chimw.RealIP)
+	r.Use(chimw.Timeout(60 * time.Second))
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
@@ -77,11 +80,34 @@ func main() {
 		fmt.Fprint(w, `{"status":"alive"}`)
 	})
 
-	// API v2 placeholder
+	// Initialize JWT manager
+	jwtManager := auth.NewJWTManager(cfg.SecretKey, cfg.JWTExpiration, cfg.JWTRefreshExpiration)
+
+	// Initialize auth API handlers
+	authHandler := authapi.NewHandler(db, jwtManager)
+
+	// API v2 routes
 	r.Route("/api/v2", func(r chi.Router) {
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			fmt.Fprint(w, `{"message":"Stora API v2","version":"0.1.0-go"}`)
+		})
+
+		// Auth routes (public)
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/register", authHandler.Register)
+			r.Post("/login", authHandler.Login)
+			r.Post("/refresh", authHandler.Refresh)
+			r.Post("/send-code", authHandler.SendCode)
+			r.Post("/login-with-code", authHandler.LoginWithCode)
+		})
+
+		// Protected routes
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.AuthMiddleware(jwtManager))
+
+			r.Post("/auth/logout", authHandler.Logout)
+			r.Get("/auth/me", authHandler.Me)
 		})
 	})
 

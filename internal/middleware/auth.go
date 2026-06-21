@@ -1,0 +1,88 @@
+package middleware
+
+import (
+	"context"
+	"net/http"
+	"strings"
+
+	"github.com/Athenavi/Stora/pkg/auth"
+)
+
+type contextKey string
+
+const (
+	UserIDKey   contextKey = "user_id"
+	UsernameKey contextKey = "username"
+	IsAdminKey  contextKey = "is_admin"
+)
+
+// AuthMiddleware validates JWT tokens and injects user info into the context.
+func AuthMiddleware(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+				return
+			}
+
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+				http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+				return
+			}
+
+			claims, err := jwtManager.ValidateToken(parts[1])
+			if err != nil {
+				http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+			ctx = context.WithValue(ctx, UsernameKey, claims.Username)
+			ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
+
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// OptionalAuthMiddleware is like AuthMiddleware but doesn't require a token.
+func OptionalAuthMiddleware(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" {
+				parts := strings.SplitN(authHeader, " ", 2)
+				if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+					if claims, err := jwtManager.ValidateToken(parts[1]); err == nil {
+						ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+						ctx = context.WithValue(ctx, UsernameKey, claims.Username)
+						ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
+						next.ServeHTTP(w, r.WithContext(ctx))
+						return
+					}
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// GetUserID extracts the user ID from context.
+func GetUserID(ctx context.Context) (int64, bool) {
+	id, ok := ctx.Value(UserIDKey).(int64)
+	return id, ok
+}
+
+// GetUsername extracts the username from context.
+func GetUsername(ctx context.Context) (string, bool) {
+	name, ok := ctx.Value(UsernameKey).(string)
+	return name, ok
+}
+
+// IsAdmin checks if the current user is an admin.
+func IsAdmin(ctx context.Context) bool {
+	admin, ok := ctx.Value(IsAdminKey).(bool)
+	return ok && admin
+}
