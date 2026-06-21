@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -182,6 +183,7 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		log.Printf("[GetFile] Scan error for file %d: %v", fileID, err)
 		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
 		return
 	}
