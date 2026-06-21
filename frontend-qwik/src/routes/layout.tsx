@@ -1,7 +1,7 @@
 /**
  * Stora App Layout - enterprise sidebar + topbar
  */
-import { component$, useSignal, useVisibleTask$, Slot } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, Slot, $ } from "@builder.io/qwik";
 import { useLocation, Link } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
 import FolderTree from "~/components/ui/FolderTree";
@@ -109,10 +109,10 @@ export default component$(() => {
     { href: "/admin", icon: "setting" as const, label: "管理面板", active: isAdmin },
   ];
 
-  const toggleSidebar = () => {
+  const toggleSidebar = $(() => {
     sidebarOpen.value = !sidebarOpen.value;
     localStorage.setItem("stora-sidebar-collapsed", String(!sidebarOpen.value));
-  };
+  });
 
   const isCollapsed = !sidebarOpen.value;
 
