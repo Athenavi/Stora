@@ -609,7 +609,14 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 
 	reader, err := h.storage.Retrieve(filePath)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found on storage"})
+		// Debug: log the path we tried
+		localDrv, ok := h.storage.(*storage.LocalDriver)
+		if ok {
+			fullPath := filepath.Join(localDrv.BasePath, filePath)
+			http.Error(w, fmt.Sprintf(`{"success":false,"message":"file not found at %s"}`, fullPath), http.StatusNotFound)
+		} else {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found on storage"})
+		}
 		return
 	}
 	defer reader.Close()
