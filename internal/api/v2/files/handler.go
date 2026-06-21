@@ -366,6 +366,65 @@ func (h *Handler) MoveFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "moved"})
 }
 
+// UpdateFile partially updates a file (filename, description, is_favorite).
+func (h *Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	var req struct {
+		Filename    *string `json:"filename"`
+		Description *string `json:"description"`
+		IsFavorite  *bool   `json:"is_favorite"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	var sets []string
+	var args []interface{}
+	argIdx := 1
+
+	if req.Filename != nil {
+		sets = append(sets, fmt.Sprintf("filename = $%d, original_filename = $%d", argIdx, argIdx))
+		args = append(args, *req.Filename)
+		argIdx++
+	}
+	if req.Description != nil {
+		sets = append(sets, fmt.Sprintf("description = $%d", argIdx))
+		args = append(args, *req.Description)
+		argIdx++
+	}
+	if req.IsFavorite != nil {
+		sets = append(sets, fmt.Sprintf("is_favorite = $%d", argIdx))
+		args = append(args, *req.IsFavorite)
+		argIdx++
+	}
+	if len(sets) == 0 {
+		http.Error(w, `{"error":"no fields to update"}`, http.StatusBadRequest)
+		return
+	}
+
+	sets = append(sets, fmt.Sprintf("updated_at = $%d", argIdx))
+	args = append(args, time.Now().Format(time.RFC3339))
+	argIdx++
+
+	args = append(args, fileID, userID)
+	q := fmt.Sprintf("UPDATE file_items SET %s WHERE id = $%d AND user_id = $%d AND deleted_at IS NULL",
+		strings.Join(sets, ", "), argIdx, argIdx+1)
+
+	result, err := h.db.Exec(q, args...)
+	if err != nil {
+		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
+}
+
 // ---------- Folder operations ----------
 
 // ListFolders returns the folder tree.
@@ -464,6 +523,100 @@ func (h *Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+// GetFolderChildren returns folders and files inside a specific folder, plus breadcrumb path.
+func (h *Handler) GetFolderChildren(w http.ResponseWriter, r *http.Request) {
+	folderID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	// Build breadcrumb path
+	type PathItem struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	path := []PathItem{{ID: 0, Name: "我的文件"}}
+	var walkID int64 = folderID
+	var names = make(map[int64]string)
+	var parents = make(map[int64]int64)
+
+	rows, err := h.db.Query(`SELECT id, COALESCE(parent_id,0), name FROM folders WHERE user_id = $1`, userID)
+	if err != nil {
+		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, pid int64
+		var name string
+		rows.Scan(&id, &pid, &name)
+		names[id] = name
+		parents[id] = pid
+	}
+
+	// Walk up to build path (reverse order)
+	var rev []PathItem
+	for walkID > 0 {
+		if n, ok := names[walkID]; ok {
+			rev = append(rev, PathItem{ID: walkID, Name: n})
+			walkID = parents[walkID]
+		} else {
+			break
+		}
+	}
+	for i := len(rev) - 1; i >= 0; i-- {
+		path = append(path, rev[i])
+	}
+
+	// Fetch child folders
+	type FolderItem struct {
+		ID       int64  `json:"id"`
+		Name     string `json:"name"`
+		ParentID *int64 `json:"parent_id"`
+	}
+	var folders []FolderItem
+	frows, err := h.db.Query(`SELECT id, parent_id, name FROM folders WHERE user_id = $1 AND parent_id = $2 ORDER BY name`, userID, folderID)
+	if err == nil {
+		defer frows.Close()
+		for frows.Next() {
+			var f FolderItem
+			frows.Scan(&f.ID, &f.ParentID, &f.Name)
+			folders = append(folders, f)
+		}
+	}
+
+	// Fetch child files
+	type FileItem struct {
+		ID        int64   `json:"id"`
+		Filename  *string `json:"filename"`
+		FileSize  *int64  `json:"file_size"`
+		MimeType  *string `json:"mime_type"`
+		FileType  *string `json:"file_type"`
+		IsFav     *bool   `json:"is_favorite"`
+		ThumbURL  *string `json:"thumbnail_url"`
+		FolderID  *int64  `json:"folder_id"`
+		CreatedAt *string `json:"created_at"`
+		UpdatedAt *string `json:"updated_at"`
+	}
+	var files []FileItem
+	frows2, err := h.db.Query(
+		`SELECT id, filename, file_size, mime_type, file_type, is_favorite, thumbnail_url, folder_id, created_at, updated_at
+		 FROM file_items WHERE user_id = $1 AND folder_id = $2 AND deleted_at IS NULL
+		 ORDER BY is_folder DESC, created_at DESC`, userID, folderID)
+	if err == nil {
+		defer frows2.Close()
+		for frows2.Next() {
+			var f FileItem
+			frows2.Scan(&f.ID, &f.Filename, &f.FileSize, &f.MimeType, &f.FileType, &f.IsFav, &f.ThumbURL, &f.FolderID, &f.CreatedAt, &f.UpdatedAt)
+			files = append(files, f)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"folders": folders,
+		"files":   files,
+		"path":    path,
+	})
 }
 
 // ---------- Tags ----------

@@ -3,11 +3,12 @@
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
-import { listFiles, updateFile, type FileItem } from "~/lib/api";
+import { createServerApi, updateFile, type FileItem } from "~/lib/api";
 import { Button, Skeleton } from "~/components/ui/Button";
 
-export const useFavList = routeLoader$(async () => {
-  return await listFiles({ page: 1, page_size: 200, is_favorite: true }).catch(() => null);
+export const useFavList = routeLoader$(async ({ request }) => {
+  const api = createServerApi(request);
+  return await api.get<{ items: FileItem[]; total: number; page: number; page_size: number }>("/files?page=1&page_size=200&is_favorite=true").catch(() => null);
 });
 
 function fmtSize(b: number): string {

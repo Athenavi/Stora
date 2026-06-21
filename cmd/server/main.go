@@ -188,6 +188,7 @@ func main() {
 			r.Get("/files/upload/{uploadId}/status", uploadHandler.UploadStatus)
 			r.Post("/files/upload/{uploadId}/complete", uploadHandler.CompleteUpload)
 			r.Delete("/files/upload/{uploadId}", uploadHandler.CancelUpload)
+			r.Patch("/files/{id}", fileHandler.UpdateFile)
 			r.Delete("/files/{id}", fileHandler.DeleteFile)
 			r.Put("/files/{id}/rename", fileHandler.RenameFile)
 			r.Put("/files/{id}/favorite", fileHandler.ToggleFavorite)
@@ -199,6 +200,7 @@ func main() {
 
 			// Folders
 			r.Get("/files/folders/tree", fileHandler.ListFolders)
+			r.Get("/files/folders/{id}/children", fileHandler.GetFolderChildren)
 			r.Post("/files/folders", fileHandler.CreateFolder)
 			r.Delete("/files/folders/{id}", fileHandler.DeleteFolder)
 

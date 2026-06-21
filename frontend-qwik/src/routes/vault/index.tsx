@@ -4,7 +4,7 @@
  */
 import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { api } from "~/lib/api";
+import { api, createServerApi } from "~/lib/api";
 import { Button } from "~/components/ui/Button";
 import { Icon } from "~/components/ui/Icon";
 
@@ -14,8 +14,9 @@ interface VaultInfo {
 }
 interface VaultItem { id: number; filename: string; file_size: number; mime_type: string; created_at: string; }
 
-export const useVaults = routeLoader$(async () => {
-  try { return await api.get<VaultInfo[]>("/vaults"); } catch { return []; }
+export const useVaults = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
+  try { return await srv.get<VaultInfo[]>("/vaults"); } catch { return []; }
 });
 
 function fmtSize(b: number): string {

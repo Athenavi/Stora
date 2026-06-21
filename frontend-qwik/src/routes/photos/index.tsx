@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
-import { api } from "~/lib/api";
+import { createServerApi } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 
 interface Photo {
@@ -21,9 +21,10 @@ interface DayGroup {
   photos: Photo[];
 }
 
-export const usePhotos = routeLoader$(async () => {
+export const usePhotos = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
   try {
-    const data = await api.get<{ items: Photo[] }>("/files?file_type=image&sort_by=created_at&sort_order=desc&page_size=200");
+    const data = await srv.get<{ items: Photo[] }>("/files?file_type=image&sort_by=created_at&sort_order=desc&page_size=200");
     // Group by date
     const groups: Record<string, Photo[]> = {};
     for (const p of data.items) {

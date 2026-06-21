@@ -5,7 +5,7 @@ import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton } from "~/components/ui/Button";
-import { api } from "~/lib/api";
+import { api, createServerApi } from "~/lib/api";
 
 interface TrashItem {
   id: number;
@@ -16,8 +16,9 @@ interface TrashItem {
   original_filename?: string;
 }
 
-export const useTrashList = routeLoader$(async () => {
-  return await api.get<{ items: TrashItem[]; total: number }>("/files/trash").catch(() => ({ items: [], total: 0 }));
+export const useTrashList = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
+  return await srv.get<{ items: TrashItem[]; total: number }>("/files/trash").catch(() => ({ items: [], total: 0 }));
 });
 
 function fmtSize(bytes: number): string {

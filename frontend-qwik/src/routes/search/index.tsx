@@ -3,14 +3,16 @@
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { searchFiles, type FileItem } from "~/lib/api";
+import { createServerApi, type FileItem } from "~/lib/api";
 import { Button, Skeleton } from "~/components/ui/Button";
 import { Icon } from "~/components/ui/Icon";
 
-export const useSearch = routeLoader$(async ({ url }) => {
+export const useSearch = routeLoader$(async ({ url, request }) => {
   const q = url.searchParams.get("q");
   if (!q) return null;
-  return await searchFiles({ q, page: 1, page_size: 50 }).catch(() => null);
+  const srv = createServerApi(request);
+  const qs = new URLSearchParams({ q, page: "1", page_size: "50" });
+  return await srv.get<{ items: FileItem[]; total: number; page: number; page_size: number }>("/files/search?" + qs.toString()).catch(() => null);
 });
 
 function fmtSize(b: number): string { if (!b) return "0 B"; const k = 1024; const i = Math.floor(Math.log(b) / Math.log(k)); return parseFloat((b / Math.pow(k, i)).toFixed(1)) + " " + ["B", "KB", "MB", "GB", "TB"][i]; }

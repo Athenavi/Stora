@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
-import { api } from "~/lib/api";
+import { api, createServerApi } from "~/lib/api";
 import { Button, Input } from "~/components/ui/Button";
 import { Icon } from "~/components/ui/Icon";
 
@@ -14,8 +14,9 @@ interface Tag {
   file_count: number;
 }
 
-export const useTags = routeLoader$(async () => {
-  return await api.get<Tag[]>("/files/tags").catch(() => []);
+export const useTags = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
+  return await srv.get<Tag[]>("/files/tags").catch(() => []);
 });
 
 const TAG_COLORS = ["#6366f1", "#ec4899", "#f59e0b", "#10b981", "#06b6d4", "#8b5cf6", "#ef4444", "#14b8a6"];

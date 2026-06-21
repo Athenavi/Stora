@@ -6,7 +6,7 @@ import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton, Input, Badge } from "~/components/ui/Button";
-import { api } from "~/lib/api";
+import { api, createServerApi } from "~/lib/api";
 
 // ─── Types ───
 
@@ -54,20 +54,24 @@ const tabs = [
   { id: "settings", label: "系统设置", icon: "setting" as const },
 ];
 
-export const useStats = routeLoader$(async () => {
-  try { return await api.get<DashboardStats>("/admin/dashboard"); } catch { return null; }
+export const useStats = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
+  try { return await srv.get<DashboardStats>("/admin/dashboard"); } catch { return null; }
 });
 
-export const useUsers = routeLoader$(async () => {
-  try { return await api.get<AdminUser[]>("/admin/users"); } catch { return []; }
+export const useUsers = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
+  try { return await srv.get<AdminUser[]>("/admin/users"); } catch { return []; }
 });
 
-export const useLogs = routeLoader$(async () => {
-  try { return await api.get<{ items: AuditLog[]; total: number }>("/admin/audit-logs?page=1&per_page=50"); } catch { return { items: [], total: 0 }; }
+export const useLogs = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
+  try { return await srv.get<{ items: AuditLog[]; total: number }>("/admin/audit-logs?page=1&per_page=50"); } catch { return { items: [], total: 0 }; }
 });
 
-export const useSettings = routeLoader$(async () => {
-  try { return await api.get<Record<string, string>>("/admin/settings"); } catch { return {} as Record<string, string>; }
+export const useSettings = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
+  try { return await srv.get<Record<string, string>>("/admin/settings"); } catch { return {} as Record<string, string>; }
 });
 
 function fmtSize(bytes: number): string {

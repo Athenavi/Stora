@@ -3,10 +3,18 @@
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
-import { listShares, revokeShare } from "~/lib/api";
+import { createServerApi, revokeShare, type ShareLink } from "~/lib/api";
 
-export const useShareList = routeLoader$(async () => {
-  return await listShares(1, 50).catch(() => ({ items: [], total: 0, page: 1, page_size: 50 }));
+interface ShareListResponse {
+  items: ShareLink[];
+  total: number;
+  page: number;
+  page_size: number;
+}
+
+export const useShareList = routeLoader$(async ({ request }) => {
+  const srv = createServerApi(request);
+  return await srv.get<ShareListResponse>("/files/shares?page=1&page_size=50").catch(() => ({ items: [], total: 0, page: 1, page_size: 50 }));
 });
 
 function fmtDate(d: string | undefined | null): string {
