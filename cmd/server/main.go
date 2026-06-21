@@ -14,6 +14,7 @@ import (
 	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
 	shareapi "github.com/Athenavi/Stora/internal/api/v2/share"
 	adminapi "github.com/Athenavi/Stora/internal/api/v2/admin"
+	mobileapi "github.com/Athenavi/Stora/internal/api/v3/mobile"
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/config"
@@ -211,6 +212,12 @@ func main() {
 
 		// Public share access (no auth required)
 		r.Get("/share/{token}", shareHandler.AccessShareLink)
+	})
+
+	// API v3 (mobile)
+	mobileAuth := mobileapi.NewAuthHandler(db, jwtManager)
+	r.Route("/api/v3", func(r chi.Router) {
+		r.Post("/auth/login", mobileAuth.Login)
 	})
 
 	// Start server
