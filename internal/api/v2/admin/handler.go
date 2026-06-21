@@ -20,6 +20,28 @@ func NewHandler(db *sql.DB) *Handler {
 	return &Handler{db: db}
 }
 
+// ---------- Dashboard Stats ----------
+
+func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
+	var totalUsers, totalFiles, totalShares int64
+	var totalStorage, usedStorage int64
+
+	h.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&totalUsers)
+	h.db.QueryRow(`SELECT COUNT(*) FROM file_items WHERE deleted_at IS NULL`).Scan(&totalFiles)
+	h.db.QueryRow(`SELECT COUNT(*) FROM share_links`).Scan(&totalShares)
+	h.db.QueryRow(`SELECT COALESCE(SUM(total_storage), 0) FROM users`).Scan(&totalStorage)
+	h.db.QueryRow(`SELECT COALESCE(SUM(used_storage), 0) FROM users`).Scan(&usedStorage)
+
+	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"total_users":      totalUsers,
+		"total_files":      totalFiles,
+		"total_shares":     totalShares,
+		"total_storage":    totalStorage,
+		"used_storage":     usedStorage,
+		"storage_percent":  totalStorage,
+	})
+}
+
 // ---------- User Management ----------
 
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {

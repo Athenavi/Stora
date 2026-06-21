@@ -7,7 +7,7 @@ import { listFiles, updateFile, type FileItem } from "~/lib/api";
 import { Button, Skeleton } from "~/components/ui/Button";
 
 export const useFavList = routeLoader$(async () => {
-  return await listFiles({ page: 1, page_size: 50 }).catch(() => null);
+  return await listFiles({ page: 1, page_size: 200, is_favorite: true }).catch(() => null);
 });
 
 function fmtSize(b: number): string {

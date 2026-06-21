@@ -152,6 +152,7 @@ export function createServerApi(request?: Request) {
   return {
     get: <T>(path: string) => serverRequest<T>('GET', path),
     post: <T>(path: string, body?: any) => serverRequest<T>('POST', path, body),
+    put: <T>(path: string, body?: any) => serverRequest<T>('PUT', path, body),
     patch: <T>(path: string, body?: any) => serverRequest<T>('PATCH', path, body),
     delete: <T>(path: string) => serverRequest<T>('DELETE', path),
     upload: <T>(path: string, formData: FormData) => serverRequest<T>('POST', path, formData),
@@ -161,6 +162,7 @@ export function createServerApi(request?: Request) {
 export const api = {
   get: <T>(path: string, options?: { headers?: Record<string, string> }) => request<T>('GET', path, undefined, options),
   post: <T>(path: string, body?: any, options?: { headers?: Record<string, string> }) => request<T>('POST', path, body, options),
+  put: <T>(path: string, body?: any, options?: { headers?: Record<string, string> }) => request<T>('PUT', path, body, options || {}),
   patch: <T>(path: string, body?: any) => request<T>('PATCH', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
 

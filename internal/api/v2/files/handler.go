@@ -69,6 +69,14 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 
+	// is_favorite filter
+	favStr := r.URL.Query().Get("is_favorite")
+	if favStr == "true" || favStr == "1" {
+		where = append(where, "is_favorite = true")
+	} else if favStr == "false" || favStr == "0" {
+		where = append(where, "is_favorite = false")
+	}
+
 	// Sort
 	if sortBy == "" {
 		sortBy = "created_at"
@@ -462,8 +470,16 @@ func (h *Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListTags(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
+	// Ensure file_tag_assignments table exists
+	h.db.Exec(`CREATE TABLE IF NOT EXISTS file_tag_assignments (
+		id SERIAL PRIMARY KEY, file_id INTEGER NOT NULL, tag_id INTEGER NOT NULL,
+		UNIQUE(file_id, tag_id)
+	)`)
+
 	rows, err := h.db.Query(
-		`SELECT id, name, color FROM file_tags WHERE user_id = $1 ORDER BY name`, userID,
+		`SELECT t.id, t.name, t.color,
+		        COALESCE((SELECT COUNT(*) FROM file_tag_assignments a WHERE a.tag_id = t.id), 0) AS file_count
+		 FROM file_tags t WHERE t.user_id = $1 ORDER BY t.name`, userID,
 	)
 	if err != nil {
 		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
@@ -472,14 +488,15 @@ func (h *Handler) ListTags(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type Tag struct {
-		ID    int64   `json:"id"`
-		Name  string  `json:"name"`
-		Color *string `json:"color"`
+		ID        int64   `json:"id"`
+		Name      string  `json:"name"`
+		Color     *string `json:"color"`
+		FileCount int     `json:"file_count"`
 	}
 	var tags = make([]Tag, 0)
 	for rows.Next() {
 		var t Tag
-		rows.Scan(&t.ID, &t.Name, &t.Color)
+		rows.Scan(&t.ID, &t.Name, &t.Color, &t.FileCount)
 		tags = append(tags, t)
 	}
 	writeJSON(w, http.StatusOK, tags)
@@ -504,6 +521,54 @@ func (h *Handler) CreateTag(w http.ResponseWriter, r *http.Request) {
 	).Scan(&tagID)
 
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": tagID})
+}
+
+func (h *Handler) UpdateTag(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	tagID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	var req struct {
+		Name  string  `json:"name"`
+		Color *string `json:"color"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Name != "" {
+		_, err := h.db.Exec(`UPDATE file_tags SET name = $1 WHERE id = $2 AND user_id = $3`,
+			req.Name, tagID, userID)
+		if err != nil {
+			http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+	if req.Color != nil {
+		h.db.Exec(`UPDATE file_tags SET color = $1 WHERE id = $2 AND user_id = $3`,
+			*req.Color, tagID, userID)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
+}
+
+func (h *Handler) DeleteTag(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	tagID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	// Remove assignments first
+	h.db.Exec(`DELETE FROM file_tag_assignments WHERE tag_id = $1`, tagID)
+
+	result, err := h.db.Exec(`DELETE FROM file_tags WHERE id = $1 AND user_id = $2`, tagID, userID)
+	if err != nil {
+		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
 // ---------- Search ----------

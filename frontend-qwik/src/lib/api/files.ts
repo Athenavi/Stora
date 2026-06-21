@@ -58,6 +58,7 @@ export const listFiles = (params?: {
   folder_id?: number | null;
   search?: string;
   file_type?: string;
+  is_favorite?: boolean;
   sort_by?: string;
   sort_order?: string;
   page?: number;
@@ -67,6 +68,7 @@ export const listFiles = (params?: {
   if (params?.folder_id !== undefined) q.set('folder_id', String(params.folder_id));
   if (params?.search) q.set('search', params.search);
   if (params?.file_type) q.set('file_type', params.file_type);
+  if (params?.is_favorite !== undefined) q.set('is_favorite', String(params.is_favorite));
   if (params?.sort_by) q.set('sort_by', params.sort_by);
   if (params?.sort_order) q.set('sort_order', params.sort_order);
   q.set('page', String(params?.page || 1));

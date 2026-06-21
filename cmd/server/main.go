@@ -119,7 +119,7 @@ func main() {
 	trashHandler := fileapi.NewTrashHandler(db)
 
 	// Initialize share handler
-	shareHandler := shareapi.NewHandler(db)
+	shareHandler := shareapi.NewHandler(db, store)
 
 	// Initialize admin handler
 	adminHandler := adminapi.NewHandler(db)
@@ -193,6 +193,7 @@ func main() {
 			r.Put("/files/{id}/favorite", fileHandler.ToggleFavorite)
 			r.Put("/files/{id}/move", fileHandler.MoveFile)
 			r.Get("/files/{id}/download", fileHandler.DownloadFile)
+			r.Get("/files/download/{id}", fileHandler.DownloadFile) // alias for frontend
 			r.Get("/files/preview/{id}/{filename}", fileHandler.PreviewFile)
 			r.Get("/files/search", fileHandler.Search)
 
@@ -204,12 +205,18 @@ func main() {
 			// Tags
 			r.Get("/files/tags", fileHandler.ListTags)
 			r.Post("/files/tags", fileHandler.CreateTag)
+			r.Patch("/files/tags/{id}", fileHandler.UpdateTag)
+			r.Delete("/files/tags/{id}", fileHandler.DeleteTag)
 
 			// Vault
 			r.Get("/vaults", vaultHandler.ListVaults)
 			r.Post("/vaults", vaultHandler.CreateVault)
+			r.Post("/vaults/{vaultId}/verify-password", vaultHandler.VerifyVaultPassword)
+			r.Delete("/vaults/{vaultId}", vaultHandler.DeleteVault)
 			r.Get("/vaults/{vaultId}/items", vaultHandler.ListVaultItems)
-			r.Post("/vaults/{vaultId}/items", vaultHandler.CreateVaultItem)
+			r.Post("/vaults/{vaultId}/items/upload", vaultHandler.UploadVaultItem)
+			r.Get("/vaults/{vaultId}/items/{itemId}", vaultHandler.DownloadVaultItem)
+			r.Delete("/vaults/{vaultId}/items/{itemId}", vaultHandler.DeleteVaultItem)
 
 			// Transcoding
 			r.Post("/files/{id}/transcode", transcodeHandler.StartTranscode)
@@ -221,12 +228,22 @@ func main() {
 			r.Post("/files/batch/delete", batchHandler.BatchDelete)
 			r.Post("/files/batch/move", batchHandler.BatchMove)
 
-			// Trash
+			// Trash — frontend calls /files/trash/* paths
+			r.Get("/files/trash", trashHandler.ListTrash)
+			r.Post("/files/trash/{id}/restore", trashHandler.RestoreFile)
+			r.Post("/files/trash/{id}/destroy", trashHandler.DestroyFile)
+			r.Post("/files/trash/batch-restore", trashHandler.BatchRestore)
+			r.Post("/files/trash/clear", trashHandler.ClearTrash)
+			// Legacy paths
 			r.Get("/trash", trashHandler.ListTrash)
 			r.Post("/trash/{id}/restore", trashHandler.RestoreFile)
 			r.Post("/trash/empty", trashHandler.EmptyTrash)
 
-			// Share links
+			// Share links — frontend calls /files/shares/*
+			r.Get("/files/shares", shareHandler.ListShareLinks)
+			r.Post("/files/shares", shareHandler.CreateShareLink)
+			r.Delete("/files/shares/{id}", shareHandler.DeleteShareLink)
+			// Legacy paths
 			r.Get("/share/links", shareHandler.ListShareLinks)
 			r.Post("/share/links", shareHandler.CreateShareLink)
 			r.Delete("/share/links/{id}", shareHandler.DeleteShareLink)
@@ -242,6 +259,9 @@ func main() {
 			// Admin (requires superuser)
 			r.Group(func(r chi.Router) {
 				r.Use(middleware.RequireAdmin)
+
+				// Dashboard stats
+				r.Get("/admin/dashboard", adminHandler.DashboardStats)
 
 				// User management
 				r.Get("/admin/users", adminHandler.ListUsers)
@@ -265,6 +285,9 @@ func main() {
 
 		// Public share access (no auth required)
 		r.Get("/share/{token}", shareHandler.AccessShareLink)
+		r.Get("/share/{code}/info", shareHandler.GetShareInfo)
+		r.Get("/share/{code}/download", shareHandler.ShareFileDownload)
+		r.Get("/files/shares/access/{code}", shareHandler.VerifySharePassword)
 
 		// File preview (optional auth for <img> tags)
 		r.With(middleware.OptionalAuthMiddleware(jwtManager)).Get("/files/preview/{id}/{filename}", fileHandler.PreviewFile)

@@ -30,6 +30,8 @@ function fmtSize(bytes: number | undefined): string {
 
 export default component$(() => {
   const data = useShareData();
+  const loc = useLocation();
+  const shareCode = loc.params["code"] || (data.value?.share_info?.short_code) || "";
   const password = useSignal("");
   const error = useSignal("");
   const shareData = useSignal<ShareAccess | null>(data.value);
@@ -93,7 +95,10 @@ export default component$(() => {
           </div>
           <div class="flex items-center gap-3 mt-6">
             {item.id && (
-              <Button class="flex-1" variant="primary" onClick$={() => window.open(`/api/v2/files/download/${item.id}`, "_blank")}>
+              <Button class="flex-1" variant="primary" onClick$={() => {
+                const pw = s.share_info.password_protected ? password.value : "";
+                window.open(`/api/v2/share/${shareCode}/download?password=${encodeURIComponent(pw)}`, "_blank");
+              }}>
                 <Icon name="download" size={16} /> 下载文件
               </Button>
             )}
