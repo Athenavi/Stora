@@ -109,9 +109,9 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		ID        int64   `json:"id"`
 		Filename  *string `json:"filename"`
 		OrigName  *string `json:"original_filename"`
-		FileSize  int64   `json:"file_size"`
+		FileSize  *int64  `json:"file_size"`
 		MimeType  *string `json:"mime_type"`
-		FileType  string  `json:"file_type"`
+		FileType  *string `json:"file_type"`
 		IsFolder  bool    `json:"is_folder"`
 		IsFav     bool    `json:"is_favorite"`
 		ThumbURL  *string `json:"thumbnail_url"`
@@ -146,24 +146,24 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 
 	var item struct {
-		ID        int64   `json:"id"`
-		Filename  *string `json:"filename"`
-		OrigName  *string `json:"original_filename"`
-		FileSize  int64   `json:"file_size"`
-		MimeType  *string `json:"mime_type"`
-		FileType  string  `json:"file_type"`
-		IsFolder  bool    `json:"is_folder"`
-		IsFav     bool    `json:"is_favorite"`
-		FilePath  *string `json:"-"`
-		FileURL   *string `json:"file_url"`
-		ThumbURL  *string `json:"thumbnail_url"`
-		Width     *int    `json:"width"`
-		Height    *int    `json:"height"`
-		Duration  *int    `json:"duration"`
-		FolderID  *int64  `json:"folder_id"`
-		CreatedAt *string `json:"created_at"`
-		UpdatedAt *string `json:"updated_at"`
-		Desc      *string `json:"description"`
+		ID        int64    `json:"id"`
+		Filename  *string  `json:"filename"`
+		OrigName  *string  `json:"original_filename"`
+		FileSize  *int64   `json:"file_size"`
+		MimeType  *string  `json:"mime_type"`
+		FileType  *string  `json:"file_type"`
+		IsFolder  bool     `json:"is_folder"`
+		IsFav     bool     `json:"is_favorite"`
+		FilePath  *string  `json:"-"`
+		FileURL   *string  `json:"file_url"`
+		ThumbURL  *string  `json:"thumbnail_url"`
+		Width     *int     `json:"width"`
+		Height    *int     `json:"height"`
+		Duration  *int     `json:"duration"`
+		FolderID  *int64   `json:"folder_id"`
+		CreatedAt *string  `json:"created_at"`
+		UpdatedAt *string  `json:"updated_at"`
+		Desc      *string  `json:"description"`
 	}
 
 	err := h.db.QueryRow(

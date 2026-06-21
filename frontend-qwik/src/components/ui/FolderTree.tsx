@@ -50,7 +50,7 @@ export default component$(() => {
           try {
             const { fileIds } = JSON.parse(data);
             if (fileIds?.length) {
-              await api.post('/files/move', { file_ids: fileIds, target_folder_id: node.id });
+              await api.post('/files/batch/move', { file_ids: fileIds, target_folder_id: node.id });
               // Refresh the current page
               if (currentFolderId) nav(`/drive?folder=${currentFolderId}`);
               else nav('/drive');

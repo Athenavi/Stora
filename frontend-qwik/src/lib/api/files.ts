@@ -106,7 +106,7 @@ export const getFolderTree = (): Promise<Folder[]> =>
 // ─── Move ───
 
 export const moveFiles = (fileIds: number[], targetFolderId?: number | null): Promise<void> =>
-  api.post('/files/move', { file_ids: fileIds, target_folder_id: targetFolderId });
+  api.post('/files/batch/move', { file_ids: fileIds, target_folder_id: targetFolderId });
 
 // ─── Upload ───
 
