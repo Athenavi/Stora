@@ -43,6 +43,7 @@
     "vite-tsconfig-paths": "^4.2.1"
   },
   "dependencies": {
-    "@flyfish-group/file-viewer-web": "^1.0.25"
+    "@flyfish-group/file-viewer-web": "^1.0.25",
+    "@fontsource/geist-sans": "^5.2.5"
   }
 }

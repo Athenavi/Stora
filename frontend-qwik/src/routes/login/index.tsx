@@ -5,6 +5,7 @@ import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { useNavigate, useLocation } from "@builder.io/qwik-city";
 import { login, setToken, loginWithCode, sendCode } from "~/lib/api";
 import { Button } from "~/components/ui/Button";
+import { Icon } from "~/components/ui/Icon";
 
 export default component$(() => {
   const nav = useNavigate();
@@ -107,7 +108,7 @@ export default component$(() => {
 
           {error.value && (
             <div class="mb-6 px-4 py-3 bg-red-50 border border-red-100 text-red-700 text-sm rounded-lg flex items-center gap-2">
-              <span>⚠</span>
+              <Icon name="alert" size={16} class="shrink-0" />
               <span>{error.value}</span>
             </div>
           )}

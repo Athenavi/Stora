@@ -61,7 +61,7 @@ export default component$(() => {
       <>
         {maintenance.value?.enabled && (
           <div class="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800 flex items-center justify-center gap-2">
-            <span>🔧</span>
+            <Icon name="setting" size={16} class="shrink-0" />
             <span>{maintenance.value.message || '系统正在维护中'}</span>
             {maintenance.value.time_until_maintenance !== undefined && maintenance.value.time_until_maintenance > 0 && (
               <span class="text-amber-600 font-mono">
@@ -87,6 +87,13 @@ export default component$(() => {
   const mobileMenuOpen = useSignal(false);
   const sidebarOpen = useSignal(true);
 
+  // Restore dark mode preference
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(() => {
+    const saved = localStorage.getItem("stora-dark-mode");
+    if (saved === "true") darkMode.value = true;
+  });
+
   const navItems = [
     { href: "/drive", icon: "folder" as const, label: "我的文件", active: isDrive },
     { href: "/share", icon: "share" as const, label: "我的分享", active: isShare },
@@ -99,7 +106,7 @@ export default component$(() => {
   ];
 
   return (
-    <div class={`flex h-screen overflow-hidden ${darkMode.value ? 'dark bg-slate-900' : 'bg-slate-50'}`}>
+    <div class={`flex min-h-dvh overflow-hidden ${darkMode.value ? 'dark bg-slate-900' : 'bg-slate-50'}`}>
       {/* Mobile overlay */}
       {mobileMenuOpen.value && (
         <div class="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick$={() => mobileMenuOpen.value = false} />
@@ -110,7 +117,7 @@ export default component$(() => {
         class={`${
           sidebarOpen.value ? "w-[260px]" : "w-0"
         } ${mobileMenuOpen.value ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-          transition-all duration-300 bg-slate-900 text-white flex flex-col shrink-0 overflow-hidden
+          transition-all duration-300 bg-slate-900 text-white flex flex-col shrink-0 overflow-hidden noise-bg
           fixed lg:static inset-y-0 left-0 z-40 lg:z-auto`}
       >
         <div class="flex items-center gap-3 px-6 h-16 border-b border-slate-800 shrink-0">
@@ -118,7 +125,7 @@ export default component$(() => {
             S
           </div>
           <div>
-            <h1 class="text-base font-semibold tracking-tight">Stora</h1>
+            <h1 class="text-base font-semibold tracking-tight text-white">Stora</h1>
             <p class="text-xs text-slate-400 -mt-0.5">Enterprise Storage</p>
           </div>
         </div>
@@ -184,7 +191,7 @@ export default component$(() => {
             <Icon name="menu" size={20} />
           </button>
           <div class="flex-1" />
-          <button onClick$={() => darkMode.value = !darkMode.value} class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title={darkMode.value ? "亮色模式" : "暗色模式"}>
+          <button onClick$={() => { darkMode.value = !darkMode.value; localStorage.setItem("stora-dark-mode", String(darkMode.value)); }} class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title={darkMode.value ? "亮色模式" : "暗色模式"}>
             {darkMode.value ? <Icon name="sun" size={20} /> : <Icon name="moon" size={20} />}
           </button>
           <button class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title="设置">
@@ -198,7 +205,7 @@ export default component$(() => {
         {/* Maintenance banner */}
         {maintenance.value?.enabled && (
           <div class="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800 flex items-center justify-center gap-2 shrink-0">
-            <span>🔧</span>
+            <Icon name="setting" size={16} class="shrink-0" />
             <span>{maintenance.value.message || '系统正在维护中'}</span>
             {maintenance.value.time_until_maintenance !== undefined && maintenance.value.time_until_maintenance > 0 && (
               <span class="text-amber-600 font-mono">

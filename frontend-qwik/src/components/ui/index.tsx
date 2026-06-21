@@ -4,6 +4,7 @@
  * Skeleton loaders, lazy image, toast, empty state, FAB
  */
 import { component$, Slot, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { Icon } from "./Icon";
 
 // ─── Skeleton Loaders ───
 
@@ -95,7 +96,9 @@ export const ToastContainer = component$(() => {
 export const EmptyState = component$<{ icon: string; title: string; description: string }>(
   ({ icon, title, description }) => (
     <div class="flex flex-col items-center justify-center h-full text-slate-400">
-      <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">{icon}</div>
+      <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center mb-5">
+        <Icon name={icon as any} size={32} class="text-slate-400" />
+      </div>
       <h3 class="text-lg font-semibold text-slate-500 mb-1">{title}</h3>
       <p class="text-sm text-slate-400 mb-6">{description}</p>
       <Slot />
