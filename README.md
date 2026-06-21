@@ -41,10 +41,10 @@ pkg/
 
 # Clone and configure
 cp .env.example .env
-# Edit .env with your database credentials
+# Edit .env with your database credentials (SECRET_KEY is required)
 
-# Run
-cd cmd/server && go run main.go
+# Run (from project root)
+go run ./cmd/server
 
 # Server starts at http://localhost:9421
 # Health check: http://localhost:9421/api/health
