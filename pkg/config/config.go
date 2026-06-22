@@ -56,6 +56,9 @@ type Config struct {
 	SMTPUser     string
 	SMTPPassword string
 	SMTPFrom     string
+
+	// Vault
+	VaultEncryptionKey string
 }
 
 // Load reads configuration from environment variables and .env file.
@@ -102,6 +105,8 @@ func Load() *Config {
 		SMTPUser:     getEnv("SMTP_USER", ""),
 		SMTPPassword: getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:     getEnv("SMTP_FROM", ""),
+
+		VaultEncryptionKey: getEnv("VAULT_ENCRYPTION_KEY", ""),
 	}
 
 	// Ensure domain ends with /

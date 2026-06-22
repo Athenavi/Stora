@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stora 管理面板</title>
+<style>
+  :root {
+    --bg: #f8fafc;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --green: #22c55e;
+    --red: #ef4444;
+    --amber: #f59e0b;
+    --blue: #3b82f6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); }
+  .header { background: var(--card); border-bottom: 1px solid var(--border); padding: 16px 24px; }
+  .header h1 { font-size: 20px; font-weight: 600; }
+  .header .subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .container { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .stat { text-align: center; padding: 16px; }
+  .stat-value { font-size: 28px; font-weight: 700; }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .stat.green .stat-value { color: var(--green); }
+  .stat.red .stat-value { color: var(--red); }
+  .stat.amber .stat-value { color: var(--amber); }
+  .stat.blue .stat-value { color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge.ok { background: #dcfce7; color: #166534; }
+  .badge.warn { background: #fef3c7; color: #92400e; }
+  .badge.err { background: #fee2e2; color: #991b1b; }
+  .badge.info { background: #dbeafe; color: #1e40af; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .btn { display: inline-flex; align-items: center; gap: 4px; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; border: none; cursor: pointer; text-decoration: none; }
+  .btn-primary { background: var(--blue); color: white; }
+  .btn-primary:hover { background: #2563eb; }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-outline:hover { background: var(--bg); }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .mt-16 { margin-top: 16px; }
+  .footer { text-align: center; padding: 24px; color: var(--muted); font-size: 12px; }
+  .config-table td:first-child { font-weight: 500; width: 160px; }
+  pre { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 6px; font-size: 12px; overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🔧 Stora 管理面板</h1>
+  <div class="subtitle">系统状态一览 · 仅管理员可见</div>
+</div>
+<div class="container">
+
+  {{if .Error}}
+  <div class="card" style="border-color: var(--red);">
+    <h2 style="color: var(--red);">⚠️ 错误</h2>
+    <p>{{.Error}}</p>
+  </div>
+  {{end}}
+
+  <!-- 系统健康 -->
+  <div class="card">
+    <h2>系统健康</h2>
+    <div class="grid">
+      <div class="stat {{if .Health.DBConnected}}green{{else}}red{{end}}">
+        <div class="stat-value">{{if .Health.DBConnected}}✅{{else}}❌{{end}}</div>
+        <div class="stat-label">数据库</div>
+      </div>
+      <div class="stat {{if .Health.RedisConnected}}green{{else}}amber{{end}}">
+        <div class="stat-value">{{if .Health.RedisConnected}}✅{{else}}⚠️{{end}}</div>
+        <div class="stat-label">Redis</div>
+      </div>
+      <div class="stat blue">
+        <div class="stat-value">{{.Stats.TotalUsers}}</div>
+        <div class="stat-label">总用户</div>
+      </div>
+      <div class="stat blue">
+        <div class="stat-value">{{.Stats.TotalFiles}}</div>
+        <div class="stat-label">总文件</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 配置摘要 -->
+  <div class="card">
+    <h2>配置摘要</h2>
+    <table class="config-table">
+      <tr><td>站点名称</td><td>{{.Config.SiteName}}</td></tr>
+      <tr><td>服务器地址</td><td>{{.Config.ServerHost}}:{{.Config.ServerPort}}</td></tr>
+      <tr><td>存储驱动</td><td>{{.Config.StorageDriver}}</td></tr>
+      <tr><td>调试模式</td><td><span class="badge {{if .Config.Debug}}warn{{else}}ok{{end}}">{{if .Config.Debug}}开启{{else}}关闭{{end}}</span></td></tr>
+      <tr><td>JWT 过期</td><td>{{.Config.JWTExpiration}}</td></tr>
+    </table>
+  </div>
+
+  <!-- 迁移状态 -->
+  <div class="card">
+    <h2>数据库迁移</h2>
+    {{if .Migrations}}
+    <table>
+      <tr><th>版本</th><th>描述</th><th>时间</th></tr>
+      {{range .Migrations}}
+      <tr>
+        <td><span class="badge info">v{{.Version}}</span></td>
+        <td>{{.Description}}</td>
+        <td>{{.AppliedAt}}</td>
+      </tr>
+      {{end}}
+    </table>
+    {{else}}
+    <p style="color: var(--muted);">暂无迁移记录</p>
+    {{end}}
+    <div class="actions mt-16">
+      <a href="/admin/ui/migrate" class="btn btn-primary btn-sm">执行待迁移</a>
+    </div>
+  </div>
+
+  <!-- 操作 -->
+  <div class="card">
+    <h2>快速操作</h2>
+    <div class="actions">
+      <a href="/api/v2/admin/users" class="btn btn-outline btn-sm">👥 用户管理</a>
+      <a href="/api/v2/admin/audit-logs" class="btn btn-outline btn-sm">📋 审计日志</a>
+      <a href="/api/v2/admin/settings" class="btn btn-outline btn-sm">⚙️ 系统设置</a>
+      <a href="/api/health" class="btn btn-outline btn-sm">🔍 健康检查</a>
+    </div>
+  </div>
+
+</div>
+<div class="footer">Stora v0.1.0 · Go 后端</div>
+</body>
+</html>

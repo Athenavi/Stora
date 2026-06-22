@@ -14,6 +14,8 @@ import (
 	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
 	shareapi "github.com/Athenavi/Stora/internal/api/v2/share"
 	adminapi "github.com/Athenavi/Stora/internal/api/v2/admin"
+	"github.com/Athenavi/Stora/internal/adminui"
+	"github.com/Athenavi/Stora/pkg/cache"
 	mobileapi "github.com/Athenavi/Stora/internal/api/v3/mobile"
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
@@ -36,6 +38,13 @@ func main() {
 	if cfg.SecretKey == "" {
 		log.Fatal("[Server] SECRET_KEY is required. Set it in .env or environment.")
 	}
+
+	// Initialize vault encryption key from config or secret key
+	vaultKey := cfg.VaultEncryptionKey
+	if vaultKey == "" {
+		vaultKey = cfg.SecretKey // fallback to main secret
+	}
+	fileapi.SetEncryptionKey(vaultKey)
 
 	// Connect to PostgreSQL
 	db, err := database.Connect(cfg.PostgresDSN(), 25, 5)
@@ -103,6 +112,10 @@ func main() {
 	// Initialize JWT manager
 	jwtManager := auth.NewJWTManager(cfg.SecretKey, cfg.JWTExpiration, cfg.JWTRefreshExpiration)
 
+	// Rate limiters for auth endpoints
+	loginLimiter := middleware.NewRateLimiter(10, 1*time.Minute)    // 10 login attempts/min per IP
+	registerLimiter := middleware.NewRateLimiter(3, 1*time.Minute)  // 3 registrations/min per IP
+
 	// Initialize storage driver
 	store := storage.NewLocalDriver(cfg.StorageObjectsDir, "/files")
 
@@ -110,7 +123,11 @@ func main() {
 	authHandler := authapi.NewHandler(db, jwtManager)
 
 	// Initialize file API handlers
-	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder)
+	var pathCache *cache.PathCache
+	if database.RedisClient != nil {
+		pathCache = cache.NewPathCache(database.RedisClient, 10*time.Second)
+	}
+	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder, pathCache)
 	uploadHandler := fileapi.NewUploadHandler(db, store, cfg.TempFolder)
 	vaultHandler := fileapi.NewVaultHandler(db)
 	transcodeHandler := fileapi.NewTranscodeHandler(db)
@@ -123,6 +140,12 @@ func main() {
 
 	// Initialize admin handler
 	adminHandler := adminapi.NewHandler(db)
+
+	// Initialize admin UI handler (Go templates, lightweight management pages)
+	adminUIHandler, err := adminui.NewHandler(db, cfg)
+	if err != nil {
+		log.Printf("[Server] Admin UI init warning: %v", err)
+	}
 
 	// Setup cleanup notifier and scheduler
 	notifier := cleanup.NewCleanupNotifier()
@@ -143,8 +166,8 @@ func main() {
 
 		// Auth routes (public)
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", authHandler.Register)
-			r.Post("/login", authHandler.Login)
+			r.With(loginLimiter.HTTPMiddleware).Post("/login", authHandler.Login)
+			r.With(registerLimiter.HTTPMiddleware).Post("/register", authHandler.Register)
 			r.Post("/refresh", authHandler.Refresh)
 			r.Post("/send-code", authHandler.SendCode)
 			r.Post("/login-with-code", authHandler.LoginWithCode)
@@ -305,6 +328,17 @@ func main() {
 				"message":          "",
 			})
 		})
+	})
+
+	// Admin UI — Go html/template management pages (no JS framework)
+	// Accessible at /admin/ui/ by authenticated admin users
+	r.Group(func(r chi.Router) {
+		r.Use(middleware.AuthMiddleware(jwtManager))
+		r.Use(middleware.RequireAdmin)
+		if adminUIHandler != nil {
+			r.Get("/admin/ui", adminUIHandler.Dashboard)
+			r.Get("/admin/ui/migrate", adminUIHandler.MigratePage)
+		}
 	})
 
 	// API v3 (mobile)

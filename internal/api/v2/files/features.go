@@ -13,14 +13,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/go-chi/chi/v5"
+	"github.com/lib/pq"
 )
 
 type VaultHandler struct {
@@ -48,6 +51,28 @@ func validateVaultToken(tok string) (int64, int64, bool) {
 	return e.VaultID, e.UserID, ok
 }
 
+// requireVaultToken validates the vault session token for the given vault.
+// The token is obtained via VerifyVaultPassword. This ensures vault access
+// requires both JWT authentication AND vault password verification.
+// Ponytail: we validate the token exists, but the caller's SQL still checks
+// user_id ownership against the JWT — defense in depth.
+func (h *VaultHandler) requireVaultToken(w http.ResponseWriter, r *http.Request, expectedVaultID int64) bool {
+	tok := r.URL.Query().Get("vault_token")
+	if tok == "" {
+		tok = r.Header.Get("X-Vault-Token")
+	}
+	if tok == "" {
+		writeError(w, http.StatusForbidden, "vault_token required — call /vaults/{id}/verify-password first")
+		return false
+	}
+	vaultID, _, ok := validateVaultToken(tok)
+	if !ok || vaultID != expectedVaultID {
+		writeError(w, http.StatusForbidden, "invalid or expired vault token")
+		return false
+	}
+	return true
+}
+
 // ---------- Vault ----------
 
 func (h *VaultHandler) ListVaults(w http.ResponseWriter, r *http.Request) {
@@ -61,7 +86,7 @@ func (h *VaultHandler) ListVaults(w http.ResponseWriter, r *http.Request) {
 		userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -80,8 +105,13 @@ func (h *VaultHandler) ListVaults(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var v Vault
 		v.LockTimeout = 30 // default auto-lock minutes
-		rows.Scan(&v.ID, &v.Name, &v.Description, &v.FileCount, &v.TotalSize, &v.HasPassword, &v.CreatedAt)
+		if err := rows.Scan(&v.ID, &v.Name, &v.Description, &v.FileCount, &v.TotalSize, &v.HasPassword, &v.CreatedAt); err != nil {
+			continue
+		}
 		vaults = append(vaults, v)
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("[Vault] ListVaults row iteration error: %v", err)
 	}
 	writeJSON(w, http.StatusOK, vaults)
 }
@@ -96,7 +126,7 @@ func (h *VaultHandler) CreateVault(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/form-data") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			http.Error(w, `{"error":"invalid form"}`, http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid form")
 			return
 		}
 		name = r.FormValue("name")
@@ -107,7 +137,7 @@ func (h *VaultHandler) CreateVault(w http.ResponseWriter, r *http.Request) {
 			Password string `json:"password"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
 		name = req.Name
@@ -115,27 +145,31 @@ func (h *VaultHandler) CreateVault(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if name == "" {
-		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "name required")
 		return
 	}
 	if password == "" {
-		http.Error(w, `{"error":"password required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "password required")
 		return
 	}
 
 	// Ensure columns exist
 	EnsureVaultCompat(h.db)
 
-	pwHash := hashPassword(password)
+	pwHash, err := hashPassword(password)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "password hash failed")
+		return
+	}
 	now := time.Now().Format(time.RFC3339)
 	var vaultID int64
-	err := h.db.QueryRow(
+	err = h.db.QueryRow(
 		`INSERT INTO vaults (user_id, name, password_hash, created_at, updated_at) VALUES ($1,$2,$3,$4,$4) RETURNING id`,
 		userID, name, pwHash, now,
 	).Scan(&vaultID)
 
 	if err != nil {
-		http.Error(w, `{"error":"create failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "create failed")
 		return
 	}
 
@@ -165,7 +199,7 @@ func (h *VaultHandler) VerifyVaultPassword(w http.ResponseWriter, r *http.Reques
 	}
 
 	if pw == "" {
-		http.Error(w, `{"error":"password required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "password required")
 		return
 	}
 
@@ -176,16 +210,16 @@ func (h *VaultHandler) VerifyVaultPassword(w http.ResponseWriter, r *http.Reques
 	).Scan(&storedHash)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, `{"error":"vault not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "vault not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 
-	if storedHash == "" || hashPassword(pw) != storedHash {
-		http.Error(w, `{"error":"密码错误"}`, http.StatusForbidden)
+	if storedHash == "" || !checkPassword(pw, storedHash) {
+		writeError(w, http.StatusForbidden, "access denied")
 		return
 	}
 
@@ -204,11 +238,11 @@ func (h *VaultHandler) DeleteVault(w http.ResponseWriter, r *http.Request) {
 	h.db.Exec(`DELETE FROM vault_items WHERE vault_id = $1`, vaultID)
 	result, err := h.db.Exec(`DELETE FROM vaults WHERE id = $1 AND user_id = $2`, vaultID, userID)
 	if err != nil {
-		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
@@ -220,13 +254,17 @@ func (h *VaultHandler) ListVaultItems(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 	vaultID, _ := strconv.ParseInt(chi.URLParam(r, "vaultId"), 10, 64)
 
+	if !h.requireVaultToken(w, r, vaultID) {
+		return
+	}
+
 	rows, err := h.db.Query(
 		`SELECT id, COALESCE(filename, name), COALESCE(file_size, 0), COALESCE(mime_type, 'application/octet-stream'), created_at
 		 FROM vault_items WHERE vault_id = $1 AND user_id = $2 ORDER BY created_at DESC`,
 		vaultID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -251,8 +289,12 @@ func (h *VaultHandler) UploadVaultItem(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 	vaultID, _ := strconv.ParseInt(chi.URLParam(r, "vaultId"), 10, 64)
 
+	if !h.requireVaultToken(w, r, vaultID) {
+		return
+	}
+
 	if err := r.ParseMultipartForm(100 << 20); err != nil {
-		http.Error(w, `{"error":"form parse failed"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "form parse failed")
 		return
 	}
 
@@ -262,7 +304,7 @@ func (h *VaultHandler) UploadVaultItem(w http.ResponseWriter, r *http.Request) {
 	fileContentB64 := r.FormValue("file_content")
 
 	if filename == "" || fileContentB64 == "" {
-		http.Error(w, `{"error":"filename and file_content required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "filename and file_content required")
 		return
 	}
 
@@ -277,7 +319,7 @@ func (h *VaultHandler) UploadVaultItem(w http.ResponseWriter, r *http.Request) {
 	// Encrypt the base64 content
 	encrypted, err := encrypt(fileContentB64)
 	if err != nil {
-		http.Error(w, `{"error":"encryption failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "encryption failed")
 		return
 	}
 
@@ -292,7 +334,7 @@ func (h *VaultHandler) UploadVaultItem(w http.ResponseWriter, r *http.Request) {
 	).Scan(&itemID)
 
 	if err != nil {
-		http.Error(w, `{"error":"insert failed: `+err.Error()+`"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "insert failed")
 		return
 	}
 
@@ -304,6 +346,10 @@ func (h *VaultHandler) DownloadVaultItem(w http.ResponseWriter, r *http.Request)
 	vaultID, _ := strconv.ParseInt(chi.URLParam(r, "vaultId"), 10, 64)
 	itemID, _ := strconv.ParseInt(chi.URLParam(r, "itemId"), 10, 64)
 
+	if !h.requireVaultToken(w, r, vaultID) {
+		return
+	}
+
 	var filename, mimeType, encrypted string
 	var fileSize int64
 	err := h.db.QueryRow(
@@ -314,24 +360,24 @@ func (h *VaultHandler) DownloadVaultItem(w http.ResponseWriter, r *http.Request)
 	).Scan(&filename, &mimeType, &encrypted, &fileSize)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, `{"error":"item not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "item not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 
 	// Decrypt
 	decoded, err := decrypt(encrypted)
 	if err != nil {
-		http.Error(w, `{"error":"decryption failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "decryption failed")
 		return
 	}
 
 	raw, err := base64.StdEncoding.DecodeString(decoded)
 	if err != nil {
-		http.Error(w, `{"error":"base64 decode failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "base64 decode failed")
 		return
 	}
 
@@ -344,17 +390,22 @@ func (h *VaultHandler) DownloadVaultItem(w http.ResponseWriter, r *http.Request)
 
 func (h *VaultHandler) DeleteVaultItem(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
+	vaultID, _ := strconv.ParseInt(chi.URLParam(r, "vaultId"), 10, 64)
 	itemID, _ := strconv.ParseInt(chi.URLParam(r, "itemId"), 10, 64)
 
+	if !h.requireVaultToken(w, r, vaultID) {
+		return
+	}
+
 	result, err := h.db.Exec(
-		`DELETE FROM vault_items WHERE id = $1 AND user_id = $2`, itemID, userID,
+		`DELETE FROM vault_items WHERE id = $1 AND vault_id = $2 AND user_id = $3`, itemID, vaultID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
@@ -426,7 +477,7 @@ func (h *VersionHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 		fileID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -463,16 +514,24 @@ func (h *BatchHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 		FileIDs []int64 `json:"file_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
-		http.Error(w, `{"error":"file_ids required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file_ids required")
 		return
 	}
 
 	now := time.Now().Format(time.RFC3339)
-	for _, fid := range req.FileIDs {
-		h.db.Exec(`UPDATE file_items SET deleted_at = $1 WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL`,
-			now, fid, userID)
+	result, err := h.db.Exec(
+		`UPDATE file_items SET deleted_at = $1 WHERE id = ANY($2) AND user_id = $3 AND deleted_at IS NULL`,
+		now, pq.Array(req.FileIDs), userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "batch delete failed")
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"deleted": len(req.FileIDs)})
+	n, _ := result.RowsAffected()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"deleted": len(req.FileIDs),
+		"affected": n,
+	})
 }
 
 func (h *BatchHandler) BatchDownload(w http.ResponseWriter, r *http.Request) {
@@ -481,31 +540,34 @@ func (h *BatchHandler) BatchDownload(w http.ResponseWriter, r *http.Request) {
 		FileIDs []int64 `json:"file_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
-		http.Error(w, `{"error":"file_ids required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file_ids required")
 		return
 	}
 
-	// Query file metadata
+	// Query file metadata (single query instead of N+1)
 	type fileInfo struct {
 		FilePath string
 		Filename string
 		MimeType string
 	}
 	var files []fileInfo
-	for _, fid := range req.FileIDs {
-		var fi fileInfo
-		err := h.db.QueryRow(
-			`SELECT file_path, COALESCE(original_filename, filename), COALESCE(mime_type, 'application/octet-stream')
-			 FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
-			fid, userID,
-		).Scan(&fi.FilePath, &fi.Filename, &fi.MimeType)
-		if err == nil {
-			files = append(files, fi)
+	rows, err := h.db.Query(
+		`SELECT file_path, COALESCE(original_filename, filename), COALESCE(mime_type, 'application/octet-stream')
+		 FROM file_items WHERE id = ANY($1) AND user_id = $2 AND deleted_at IS NULL`,
+		pq.Array(req.FileIDs), userID,
+	)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var fi fileInfo
+			if err := rows.Scan(&fi.FilePath, &fi.Filename, &fi.MimeType); err == nil {
+				files = append(files, fi)
+			}
 		}
 	}
 
 	if len(files) == 0 {
-		http.Error(w, `{"error":"no files found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "no files found")
 		return
 	}
 
@@ -544,14 +606,18 @@ func (h *BatchHandler) BatchMove(w http.ResponseWriter, r *http.Request) {
 		FolderID *int64  `json:"folder_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
-		http.Error(w, `{"error":"file_ids required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file_ids required")
 		return
 	}
 
 	now := time.Now().Format(time.RFC3339)
-	for _, fid := range req.FileIDs {
-		h.db.Exec(`UPDATE file_items SET folder_id = $1, updated_at = $2 WHERE id = $3 AND user_id = $4`,
-			req.FolderID, now, fid, userID)
+	_, err := h.db.Exec(
+		`UPDATE file_items SET folder_id = $1, updated_at = $2 WHERE id = ANY($3) AND user_id = $4`,
+		req.FolderID, now, pq.Array(req.FileIDs), userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "batch move failed")
+		return
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"moved": len(req.FileIDs)})
 }
@@ -575,7 +641,7 @@ func (h *TrashHandler) ListTrash(w http.ResponseWriter, r *http.Request) {
 		userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -608,11 +674,11 @@ func (h *TrashHandler) RestoreFile(w http.ResponseWriter, r *http.Request) {
 		fileID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"restore failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "restore failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "restored"})
@@ -634,11 +700,11 @@ func (h *TrashHandler) DestroyFile(w http.ResponseWriter, r *http.Request) {
 		fileID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"destroy failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "destroy failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "destroyed"})
@@ -652,23 +718,19 @@ func (h *TrashHandler) BatchDestroy(w http.ResponseWriter, r *http.Request) {
 		FileIDs []int64 `json:"file_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
-		http.Error(w, `{"error":"file_ids required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file_ids required")
 		return
 	}
 
-	destroyed := 0
-	for _, fid := range req.FileIDs {
-		res, err := h.db.Exec(
-			`DELETE FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL`,
-			fid, userID,
-		)
-		if err == nil {
-			if n, _ := res.RowsAffected(); n > 0 {
-				destroyed++
-			}
-		}
+	destroyed := int64(0)
+	res, err := h.db.Exec(
+		`DELETE FROM file_items WHERE id = ANY($1) AND user_id = $2 AND deleted_at IS NOT NULL`,
+		pq.Array(req.FileIDs), userID,
+	)
+	if err == nil {
+		destroyed, _ = res.RowsAffected()
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"destroyed": destroyed})
+	writeJSON(w, http.StatusOK, map[string]int64{"destroyed": destroyed})
 }
 
 // BatchRestore restores multiple trash items at once.
@@ -679,23 +741,19 @@ func (h *TrashHandler) BatchRestore(w http.ResponseWriter, r *http.Request) {
 		FileIDs []int64 `json:"file_ids"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
-		http.Error(w, `{"error":"file_ids required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file_ids required")
 		return
 	}
 
-	restored := 0
-	for _, fid := range req.FileIDs {
-		res, err := h.db.Exec(
-			`UPDATE file_items SET deleted_at = NULL WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL`,
-			fid, userID,
-		)
-		if err == nil {
-			if n, _ := res.RowsAffected(); n > 0 {
-				restored++
-			}
-		}
+	restored := int64(0)
+	res, err := h.db.Exec(
+		`UPDATE file_items SET deleted_at = NULL WHERE id = ANY($1) AND user_id = $2 AND deleted_at IS NOT NULL`,
+		pq.Array(req.FileIDs), userID,
+	)
+	if err == nil {
+		restored, _ = res.RowsAffected()
 	}
-	writeJSON(w, http.StatusOK, map[string]int{"restored": restored})
+	writeJSON(w, http.StatusOK, map[string]int64{"restored": restored})
 }
 
 // ClearTrash permanently deletes all trash items for the user.
@@ -707,11 +765,28 @@ func (h *TrashHandler) ClearTrash(w http.ResponseWriter, r *http.Request) {
 
 // ---------- Encryption utilities ----------
 
-var encryptionKey = []byte("stora-vault-key-32bytes!!!!!!!") // TODO: derive from user password
+var encryptionKey []byte // set from config
 
-func hashPassword(pw string) string {
-	h := sha256.Sum256([]byte(pw))
-	return hex.EncodeToString(h[:])
+func SetEncryptionKey(key string) {
+	if key == "" {
+		encryptionKey = []byte("stora-vault-fallback-32byte!!!!!!!")
+		return
+	}
+	// Derive 32-byte key from any-length secret via SHA256
+	h := sha256.Sum256([]byte(key))
+	encryptionKey = h[:]
+}
+
+func init() {
+	SetEncryptionKey("") // use fallback key for backward compat; production MUST set via config
+}
+
+func hashPassword(pw string) (string, error) {
+	return auth.HashPassword(pw)
+}
+
+func checkPassword(password, hash string) bool {
+	return auth.CheckPassword(password, hash)
 }
 
 func encrypt(plaintext string) (string, error) {

@@ -3,7 +3,6 @@ package share
 import (
 	"archive/zip"
 	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
@@ -36,9 +36,12 @@ func generateCode() string {
 	return hex.EncodeToString(b)
 }
 
-func hashPassword(pw string) string {
-	h := sha256.Sum256([]byte(pw))
-	return hex.EncodeToString(h[:])
+func hashPassword(pw string) (string, error) {
+	return auth.HashPassword(pw)
+}
+
+func checkSharePassword(password, hash string) bool {
+	return auth.CheckPassword(password, hash)
 }
 
 // nullIfZero returns nil for 0, allowing DB NULL for optional FK columns.
@@ -84,7 +87,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/form-data") || strings.HasPrefix(ct, "application/x-www-form-urlencoded") {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			http.Error(w, `{"error":"invalid form"}`, http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid form")
 			return
 		}
 		if fid := r.FormValue("file_id"); fid != "" {
@@ -121,7 +124,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 			MaxDownloads   int     `json:"max_downloads"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			writeError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
 		fileID = req.FileID
@@ -133,11 +136,11 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if fileID == 0 && folderID == 0 {
-		http.Error(w, `{"error":"file_id or folder_id required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file_id or folder_id required")
 		return
 	}
 	if fileID != 0 && folderID != 0 {
-		http.Error(w, `{"error":"provide either file_id or folder_id, not both"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "provide either file_id or folder_id, not both")
 		return
 	}
 	if permission == "" {
@@ -145,7 +148,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 	allowedPerms := map[string]bool{"read": true, "download": true, "edit": true}
 	if !allowedPerms[permission] {
-		http.Error(w, `{"error":"invalid permission"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid permission")
 		return
 	}
 
@@ -154,14 +157,14 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		var ownerID int64
 		err := h.db.QueryRow(`SELECT user_id FROM folders WHERE id = $1`, folderID).Scan(&ownerID)
 		if err != nil || ownerID != userID {
-			http.Error(w, `{"error":"folder not found"}`, http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "folder not found")
 			return
 		}
 	} else if fileID > 0 {
 		var ownerID int64
 		err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND deleted_at IS NULL`, fileID).Scan(&ownerID)
 		if err != nil || ownerID != userID {
-			http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "file not found")
 			return
 		}
 	}
@@ -180,7 +183,11 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	// Hash password if provided
 	var hashedPw sql.NullString
 	if password != nil && *password != "" {
-		v := hashPassword(*password)
+		v, err := hashPassword(*password)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "password hash failed")
+			return
+		}
 		hashedPw = sql.NullString{String: v, Valid: true}
 	}
 
@@ -235,11 +242,11 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	).Scan(&linkID, &fileID, &hashedPw)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, `{"error":"link invalid or expired"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "link invalid or expired")
 		return
 	}
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 
@@ -258,8 +265,8 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if hashPassword(pw) != *hashedPw {
-			http.Error(w, `{"error":"password incorrect"}`, http.StatusForbidden)
+		if !checkSharePassword(pw, *hashedPw) {
+			writeError(w, http.StatusForbidden, "invalid or expired share link")
 			return
 		}
 	}
@@ -380,7 +387,7 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 	).Scan(&fileID, &folderID, &hashedPw, &isFolder)
 
 	if err != nil {
-		http.Error(w, `{"error":"link invalid or expired"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "link invalid or expired")
 		return
 	}
 
@@ -388,11 +395,11 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 	pw := r.URL.Query().Get("password")
 	if hashedPw != nil && *hashedPw != "" {
 		if pw == "" {
-			http.Error(w, `{"error":"password required"}`, http.StatusForbidden)
+			writeError(w, http.StatusForbidden, "password required")
 			return
 		}
-		if hashPassword(pw) != *hashedPw {
-			http.Error(w, `{"error":"password incorrect"}`, http.StatusForbidden)
+		if !checkSharePassword(pw, *hashedPw) {
+			writeError(w, http.StatusForbidden, "invalid or expired share link")
 			return
 		}
 	}
@@ -411,7 +418,7 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 			 WHERE folder_id = $1 AND deleted_at IS NULL`, folderID,
 		)
 		if err != nil || rows == nil {
-			http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "query failed")
 			return
 		}
 		var files []fileRef
@@ -456,14 +463,14 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 		fileID,
 	).Scan(&filePath, &mimeType, &filename)
 	if err != nil {
-		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "file not found")
 		return
 	}
 
 	// Stream the file
 	reader, err := h.storage.Retrieve(filePath)
 	if err != nil {
-		http.Error(w, `{"error":"file not found on storage"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "file not found on storage")
 		return
 	}
 	defer reader.Close()
@@ -497,7 +504,7 @@ func (h *Handler) AccessShareLink(w http.ResponseWriter, r *http.Request) {
 	).Scan(&fileID, &hashedPw)
 
 	if err != nil {
-		http.Error(w, `{"error":"link invalid or expired"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "link invalid or expired")
 		return
 	}
 
@@ -511,8 +518,8 @@ func (h *Handler) AccessShareLink(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if hashPassword(pw) != *hashedPw {
-			http.Error(w, `{"error":"password incorrect"}`, http.StatusForbidden)
+		if !checkSharePassword(pw, *hashedPw) {
+			writeError(w, http.StatusForbidden, "invalid or expired share link")
 			return
 		}
 	}
@@ -556,7 +563,7 @@ func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 		userID, pageSize, offset,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -590,11 +597,11 @@ func (h *Handler) DeleteShareLink(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.db.Exec(`UPDATE share_links SET is_active = false WHERE id = $1 AND user_id = $2`, linkID, userID)
 	if err != nil {
-		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
@@ -610,14 +617,14 @@ func (h *Handler) ShareWithUser(w http.ResponseWriter, r *http.Request) {
 		Permission string `json:"permission"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 	if req.Permission == "" {
 		req.Permission = "view"
 	}
 	if req.FileID == 0 || req.SharedWith == 0 {
-		http.Error(w, `{"error":"file_id and shared_with required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "file_id and shared_with required")
 		return
 	}
 
@@ -630,7 +637,7 @@ func (h *Handler) ShareWithUser(w http.ResponseWriter, r *http.Request) {
 	).Scan(&shareID)
 
 	if err != nil {
-		http.Error(w, `{"error":"share failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "share failed")
 		return
 	}
 	utils.WriteJSON(w, http.StatusCreated, map[string]int64{"id": shareID})
@@ -638,6 +645,10 @@ func (h *Handler) ShareWithUser(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	utils.WriteJSON(w, status, data)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	utils.WriteError(w, status, msg)
 }
 
 // ─── Helper for public share frontend ───
@@ -662,11 +673,11 @@ func (h *Handler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 	).Scan(&item.ID, &item.ShortCode, &item.FileID, &item.PasswordProtected, &item.ExpiresAt)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, `{"error":"link not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "link not found")
 		return
 	}
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 

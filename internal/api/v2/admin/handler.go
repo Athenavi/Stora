@@ -45,12 +45,26 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 // ---------- User Management ----------
 
 func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	var total int
+	h.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&total)
+
 	rows, err := h.db.Query(
 		`SELECT id, username, email, is_active, is_superuser, is_staff, date_joined, last_login_at,
-		        total_storage, used_storage FROM users ORDER BY id`,
+		        total_storage, used_storage FROM users ORDER BY id LIMIT $1 OFFSET $2`,
+		pageSize, offset,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -74,7 +88,12 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			&u.DateJoined, &u.LastLoginAt, &u.TotalStorage, &u.UsedStorage)
 		users = append(users, u)
 	}
-	writeJSON(w, http.StatusOK, users)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items": users,
+		"total": total,
+		"page":  page,
+		"page_size": pageSize,
+	})
 }
 
 func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
@@ -86,7 +105,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		Quota       *int64 `json:"total_storage"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
@@ -108,7 +127,7 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListRoles(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`SELECT id, name, slug, description, is_system FROM roles ORDER BY name`)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -135,7 +154,7 @@ func (h *Handler) CreateRole(w http.ResponseWriter, r *http.Request) {
 		Slug string `json:"slug"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "name required")
 		return
 	}
 
@@ -155,7 +174,7 @@ func (h *Handler) ListSettings(w http.ResponseWriter, r *http.Request) {
 		`SELECT setting_key, setting_value, description, is_public FROM system_settings ORDER BY setting_key`,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -176,7 +195,7 @@ func (h *Handler) UpdateSetting(w http.ResponseWriter, r *http.Request) {
 		Value string `json:"value"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Key == "" {
-		http.Error(w, `{"error":"key and value required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "key and value required")
 		return
 	}
 
@@ -187,7 +206,7 @@ func (h *Handler) UpdateSetting(w http.ResponseWriter, r *http.Request) {
 		req.Key, req.Value, now,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "update failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
@@ -215,7 +234,7 @@ func (h *Handler) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		perPage, offset,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -253,7 +272,7 @@ func (h *Handler) ListNotifications(w http.ResponseWriter, r *http.Request) {
 		userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -302,7 +321,7 @@ func (h *Handler) Disable2FA(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListSensitiveWords(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`SELECT id, word, replacement, level, is_active FROM sensitive_words ORDER BY word`)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -325,4 +344,8 @@ func (h *Handler) ListSensitiveWords(w http.ResponseWriter, r *http.Request) {
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	utils.WriteJSON(w, status, data)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	utils.WriteError(w, status, msg)
 }

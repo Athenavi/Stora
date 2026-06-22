@@ -54,3 +54,4 @@ debug/
 *.log
 
 server.exe
+cli.exe

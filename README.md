@@ -50,6 +50,17 @@ go run ./cmd/server
 # Health check: http://localhost:9421/api/health
 ```
 
+## Deployment
+
+> **🚀 Production deployment** → [Nginx 反向代理部署指南](docs/deployment-nginx.md)
+>
+> 涵盖 HTTPS 强制、Cookie 安全加固、CORS 生产配置、速率限制、完整配置示例及安全检查清单。
+
+- [部署指南（完整版）](docs/deployment-nginx.md)
+- [功能差距分析](docs/gap-analysis.md)
+- [分享功能分析](docs/share-analysis.md)
+- [Collabora Online 集成](docs/wopi-collabora.md)
+
 ## API Endpoints
 
 ### Public

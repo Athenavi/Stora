@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/cache"
 	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
@@ -25,6 +26,7 @@ const (
 	maxPathLen   = 4096
 	maxSegLen    = 255
 	cacheTTL     = 10 * time.Second
+	maxCacheSize = 10000 // max in-memory path cache entries before eviction
 )
 
 type Handler struct {
@@ -34,6 +36,7 @@ type Handler struct {
 
 	pathCache   map[string]pathCacheEntry
 	pathCacheMu sync.RWMutex
+	redisCache  *cache.PathCache // optional L2 cache (nil = disabled)
 }
 
 type pathCacheEntry struct {
@@ -41,13 +44,42 @@ type pathCacheEntry struct {
 	expiresAt time.Time
 }
 
-func NewHandler(db *sql.DB, store storage.Driver, tempDir string) *Handler {
-	return &Handler{
+func NewHandler(db *sql.DB, store storage.Driver, tempDir string, redisCache *cache.PathCache) *Handler {
+	h := &Handler{
 		db:        db,
 		storage:   store,
 		tempDir:   tempDir,
 		pathCache: make(map[string]pathCacheEntry),
+		redisCache: redisCache,
 	}
+	// Periodic cache cleanup: removes expired entries and evicts oldest if over maxCacheSize
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			h.pathCacheMu.Lock()
+			now := time.Now()
+			for k, v := range h.pathCache {
+				if now.After(v.expiresAt) {
+					delete(h.pathCache, k)
+				}
+			}
+			// If still over limit, delete oldest entries
+			if len(h.pathCache) > maxCacheSize {
+				toDelete := len(h.pathCache) - maxCacheSize
+				// Simple approach: delete first N entries (iteration order is stable-ish in practice)
+				for k := range h.pathCache {
+					if toDelete <= 0 {
+						break
+					}
+					delete(h.pathCache, k)
+					toDelete--
+				}
+			}
+			h.pathCacheMu.Unlock()
+		}
+	}()
+	return h
 }
 
 // ---------- File CRUD ----------
@@ -209,12 +241,12 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 		&item.CreatedAt, &item.UpdatedAt, &item.Desc)
 
 	if err == sql.ErrNoRows {
-		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "file not found")
 		return
 	}
 	if err != nil {
 		log.Printf("[GetFile] Scan error for file %d: %v", fileID, err)
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 
@@ -306,12 +338,12 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		now, fileID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 	affected, _ := result.RowsAffected()
 	if affected == 0 {
-		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "file not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
@@ -326,7 +358,7 @@ func (h *Handler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		Filename string `json:"filename"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Filename == "" {
-		http.Error(w, `{"error":"filename required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "filename required")
 		return
 	}
 
@@ -336,11 +368,11 @@ func (h *Handler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		req.Filename, time.Now().Format(time.RFC3339), fileID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"rename failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "rename failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "file not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "renamed"})
@@ -354,14 +386,17 @@ func (h *Handler) ToggleFavorite(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Favorite bool `json:"favorite"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Default to false, no error needed
+		req.Favorite = false
+	}
 
 	_, err := h.db.Exec(
 		`UPDATE file_items SET is_favorite = $1 WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL`,
 		req.Favorite, fileID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "update failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]bool{"favorite": req.Favorite})
@@ -375,14 +410,17 @@ func (h *Handler) MoveFile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FolderID *int64 `json:"folder_id"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Default to nil, no error needed
+		req.FolderID = nil
+	}
 
 	_, err := h.db.Exec(
 		`UPDATE file_items SET folder_id = $1, updated_at = $2 WHERE id = $3 AND user_id = $4 AND deleted_at IS NULL`,
 		req.FolderID, time.Now().Format(time.RFC3339), fileID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"move failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "move failed")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "moved"})
@@ -399,7 +437,7 @@ func (h *Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 		IsFavorite  *bool   `json:"is_favorite"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid body"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid body")
 		return
 	}
 
@@ -423,7 +461,7 @@ func (h *Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 		argIdx++
 	}
 	if len(sets) == 0 {
-		http.Error(w, `{"error":"no fields to update"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "no fields to update")
 		return
 	}
 
@@ -437,11 +475,11 @@ func (h *Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.db.Exec(q, args...)
 	if err != nil {
-		http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "update failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "file not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
@@ -458,7 +496,7 @@ func (h *Handler) ListFolders(w http.ResponseWriter, r *http.Request) {
 		userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -504,7 +542,7 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 		ParentID *int64 `json:"parent_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
-		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "name required")
 		return
 	}
 
@@ -517,7 +555,7 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	).Scan(&folderID)
 
 	if err != nil {
-		http.Error(w, `{"error":"create failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "create failed")
 		return
 	}
 
@@ -537,11 +575,11 @@ func (h *Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 		folderID, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"folder not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "folder not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
@@ -564,7 +602,7 @@ func (h *Handler) GetFolderChildren(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.db.Query(`SELECT id, COALESCE(parent_id,0), name FROM folders WHERE user_id = $1`, userID)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -657,7 +695,7 @@ func (h *Handler) ListTags(w http.ResponseWriter, r *http.Request) {
 		 FROM file_tags t WHERE t.user_id = $1 ORDER BY t.name`, userID,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
 	defer rows.Close()
@@ -683,9 +721,12 @@ func (h *Handler) CreateTag(w http.ResponseWriter, r *http.Request) {
 		Name  string  `json:"name"`
 		Color *string `json:"color"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
 	if req.Name == "" {
-		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "name required")
 		return
 	}
 
@@ -707,7 +748,7 @@ func (h *Handler) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		Color *string `json:"color"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
 
@@ -715,7 +756,7 @@ func (h *Handler) UpdateTag(w http.ResponseWriter, r *http.Request) {
 		_, err := h.db.Exec(`UPDATE file_tags SET name = $1 WHERE id = $2 AND user_id = $3`,
 			req.Name, tagID, userID)
 		if err != nil {
-			http.Error(w, `{"error":"update failed"}`, http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "update failed")
 			return
 		}
 	}
@@ -736,11 +777,11 @@ func (h *Handler) DeleteTag(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.db.Exec(`DELETE FROM file_tags WHERE id = $1 AND user_id = $2`, tagID, userID)
 	if err != nil {
-		http.Error(w, `{"error":"delete failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "delete failed")
 		return
 	}
 	if affected, _ := result.RowsAffected(); affected == 0 {
-		http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
@@ -752,7 +793,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 	q := r.URL.Query().Get("q")
 	if q == "" {
-		http.Error(w, `{"error":"query required"}`, http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "query required")
 		return
 	}
 
@@ -764,7 +805,7 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		userID, "%"+q+"%",
 	)
 	if err != nil {
-		http.Error(w, `{"error":"search failed"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "search failed")
 		return
 	}
 	defer rows.Close()
@@ -805,9 +846,9 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+			writeError(w, http.StatusNotFound, "file not found")
 		} else {
-			http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+			writeError(w, http.StatusInternalServerError, "query failed")
 		}
 		return
 	}
@@ -858,7 +899,7 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 		localDrv, ok := h.storage.(*storage.LocalDriver)
 		if ok {
 			fullPath := filepath.Join(localDrv.ObjectsPath, filePath)
-			http.Error(w, fmt.Sprintf(`{"success":false,"message":"file not found at %s"}`, fullPath), http.StatusNotFound)
+			utils.WriteError(w, http.StatusNotFound, fmt.Sprintf("file not found at %s", fullPath))
 		} else {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found on storage"})
 		}
@@ -904,6 +945,10 @@ func detectFileType(mimeType, filename string) string {
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	utils.WriteJSON(w, status, data)
+}
+
+func writeError(w http.ResponseWriter, status int, msg string) {
+	utils.WriteError(w, status, msg)
 }
 
 // ─── Path Helpers ───
@@ -963,32 +1008,53 @@ func (h *Handler) cacheKey(userID int64, path string) string {
 }
 
 func (h *Handler) getCachedPath(userID int64, path string) (int64, bool) {
+	// L1: in-memory cache
 	h.pathCacheMu.RLock()
-	defer h.pathCacheMu.RUnlock()
 	entry, ok := h.pathCache[h.cacheKey(userID, path)]
-	if !ok || time.Now().After(entry.expiresAt) {
-		return 0, false
+	h.pathCacheMu.RUnlock()
+	if ok && !time.Now().After(entry.expiresAt) {
+		return entry.folderID, true
 	}
-	return entry.folderID, true
+
+	// L2: Redis cache (optional)
+	if h.redisCache != nil {
+		if fid, ok := h.redisCache.Get(userID, path); ok {
+			// Backfill L1
+			h.setCachedPath(userID, path, fid)
+			return fid, true
+		}
+	}
+
+	return 0, false
 }
 
 func (h *Handler) setCachedPath(userID int64, path string, folderID int64) {
 	h.pathCacheMu.Lock()
-	defer h.pathCacheMu.Unlock()
 	h.pathCache[h.cacheKey(userID, path)] = pathCacheEntry{
 		folderID:  folderID,
 		expiresAt: time.Now().Add(cacheTTL),
+	}
+	h.pathCacheMu.Unlock()
+
+	// L2: Redis
+	if h.redisCache != nil {
+		h.redisCache.Set(userID, path, folderID)
 	}
 }
 
 func (h *Handler) invalidateUserCache(userID int64) {
 	h.pathCacheMu.Lock()
-	defer h.pathCacheMu.Unlock()
 	prefix := fmt.Sprintf("%d:", userID)
 	for k := range h.pathCache {
 		if strings.HasPrefix(k, prefix) {
 			delete(h.pathCache, k)
 		}
+	}
+	h.pathCacheMu.Unlock()
+
+	// L2: Redis
+	if h.redisCache != nil {
+		h.redisCache.InvalidateUser(userID)
 	}
 }
 
