@@ -302,6 +302,82 @@ func (h *Handler) MarkRead(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "marked read"})
 }
 
+// ---------- Maintenance Mode ----------
+
+func (h *Handler) GetMaintenanceStatus(w http.ResponseWriter, r *http.Request) {
+	var enabled bool
+	var message string
+	h.db.QueryRow(`SELECT setting_value = 'true' FROM system_settings WHERE setting_key = 'maintenance_mode'`).Scan(&enabled)
+	h.db.QueryRow(`SELECT COALESCE(setting_value, '') FROM system_settings WHERE setting_key = 'maintenance_message'`).Scan(&message)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"maintenance_mode": enabled,
+		"message":          message,
+	})
+}
+
+func (h *Handler) SetMaintenanceMode(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool   `json:"enabled"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	val := "false"
+	if req.Enabled {
+		val = "true"
+	}
+	h.db.Exec(`INSERT INTO system_settings (setting_key, setting_value, updated_at, created_at)
+		VALUES ('maintenance_mode', $1, $2, $2)
+		ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = $2`,
+		val, now)
+	h.db.Exec(`INSERT INTO system_settings (setting_key, setting_value, updated_at, created_at)
+		VALUES ('maintenance_message', $1, $2, $2)
+		ON CONFLICT (setting_key) DO UPDATE SET setting_value = $1, updated_at = $2`,
+		req.Message, now)
+
+	// Create notification for all active users
+	if req.Enabled && req.Message != "" {
+		h.db.Exec(`INSERT INTO notifications (user_id, type, title, body, created_at)
+			SELECT id, 'system', '维护通知', $1, $2 FROM users WHERE is_active = true`,
+			req.Message, now)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"maintenance_mode": req.Enabled,
+		"message":          req.Message,
+	})
+}
+
+func (h *Handler) CreateNotification(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Type  string `json:"type"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	if req.Title == "" || req.Body == "" {
+		writeError(w, http.StatusBadRequest, "title and body required")
+		return
+	}
+	if req.Type == "" {
+		req.Type = "system"
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	h.db.Exec(`INSERT INTO notifications (user_id, type, title, body, created_at)
+		SELECT id, $1, $2, $3, $4 FROM users WHERE is_active = true`,
+		req.Type, req.Title, req.Body, now)
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "notification sent"})
+}
+
 // ---------- 2FA ----------
 
 func (h *Handler) Setup2FA(w http.ResponseWriter, r *http.Request) {

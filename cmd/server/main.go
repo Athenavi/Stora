@@ -307,6 +307,13 @@ func main() {
 				r.Get("/admin/settings", adminHandler.ListSettings)
 				r.Put("/admin/settings", adminHandler.UpdateSetting)
 
+				// Maintenance mode
+				r.Get("/admin/maintenance", adminHandler.GetMaintenanceStatus)
+				r.Put("/admin/maintenance", adminHandler.SetMaintenanceMode)
+
+				// Notifications (admin: create system-wide)
+				r.Post("/notifications", adminHandler.CreateNotification)
+
 				// Audit logs
 				r.Get("/admin/audit-logs", adminHandler.ListAuditLogs)
 
@@ -326,9 +333,13 @@ func main() {
 
 		// Maintenance public status
 		r.Get("/system/maintenance/public-status", func(w http.ResponseWriter, r *http.Request) {
+			var enabled bool
+			var message string
+			db.QueryRow(`SELECT setting_value = 'true' FROM system_settings WHERE setting_key = 'maintenance_mode'`).Scan(&enabled)
+			db.QueryRow(`SELECT COALESCE(setting_value, '') FROM system_settings WHERE setting_key = 'maintenance_message'`).Scan(&message)
 			utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
-				"maintenance_mode": false,
-				"message":          "",
+				"maintenance_mode": enabled,
+				"message":          message,
 			})
 		})
 	})
