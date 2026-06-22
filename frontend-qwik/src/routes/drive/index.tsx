@@ -359,6 +359,12 @@ export default component$(() => {
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">📂 打开</button>
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">✏ 重命名</button>
+                <button onClick$={async () => {
+                  const id = ctxItem.value!.id;
+                  ctxItem.value = null;
+                  selIds.value = [id];
+                  showShareDialog.value = true;
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">🔗 分享</button>
                 <div class="h-px bg-slate-100 my-1" />
                 <button onClick$={async () => {
                   if (confirm("删除?")) { await deleteFolder(ctxItem.value!.id).catch(() => {}); location.reload(); }
@@ -398,6 +404,12 @@ export default component$(() => {
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">📂 打开</button>
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; showActionSheet.value = false; }}
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">✏ 重命名</button>
+                <button onClick$={async () => {
+                  const id = ctxItem.value!.id;
+                  ctxItem.value = null; showActionSheet.value = false;
+                  selIds.value = [id];
+                  showShareDialog.value = true;
+                }} class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">🔗 分享</button>
                 <div class="h-px bg-slate-100 my-1" />
                 <button onClick$={async () => { if (confirm("删除?")) { await deleteFolder(ctxItem.value!.id).catch(() => {}); location.reload(); } ctxItem.value = null; showActionSheet.value = false; }}
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50 rounded-lg touch-target">🗑 删除</button>
@@ -492,7 +504,15 @@ export default component$(() => {
                   if (shareExpiry.value) params.expires_in_hours = shareExpiry.value;
                   for (const id of selIds.value) {
                     try {
-                      const link = await createShare({ ...params, file_id: id } as any);
+                      // Detect if ID belongs to a folder
+                      const item = allItems.find(x => x.id === id);
+                      const shareParams: any = { ...params };
+                      if (item && (item as any).t === "f") {
+                        shareParams.folder_id = id;
+                      } else {
+                        shareParams.file_id = id;
+                      }
+                      const link = await createShare(shareParams as any);
                       results.push({ code: link.short_code, url: `${window.location.origin}/s/${link.short_code}` });
                     } catch {}
                   }
