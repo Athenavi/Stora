@@ -1,0 +1,373 @@
+# Stora 数据模型定义
+# 声明式 schema — 类似 SQLAlchemy + Alembic 的工作流
+# 修改此文件后运行: stora-cli migrate generate && stora-cli migrate up
+---
+version: 5
+models:
+  # ── 用户与认证 ──────────────────────────────────
+  User:
+    table: users
+    description: 用户账户
+    columns:
+      id:            { type: bigint, primary_key: true, autoincrement: true }
+      username:      { type: varchar, length: 150, null: true, unique: true }
+      email:         { type: varchar, length: 254, null: true, unique: true }
+      password:      { type: text, null: true }
+      profile_picture: { type: text, null: true }
+      bio:           { type: text, null: true }
+      is_active:     { type: boolean, default: "true" }
+      is_superuser:  { type: boolean, default: "false" }
+      is_staff:      { type: boolean, default: "false" }
+      date_joined:   { type: timestamp, null: true }
+      last_login_at: { type: timestamp, null: true }
+      last_login_ip: { type: varchar, length: 45, null: true }
+      register_ip:   { type: varchar, length: 45, null: true }
+      locale:        { type: varchar, length: 10, default: "'zh_CN'" }
+      is_2fa_enabled:  { type: boolean, default: "false" }
+      totp_secret:   { type: text, null: true }
+      backup_codes:  { type: text, null: true }
+      total_storage: { type: bigint, default: "1073741824" }
+      used_storage:  { type: bigint, default: "0" }
+    indexes:
+      - { columns: [username] }
+      - { columns: [email] }
+
+  UserSession:
+    table: user_sessions
+    description: 用户登录会话
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      token:      { type: text, null: true }
+      ip_address: { type: varchar, length: 45, null: true }
+      user_agent: { type: text, null: true }
+      is_active:  { type: boolean, default: "true" }
+      created_at: { type: timestamp, default: "now()" }
+      expires_at: { type: timestamp, null: true }
+
+  LoginAttempt:
+    table: login_attempts
+    description: 登录尝试记录（用于暴力破解防护）
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      username:   { type: varchar, length: 150, null: true }
+      ip_address: { type: varchar, length: 45, null: true }
+      success:    { type: boolean, default: "false" }
+      created_at: { type: timestamp, default: "now()" }
+    indexes:
+      - { columns: [ip_address, created_at] }
+      - { columns: [username, created_at] }
+
+  TokenBlacklist:
+    table: token_blacklist
+    description: JWT 黑名单
+    columns:
+      id:             { type: bigint, primary_key: true, autoincrement: true }
+      token:          { type: text, null: true }
+      blacklisted_at: { type: timestamp, default: "now()" }
+      expires_at:     { type: timestamp, null: true }
+
+  # ── 文件管理 ────────────────────────────────────
+  Folder:
+    table: folders
+    description: 文件夹
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      parent_id:  { type: bigint, foreign_key: "folders(id)", on_delete: cascade, null: true }
+      name:       { type: varchar, length: 255 }
+      sort_order: { type: integer, default: "0" }
+      created_at: { type: timestamp, default: "now()" }
+      updated_at: { type: timestamp, default: "now()" }
+    indexes:
+      - { columns: [user_id, parent_id] }
+
+  FileItem:
+    table: file_items
+    description: 文件条目
+    columns:
+      id:                { type: bigint, primary_key: true, autoincrement: true }
+      user_id:           { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      folder_id:         { type: bigint, foreign_key: "folders(id)", on_delete: "set null", null: true }
+      filename:          { type: varchar, length: 255, null: true }
+      original_filename: { type: varchar, length: 255, null: true }
+      file_path:         { type: text, null: true }
+      file_url:          { type: text, null: true }
+      file_size:         { type: bigint, default: "0" }
+      mime_type:         { type: varchar, length: 255, null: true }
+      file_type:         { type: varchar, length: 50, default: "'other'" }
+      storage_driver:    { type: varchar, length: 50, default: "'local'" }
+      storage_bucket:    { type: text, null: true }
+      storage_key:       { type: text, null: true }
+      file_hash:         { type: varchar, length: 64, null: true }
+      is_folder:         { type: boolean, default: "false" }
+      is_favorite:       { type: boolean, default: "false" }
+      is_encrypted:      { type: boolean, default: "false" }
+      thumbnail_url:     { type: text, null: true }
+      width:             { type: integer, null: true }
+      height:            { type: integer, null: true }
+      duration:          { type: integer, null: true }
+      description:       { type: text, null: true }
+      download_count:    { type: integer, default: "0" }
+      sort_order:        { type: integer, default: "0" }
+      created_at:        { type: timestamp, default: "now()" }
+      updated_at:        { type: timestamp, default: "now()" }
+      deleted_at:        { type: timestamp, null: true }
+    indexes:
+      - { columns: [user_id, deleted_at] }
+      - { columns: [user_id, folder_id, deleted_at] }
+      - { columns: [user_id, file_type, deleted_at] }
+      - { columns: [user_id, created_at, deleted_at], order: desc }
+      - { columns: [user_id, is_favorite, deleted_at], where: "is_favorite = true" }
+
+  FileFingerprint:
+    table: file_fingerprints
+    description: 文件去重指纹
+    columns:
+      id:              { type: bigint, primary_key: true, autoincrement: true }
+      hash:            { type: varchar, length: 64, unique: true }
+      file_size:       { type: bigint, default: "0" }
+      mime_type:       { type: varchar, length: 255, null: true }
+      storage_path:    { type: text, null: true }
+      reference_count: { type: integer, default: "1" }
+      created_at:      { type: timestamp, default: "now()" }
+      updated_at:      { type: timestamp, default: "now()" }
+    indexes:
+      - { columns: [hash] }
+
+  FileVersion:
+    table: file_versions
+    description: 文件版本
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      file_id:     { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
+      version_num: { type: integer, default: "1" }
+      file_path:   { type: text, null: true }
+      file_size:   { type: bigint, default: "0" }
+      file_hash:   { type: varchar, length: 64, null: true }
+      created_by:  { type: bigint, foreign_key: "users(id)", null: true }
+      created_at:  { type: timestamp, default: "now()" }
+
+  FileTag:
+    table: file_tags
+    description: 文件标签
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      name:       { type: varchar, length: 100 }
+      color:      { type: varchar, length: 20, null: true }
+      created_at: { type: timestamp, default: "now()" }
+
+  FileTagAssignment:
+    table: file_tag_assignments
+    description: 文件-标签关联
+    columns:
+      id:      { type: bigint, primary_key: true, autoincrement: true }
+      file_id: { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
+      tag_id:  { type: bigint, foreign_key: "file_tags(id)", on_delete: cascade }
+
+  # ── 分享 ────────────────────────────────────────
+  ShareLink:
+    table: share_links
+    description: 分享链接
+    columns:
+      id:              { type: bigint, primary_key: true, autoincrement: true }
+      file_id:         { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", null: true }
+      folder_id:       { type: bigint, foreign_key: "folders(id)", on_delete: "set null", null: true }
+      user_id:         { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      token:           { type: varchar, length: 64, default: "''" }
+      short_code:      { type: varchar, length: 32, default: "''" }
+      permission:      { type: varchar, length: 20, default: "'read'" }
+      password:        { type: varchar, length: 128, default: "''" }
+      is_active:       { type: boolean, default: "true" }
+      view_count:      { type: integer, default: "0" }
+      download_count:  { type: integer, default: "0" }
+      max_downloads:   { type: integer, default: "0" }
+      expires_at:      { type: timestamp, null: true }
+      created_at:      { type: timestamp, default: "now()" }
+    indexes:
+      - { columns: [short_code], where: "short_code != ''" }
+      - { columns: [user_id, created_at], order: desc }
+
+  FileShare:
+    table: file_shares
+    description: 用户间分享
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      file_id:     { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
+      owner_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      shared_with: { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      permission:  { type: varchar, length: 20, default: "'view'" }
+      created_at:  { type: timestamp, default: "now()" }
+      expires_at:  { type: timestamp, null: true }
+
+  # ── 加密保险箱 ──────────────────────────────────
+  Vault:
+    table: vaults
+    description: 加密保险箱
+    columns:
+      id:            { type: bigint, primary_key: true, autoincrement: true }
+      user_id:       { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      name:          { type: varchar, length: 255 }
+      description:   { type: text, null: true }
+      password_hash: { type: varchar, length: 128, default: "''" }
+      created_at:    { type: timestamp, default: "now()" }
+      updated_at:    { type: timestamp, default: "now()" }
+
+  VaultItem:
+    table: vault_items
+    description: 保险箱条目
+    columns:
+      id:           { type: bigint, primary_key: true, autoincrement: true }
+      vault_id:     { type: bigint, foreign_key: "vaults(id)", on_delete: cascade }
+      user_id:      { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      name:         { type: varchar, length: 255 }
+      filename:     { type: varchar, length: 512, default: "''" }
+      file_size:    { type: bigint, default: "0" }
+      mime_type:    { type: varchar, length: 128, default: "''" }
+      content_type: { type: varchar, length: 64, default: "'file'" }
+      content:      { type: text, null: true }
+      created_at:   { type: timestamp, default: "now()" }
+      updated_at:   { type: timestamp, default: "now()" }
+    indexes:
+      - { columns: [vault_id, user_id] }
+
+  # ── 上传任务 ────────────────────────────────────
+  UploadTask:
+    table: upload_tasks
+    description: 文件上传任务
+    columns:
+      id:               { type: bigint, primary_key: true, autoincrement: true }
+      user_id:          { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      upload_id:        { type: varchar, length: 255, null: true }
+      filename:         { type: varchar, length: 255, null: true }
+      file_size:        { type: bigint, default: "0" }
+      chunk_size:       { type: integer, default: "0" }
+      total_chunks:     { type: integer, default: "0" }
+      received_chunks:  { type: integer, default: "0" }
+      status:           { type: varchar, length: 20, default: "'pending'" }
+      mime_type:        { type: varchar, length: 255, null: true }
+      folder_id:        { type: varchar, length: 50, null: true }
+      first_chunk_hash: { type: varchar, length: 64, null: true }
+      last_chunk_hash:  { type: varchar, length: 64, null: true }
+      final_hash:       { type: varchar, length: 64, null: true }
+      storage_path:     { type: text, null: true }
+      created_at:       { type: timestamp, default: "now()" }
+      updated_at:       { type: timestamp, default: "now()" }
+    indexes:
+      - { columns: [status, updated_at] }
+
+  UploadChunk:
+    table: upload_chunks
+    description: 上传分片
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      upload_id:   { type: varchar, length: 255, null: true }
+      chunk_index: { type: integer, default: "0" }
+      chunk_hash:  { type: varchar, length: 64, null: true }
+      chunk_size:  { type: integer, default: "0" }
+      chunk_path:  { type: text, null: true }
+      created_at:  { type: timestamp, default: "now()" }
+
+  # ── 权限与审计 ──────────────────────────────────
+  Role:
+    table: roles
+    description: 角色定义
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      name:        { type: varchar, length: 100 }
+      slug:        { type: varchar, length: 100, unique: true }
+      description: { type: text, null: true }
+      is_system:   { type: boolean, default: "false" }
+      created_at:  { type: timestamp, default: "now()" }
+      updated_at:  { type: timestamp, default: "now()" }
+
+  Capability:
+    table: capabilities
+    description: 权限能力定义
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      codename:    { type: varchar, length: 100, unique: true }
+      name:        { type: varchar, length: 200, null: true }
+      description: { type: text, null: true }
+      module:      { type: varchar, length: 100, null: true }
+      created_at:  { type: timestamp, default: "now()" }
+
+  RoleCapability:
+    table: role_capabilities
+    description: 角色-权限关联
+    columns:
+      id:            { type: bigint, primary_key: true, autoincrement: true }
+      role_id:       { type: bigint, foreign_key: "roles(id)", on_delete: cascade }
+      capability_id: { type: bigint, foreign_key: "capabilities(id)", on_delete: cascade }
+
+  UserRole:
+    table: user_roles
+    description: 用户-角色关联
+    columns:
+      id:      { type: bigint, primary_key: true, autoincrement: true }
+      user_id: { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      role_id: { type: bigint, foreign_key: "roles(id)", on_delete: cascade }
+
+  AuditLog:
+    table: audit_logs
+    description: 审计日志
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: "set null", null: true }
+      action:     { type: varchar, length: 100 }
+      resource:   { type: text, null: true }
+      detail:     { type: text, null: true }
+      ip_address: { type: varchar, length: 45, null: true }
+      created_at: { type: timestamp, default: "now()" }
+
+  Notification:
+    table: notifications
+    description: 通知
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      type:       { type: varchar, length: 50 }
+      title:      { type: varchar, length: 255 }
+      body:       { type: text }
+      data:       { type: text, null: true }
+      is_read:    { type: boolean, default: "false" }
+      created_at: { type: timestamp, default: "now()" }
+
+  # ── 系统配置 ────────────────────────────────────
+  SystemSetting:
+    table: system_settings
+    description: 系统设置（键值对）
+    columns:
+      id:            { type: bigint, primary_key: true, autoincrement: true }
+      setting_key:   { type: varchar, length: 100, unique: true }
+      setting_value: { type: text }
+      setting_type:  { type: varchar, length: 50, default: "'string'", null: true }
+      description:   { type: text, null: true }
+      is_public:     { type: boolean, default: "false" }
+      created_at:    { type: timestamp, default: "now()" }
+      updated_at:    { type: timestamp, default: "now()" }
+
+  SensitiveWord:
+    table: sensitive_words
+    description: 敏感词过滤
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      word:        { type: varchar, length: 255 }
+      replacement: { type: varchar, length: 255, null: true }
+      level:       { type: integer, default: "1" }
+      is_active:   { type: boolean, default: "true" }
+      created_at:  { type: timestamp, default: "now()" }
+      updated_at:  { type: timestamp, default: "now()" }
+
+  # ── 数据维护 ────────────────────────────────────
+  StorageQuota:
+    table: storage_quotas
+    description: 存储配额
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      user_id:     { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      total_bytes: { type: bigint, default: "0" }
+      used_bytes:  { type: bigint, default: "0" }
+      created_at:  { type: timestamp, default: "now()" }
+      updated_at:  { type: timestamp, default: "now()" }

@@ -27,9 +27,9 @@ func TestLoadMigrations(t *testing.T) {
 		}
 	}
 
-	migrations, err := loadMigrations(dir)
+	migrations, err := loadMigrationFiles(dir)
 	if err != nil {
-		t.Fatalf("loadMigrations failed: %v", err)
+		t.Fatalf("loadMigrationFiles failed: %v", err)
 	}
 
 	if len(migrations) != 3 {
@@ -65,9 +65,9 @@ func TestLoadMigrations(t *testing.T) {
 
 func TestLoadMigrationsEmptyDir(t *testing.T) {
 	dir := t.TempDir()
-	migrations, err := loadMigrations(dir)
+	migrations, err := loadMigrationFiles(dir)
 	if err != nil {
-		t.Fatalf("loadMigrations failed for empty dir: %v", err)
+		t.Fatalf("loadMigrationFiles failed for empty dir: %v", err)
 	}
 	if len(migrations) != 0 {
 		t.Errorf("expected 0 migrations, got %d", len(migrations))
@@ -75,9 +75,9 @@ func TestLoadMigrationsEmptyDir(t *testing.T) {
 }
 
 func TestLoadMigrationsNonExistentDir(t *testing.T) {
-	migrations, err := loadMigrations("/nonexistent/path")
+	migrations, err := loadMigrationFiles("/nonexistent/path")
 	if err != nil {
-		t.Fatalf("loadMigrations failed for nonexistent dir: %v", err)
+		t.Fatalf("loadMigrationFiles failed for nonexistent dir: %v", err)
 	}
 	if len(migrations) != 0 {
 		t.Errorf("expected 0 migrations, got %d", len(migrations))

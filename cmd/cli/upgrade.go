@@ -103,7 +103,7 @@ func cmdUpgrade(cfg *appConfig, args []string) error {
 	}
 
 	// Check for file-system migrations too
-	fsMigrations, err := loadMigrations("migrations")
+	fsMigrations, err := loadMigrationFiles("migrations")
 	if err == nil && len(fsMigrations) > 0 {
 		var fsPending int
 		for _, m := range fsMigrations {
