@@ -28,7 +28,7 @@ type ColumnDef struct {
 	PrimaryKey    bool   `yaml:"primary_key"`
 	AutoIncrement bool   `yaml:"autoincrement"`
 	Unique        bool   `yaml:"unique"`
-	Null          bool   `yaml:"null"`
+	Nullable      bool   `yaml:"nullable"`
 	Default       string `yaml:"default"`
 	ForeignKey    string `yaml:"foreign_key"`
 	OnDelete      string `yaml:"on_delete"`
@@ -243,7 +243,7 @@ func (m ModelDef) colToSQL(name string, col ColumnDef) string {
 	}
 	if col.PrimaryKey {
 		b.WriteString(" NOT NULL")
-	} else if col.Null {
+	} else if col.Nullable {
 		b.WriteString(" NULL")
 	} else {
 		b.WriteString(" NOT NULL")

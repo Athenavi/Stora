@@ -34,8 +34,8 @@
 | 分享下载次数限制 | ✅ max_downloads | 百度/阿里 | **已完成** |
 | 批量下载 ZIP | ✅ BatchDownload 流式 ZIP | 全支持 | **已完成** |
 | 团队空间/群组 | ❌ | Google Drive/OneDrive | P2 |
-| 分享链接编辑（创建后修改） | ❌ | 全支持 | P2 |
-| 分享到指定用户（按邮箱） | ⚠️ file_shares 表存在，前端无入口 | Google Drive | P2 |
+| 分享链接编辑（创建后修改） | ✅ PUT /files/shares/{id} | 全支持 | **已完成** |
+| 分享到指定用户（按邮箱） | ✅ file_shares + ShareWithUser + 路由注册 | Google Drive | **已完成** |
 | 协作编辑（多人同时） | ❌ | Google Drive/Office365 | P2 |
 | 审核日志（谁访问了分享） | ⚠️ audit_logs 表存在 | Dropbox Business | P3 |
 | 分享链接过期自动清理 | ❌ | 百度网盘 | P2 |

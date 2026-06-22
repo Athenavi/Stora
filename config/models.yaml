@@ -9,22 +9,22 @@ models:
     description: 用户账户
     columns:
       id:            { type: bigint, primary_key: true, autoincrement: true }
-      username:      { type: varchar, length: 150, null: true, unique: true }
-      email:         { type: varchar, length: 254, null: true, unique: true }
-      password:      { type: text, null: true }
-      profile_picture: { type: text, null: true }
-      bio:           { type: text, null: true }
+      username:      { type: varchar, length: 150, nullable: true, unique: true }
+      email:         { type: varchar, length: 254, nullable: true, unique: true }
+      password:      { type: text, nullable: true }
+      profile_picture: { type: text, nullable: true }
+      bio:           { type: text, nullable: true }
       is_active:     { type: boolean, default: "true" }
       is_superuser:  { type: boolean, default: "false" }
       is_staff:      { type: boolean, default: "false" }
-      date_joined:   { type: timestamp, null: true }
-      last_login_at: { type: timestamp, null: true }
-      last_login_ip: { type: varchar, length: 45, null: true }
-      register_ip:   { type: varchar, length: 45, null: true }
+      date_joined:   { type: timestamp, nullable: true }
+      last_login_at: { type: timestamp, nullable: true }
+      last_login_ip: { type: varchar, length: 45, nullable: true }
+      register_ip:   { type: varchar, length: 45, nullable: true }
       locale:        { type: varchar, length: 10, default: "'zh_CN'" }
       is_2fa_enabled:  { type: boolean, default: "false" }
-      totp_secret:   { type: text, null: true }
-      backup_codes:  { type: text, null: true }
+      totp_secret:   { type: text, nullable: true }
+      backup_codes:  { type: text, nullable: true }
       total_storage: { type: bigint, default: "1073741824" }
       used_storage:  { type: bigint, default: "0" }
     indexes:
@@ -37,20 +37,20 @@ models:
     columns:
       id:         { type: bigint, primary_key: true, autoincrement: true }
       user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      token:      { type: text, null: true }
-      ip_address: { type: varchar, length: 45, null: true }
-      user_agent: { type: text, null: true }
+      token:      { type: text, nullable: true }
+      ip_address: { type: varchar, length: 45, nullable: true }
+      user_agent: { type: text, nullable: true }
       is_active:  { type: boolean, default: "true" }
       created_at: { type: timestamp, default: "now()" }
-      expires_at: { type: timestamp, null: true }
+      expires_at: { type: timestamp, nullable: true }
 
   LoginAttempt:
     table: login_attempts
     description: 登录尝试记录（用于暴力破解防护）
     columns:
       id:         { type: bigint, primary_key: true, autoincrement: true }
-      username:   { type: varchar, length: 150, null: true }
-      ip_address: { type: varchar, length: 45, null: true }
+      username:   { type: varchar, length: 150, nullable: true }
+      ip_address: { type: varchar, length: 45, nullable: true }
       success:    { type: boolean, default: "false" }
       created_at: { type: timestamp, default: "now()" }
     indexes:
@@ -62,9 +62,9 @@ models:
     description: JWT 黑名单
     columns:
       id:             { type: bigint, primary_key: true, autoincrement: true }
-      token:          { type: text, null: true }
+      token:          { type: text, nullable: true }
       blacklisted_at: { type: timestamp, default: "now()" }
-      expires_at:     { type: timestamp, null: true }
+      expires_at:     { type: timestamp, nullable: true }
 
   # ── 文件管理 ────────────────────────────────────
   Folder:
@@ -73,7 +73,7 @@ models:
     columns:
       id:         { type: bigint, primary_key: true, autoincrement: true }
       user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      parent_id:  { type: bigint, foreign_key: "folders(id)", on_delete: cascade, null: true }
+      parent_id:  { type: bigint, foreign_key: "folders(id)", on_delete: cascade, nullable: true }
       name:       { type: varchar, length: 255 }
       sort_order: { type: integer, default: "0" }
       created_at: { type: timestamp, default: "now()" }
@@ -87,31 +87,31 @@ models:
     columns:
       id:                { type: bigint, primary_key: true, autoincrement: true }
       user_id:           { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      folder_id:         { type: bigint, foreign_key: "folders(id)", on_delete: "set null", null: true }
-      filename:          { type: varchar, length: 255, null: true }
-      original_filename: { type: varchar, length: 255, null: true }
-      file_path:         { type: text, null: true }
-      file_url:          { type: text, null: true }
+      folder_id:         { type: bigint, foreign_key: "folders(id)", on_delete: "set null", nullable: true }
+      filename:          { type: varchar, length: 255, nullable: true }
+      original_filename: { type: varchar, length: 255, nullable: true }
+      file_path:         { type: text, nullable: true }
+      file_url:          { type: text, nullable: true }
       file_size:         { type: bigint, default: "0" }
-      mime_type:         { type: varchar, length: 255, null: true }
+      mime_type:         { type: varchar, length: 255, nullable: true }
       file_type:         { type: varchar, length: 50, default: "'other'" }
       storage_driver:    { type: varchar, length: 50, default: "'local'" }
-      storage_bucket:    { type: text, null: true }
-      storage_key:       { type: text, null: true }
-      file_hash:         { type: varchar, length: 64, null: true }
+      storage_bucket:    { type: text, nullable: true }
+      storage_key:       { type: text, nullable: true }
+      file_hash:         { type: varchar, length: 64, nullable: true }
       is_folder:         { type: boolean, default: "false" }
       is_favorite:       { type: boolean, default: "false" }
       is_encrypted:      { type: boolean, default: "false" }
-      thumbnail_url:     { type: text, null: true }
-      width:             { type: integer, null: true }
-      height:            { type: integer, null: true }
-      duration:          { type: integer, null: true }
-      description:       { type: text, null: true }
+      thumbnail_url:     { type: text, nullable: true }
+      width:             { type: integer, nullable: true }
+      height:            { type: integer, nullable: true }
+      duration:          { type: integer, nullable: true }
+      description:       { type: text, nullable: true }
       download_count:    { type: integer, default: "0" }
       sort_order:        { type: integer, default: "0" }
       created_at:        { type: timestamp, default: "now()" }
       updated_at:        { type: timestamp, default: "now()" }
-      deleted_at:        { type: timestamp, null: true }
+      deleted_at:        { type: timestamp, nullable: true }
     indexes:
       - { columns: [user_id, deleted_at] }
       - { columns: [user_id, folder_id, deleted_at] }
@@ -126,8 +126,8 @@ models:
       id:              { type: bigint, primary_key: true, autoincrement: true }
       hash:            { type: varchar, length: 64, unique: true }
       file_size:       { type: bigint, default: "0" }
-      mime_type:       { type: varchar, length: 255, null: true }
-      storage_path:    { type: text, null: true }
+      mime_type:       { type: varchar, length: 255, nullable: true }
+      storage_path:    { type: text, nullable: true }
       reference_count: { type: integer, default: "1" }
       created_at:      { type: timestamp, default: "now()" }
       updated_at:      { type: timestamp, default: "now()" }
@@ -141,10 +141,10 @@ models:
       id:          { type: bigint, primary_key: true, autoincrement: true }
       file_id:     { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
       version_num: { type: integer, default: "1" }
-      file_path:   { type: text, null: true }
+      file_path:   { type: text, nullable: true }
       file_size:   { type: bigint, default: "0" }
-      file_hash:   { type: varchar, length: 64, null: true }
-      created_by:  { type: bigint, foreign_key: "users(id)", null: true }
+      file_hash:   { type: varchar, length: 64, nullable: true }
+      created_by:  { type: bigint, foreign_key: "users(id)", nullable: true }
       created_at:  { type: timestamp, default: "now()" }
 
   FileTag:
@@ -154,7 +154,7 @@ models:
       id:         { type: bigint, primary_key: true, autoincrement: true }
       user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       name:       { type: varchar, length: 100 }
-      color:      { type: varchar, length: 20, null: true }
+      color:      { type: varchar, length: 20, nullable: true }
       created_at: { type: timestamp, default: "now()" }
 
   FileTagAssignment:
@@ -171,8 +171,8 @@ models:
     description: 分享链接
     columns:
       id:              { type: bigint, primary_key: true, autoincrement: true }
-      file_id:         { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", null: true }
-      folder_id:       { type: bigint, foreign_key: "folders(id)", on_delete: "set null", null: true }
+      file_id:         { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", nullable: true }
+      folder_id:       { type: bigint, foreign_key: "folders(id)", on_delete: "set null", nullable: true }
       user_id:         { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       token:           { type: varchar, length: 64, default: "''" }
       short_code:      { type: varchar, length: 32, default: "''" }
@@ -182,7 +182,7 @@ models:
       view_count:      { type: integer, default: "0" }
       download_count:  { type: integer, default: "0" }
       max_downloads:   { type: integer, default: "0" }
-      expires_at:      { type: timestamp, null: true }
+      expires_at:      { type: timestamp, nullable: true }
       created_at:      { type: timestamp, default: "now()" }
     indexes:
       - { columns: [short_code], where: "short_code != ''" }
@@ -198,7 +198,7 @@ models:
       shared_with: { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       permission:  { type: varchar, length: 20, default: "'view'" }
       created_at:  { type: timestamp, default: "now()" }
-      expires_at:  { type: timestamp, null: true }
+      expires_at:  { type: timestamp, nullable: true }
 
   # ── 加密保险箱 ──────────────────────────────────
   Vault:
@@ -208,7 +208,7 @@ models:
       id:            { type: bigint, primary_key: true, autoincrement: true }
       user_id:       { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       name:          { type: varchar, length: 255 }
-      description:   { type: text, null: true }
+      description:   { type: text, nullable: true }
       password_hash: { type: varchar, length: 128, default: "''" }
       created_at:    { type: timestamp, default: "now()" }
       updated_at:    { type: timestamp, default: "now()" }
@@ -225,7 +225,7 @@ models:
       file_size:    { type: bigint, default: "0" }
       mime_type:    { type: varchar, length: 128, default: "''" }
       content_type: { type: varchar, length: 64, default: "'file'" }
-      content:      { type: text, null: true }
+      content:      { type: text, nullable: true }
       created_at:   { type: timestamp, default: "now()" }
       updated_at:   { type: timestamp, default: "now()" }
     indexes:
@@ -238,19 +238,19 @@ models:
     columns:
       id:               { type: bigint, primary_key: true, autoincrement: true }
       user_id:          { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      upload_id:        { type: varchar, length: 255, null: true }
-      filename:         { type: varchar, length: 255, null: true }
+      upload_id:        { type: varchar, length: 255, nullable: true }
+      filename:         { type: varchar, length: 255, nullable: true }
       file_size:        { type: bigint, default: "0" }
       chunk_size:       { type: integer, default: "0" }
       total_chunks:     { type: integer, default: "0" }
       received_chunks:  { type: integer, default: "0" }
       status:           { type: varchar, length: 20, default: "'pending'" }
-      mime_type:        { type: varchar, length: 255, null: true }
-      folder_id:        { type: varchar, length: 50, null: true }
-      first_chunk_hash: { type: varchar, length: 64, null: true }
-      last_chunk_hash:  { type: varchar, length: 64, null: true }
-      final_hash:       { type: varchar, length: 64, null: true }
-      storage_path:     { type: text, null: true }
+      mime_type:        { type: varchar, length: 255, nullable: true }
+      folder_id:        { type: varchar, length: 50, nullable: true }
+      first_chunk_hash: { type: varchar, length: 64, nullable: true }
+      last_chunk_hash:  { type: varchar, length: 64, nullable: true }
+      final_hash:       { type: varchar, length: 64, nullable: true }
+      storage_path:     { type: text, nullable: true }
       created_at:       { type: timestamp, default: "now()" }
       updated_at:       { type: timestamp, default: "now()" }
     indexes:
@@ -261,11 +261,11 @@ models:
     description: 上传分片
     columns:
       id:          { type: bigint, primary_key: true, autoincrement: true }
-      upload_id:   { type: varchar, length: 255, null: true }
+      upload_id:   { type: varchar, length: 255, nullable: true }
       chunk_index: { type: integer, default: "0" }
-      chunk_hash:  { type: varchar, length: 64, null: true }
+      chunk_hash:  { type: varchar, length: 64, nullable: true }
       chunk_size:  { type: integer, default: "0" }
-      chunk_path:  { type: text, null: true }
+      chunk_path:  { type: text, nullable: true }
       created_at:  { type: timestamp, default: "now()" }
 
   # ── 权限与审计 ──────────────────────────────────
@@ -276,7 +276,7 @@ models:
       id:          { type: bigint, primary_key: true, autoincrement: true }
       name:        { type: varchar, length: 100 }
       slug:        { type: varchar, length: 100, unique: true }
-      description: { type: text, null: true }
+      description: { type: text, nullable: true }
       is_system:   { type: boolean, default: "false" }
       created_at:  { type: timestamp, default: "now()" }
       updated_at:  { type: timestamp, default: "now()" }
@@ -287,9 +287,9 @@ models:
     columns:
       id:          { type: bigint, primary_key: true, autoincrement: true }
       codename:    { type: varchar, length: 100, unique: true }
-      name:        { type: varchar, length: 200, null: true }
-      description: { type: text, null: true }
-      module:      { type: varchar, length: 100, null: true }
+      name:        { type: varchar, length: 200, nullable: true }
+      description: { type: text, nullable: true }
+      module:      { type: varchar, length: 100, nullable: true }
       created_at:  { type: timestamp, default: "now()" }
 
   RoleCapability:
@@ -313,11 +313,11 @@ models:
     description: 审计日志
     columns:
       id:         { type: bigint, primary_key: true, autoincrement: true }
-      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: "set null", null: true }
+      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: "set null", nullable: true }
       action:     { type: varchar, length: 100 }
-      resource:   { type: text, null: true }
-      detail:     { type: text, null: true }
-      ip_address: { type: varchar, length: 45, null: true }
+      resource:   { type: text, nullable: true }
+      detail:     { type: text, nullable: true }
+      ip_address: { type: varchar, length: 45, nullable: true }
       created_at: { type: timestamp, default: "now()" }
 
   Notification:
@@ -329,7 +329,7 @@ models:
       type:       { type: varchar, length: 50 }
       title:      { type: varchar, length: 255 }
       body:       { type: text }
-      data:       { type: text, null: true }
+      data:       { type: text, nullable: true }
       is_read:    { type: boolean, default: "false" }
       created_at: { type: timestamp, default: "now()" }
 
@@ -341,8 +341,8 @@ models:
       id:            { type: bigint, primary_key: true, autoincrement: true }
       setting_key:   { type: varchar, length: 100, unique: true }
       setting_value: { type: text }
-      setting_type:  { type: varchar, length: 50, default: "'string'", null: true }
-      description:   { type: text, null: true }
+      setting_type:  { type: varchar, length: 50, default: "'string'", nullable: true }
+      description:   { type: text, nullable: true }
       is_public:     { type: boolean, default: "false" }
       created_at:    { type: timestamp, default: "now()" }
       updated_at:    { type: timestamp, default: "now()" }
@@ -353,7 +353,7 @@ models:
     columns:
       id:          { type: bigint, primary_key: true, autoincrement: true }
       word:        { type: varchar, length: 255 }
-      replacement: { type: varchar, length: 255, null: true }
+      replacement: { type: varchar, length: 255, nullable: true }
       level:       { type: integer, default: "1" }
       is_active:   { type: boolean, default: "true" }
       created_at:  { type: timestamp, default: "now()" }
