@@ -158,139 +158,57 @@ go run ./cmd/server
 
 ## CLI
 
-Stora CLI 是系统管理命令行工具，支持初始化、迁移、升级、备份等操作。
+Stora CLI 是系统管理命令行工具。
 
 ```bash
-# 构建
 go build -o stora-cli cmd/cli/main.go
-
-# 或直接运行
-go run ./cmd/cli <command>
 ```
 
-### 命令一览
+| 命令 | 说明 |
+|------|------|
+| `init` | ⚡ 系统初始化向导（交互式，小白首选） |
+| `migrate` | 数据库迁移（generate/up/down/history/current） |
+| `upgrade` | 系统升级 + 版本管理（check/apply/--version） |
+| `config` | 配置管理（show/init/verify） |
+| `backup` | 数据库备份 |
+| `health` | 系统健康检查 |
+| `users` | 用户列表 |
 
-| 命令 | 说明 | 适用场景 |
-|------|------|----------|
-| `init` | ⚡ 系统初始化向导 | **小白首选** — 交互式完成环境检查、配置生成、建表、创建管理员 |
-| `migrate` | 数据库版本迁移管理 | 开发/运维 — 基于 YAML 声明式 schema |
-| `upgrade` | 系统升级 + 版本管理 | 生产环境 — 检查/应用 GitHub Release 更新 |
-| `config` | 配置管理 | 生成/验证 .env 文件 |
-| `backup` | 数据库备份 | 生产环境 |
-| `health` | 系统健康检查 | 快速诊断 |
-| `users` | 用户管理 | 列出所有用户 |
-| `serve` | 启动管理 Web UI | 浏览器访问 `/admin/ui/` |
+详情见 `docs/cli-usage.md`
 
-### 详细用法
+## API
 
-#### `stora-cli init` — 系统初始化
+完整 API 文档见 [docs/api.md](docs/api.md)。主要端点：
 
-5 步交互式向导，适合首次部署：
+| 分组 | 端点 |
+|------|------|
+| 认证 | `/api/v2/auth/*` — 登录/注册/2FA/会话管理 |
+| 文件 | `/api/v2/files/*` — CRUD/上传/下载/搜索/评论/转码 |
+| 分享 | `/api/v2/share/*` — 链接分享/密码/有效期/收集/转存 |
+| 团队 | `/api/v2/teams/*` — 团队/成员/共享文件夹 |
+| 管理 | `/api/v2/admin/*` — 用户/设置/审计/维护模式 |
+| Webhook | `/api/v2/webhooks/*` — 事件通知 |
 
-```
-Step 1: 环境检查   → 检测 Go/PostgreSQL 是否安装
-Step 2: 配置生成   → 交互填写 .env（密钥自动生成）
-Step 3: 数据库建表  → 从 config/models.yaml 自动建表
-Step 4: 创建管理员  → 自定义用户名/密码（或随机生成）
-Step 5: 完成摘要   → 显示管理地址和登录凭据
-```
-
-#### `stora-cli migrate` — 数据库迁移（Alembic 风格）
-
-工作流：编辑 `config/models.yaml` → 生成迁移 → 执行迁移
+## 快速开始
 
 ```bash
-# 从 config/models.yaml 生成迁移（UPGRADE + DOWNGRADE 双段）
-stora-cli migrate generate --description "add_tags_table"
+cp .env.example .env
+# 编辑 .env，设置 SECRET_KEY 和数据库连接
 
-# 执行待迁移
-stora-cli migrate up
+# 方式 1: 交互式初始化（推荐）
+go run ./cmd/cli init
 
-# 回退 1 个迁移
-stora-cli migrate down
-
-# 回退 N 个迁移
-stora-cli migrate down 3
-
-# 列出迁移历史
-stora-cli migrate history
-
-# 显示当前 revision
-stora-cli migrate current
+# 方式 2: 手动
+go run ./cmd/server
+# 访问 http://localhost:9421/admin/ui/
 ```
 
-迁移文件格式（`migrations/` 目录）：
-```sql
--- UPGRADE
-CREATE TABLE IF NOT EXISTS tags (...);
+## 部署
 
--- DOWNGRADE
-DROP TABLE IF EXISTS tags CASCADE;
-```
+> 生产部署指南：`docs/deployment-nginx.md`
+> OAuth 配置：`docs/oauth-setup.md`
 
-#### `stora-cli upgrade` — 系统升级
 
-```bash
-# 显示当前版本
-stora-cli upgrade --version
-
-# 检查 GitHub 新版本
-stora-cli upgrade check
-
-# 应用更新（迁移 + 版本文件更新）
-stora-cli upgrade apply
-
-# 仅执行数据库迁移（向后兼容）
-stora-cli upgrade --dry-run
-```
-
-版本定义在 `version.ini` 的 `[stora]` 段：
-```ini
-[stora]
-version = V0.1.260622.01
-release_date = 2026-06-22
-channel = stable
-```
-
-#### `stora-cli config` — 配置管理
-
-```bash
-# 显示当前配置摘要
-stora-cli config show
-
-# 从 .env.example 生成 .env
-stora-cli config init
-
-# 验证配置完整性
-stora-cli config verify
-```
-
-#### `stora-cli backup` — 数据库备份
-
-```bash
-# 自动命名备份文件
-stora-cli backup
-
-# 指定输出文件
-stora-cli backup -o mybackup.sql
-```
-
-#### `stora-cli health` — 健康检查
-
-```bash
-stora-cli health
-# ✅ 数据库: 已连接
-# ✅ 系统: 运行正常
-```
-
-#### `stora-cli users` — 用户管理
-
-```bash
-stora-cli users
-# ID    用户名    邮箱    管理员  状态
-# --    ------    ----    ----   ----
-# 1     admin     ...     ✓      ✓
-```
 
 ## License
 

@@ -352,6 +352,11 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		"file_size": fileSize,
 		"file_type": fileType,
 	})
+	// Trigger webhook
+	TriggerWebhooks(h.db, "file.create", map[string]interface{}{
+		"event": "file.create", "file_id": fileID,
+		"user_id": userID, "filename": filename,
+	})
 }
 
 // DeleteFile soft-deletes a file.

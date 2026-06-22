@@ -414,3 +414,29 @@ models:
       content:   { type: text }
       created_at: { type: timestamp, default: "now()" }
       updated_at: { type: timestamp, default: "now()" }
+
+  # ── Webhook ─────────────────────────────────────
+  Webhook:
+    table: webhooks
+    description: Webhook 配置
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      name:       { type: varchar, length: 255 }
+      url:        { type: varchar, length: 512 }
+      events:     { type: text }
+      is_active:  { type: boolean, default: "true" }
+      created_at: { type: timestamp, default: "now()" }
+      updated_at: { type: timestamp, default: "now()" }
+
+  WebhookEvent:
+    table: webhook_events
+    description: Webhook 事件日志
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      webhook_id: { type: bigint, foreign_key: "webhooks(id)", on_delete: cascade }
+      event:      { type: varchar, length: 50 }
+      payload:    { type: text, nullable: true }
+      status:     { type: varchar, length: 20, default: "'pending'" }
+      response:   { type: text, nullable: true }
+      created_at: { type: timestamp, default: "now()" }

@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -427,11 +428,12 @@ func EnsureVaultCompat(db *sql.DB) {
 // ---------- Transcoding ----------
 
 type TranscodeHandler struct {
-	db *sql.DB
+	db      *sql.DB
+	storage storage.Driver
 }
 
-func NewTranscodeHandler(db *sql.DB) *TranscodeHandler {
-	return &TranscodeHandler{db: db}
+func NewTranscodeHandler(db *sql.DB, store storage.Driver) *TranscodeHandler {
+	return &TranscodeHandler{db: db, storage: store}
 }
 
 func (h *TranscodeHandler) StartTranscode(w http.ResponseWriter, r *http.Request) {
@@ -454,7 +456,56 @@ func (h *TranscodeHandler) StartTranscode(w http.ResponseWriter, r *http.Request
 		fileID, userID, req.TargetFormat, now,
 	).Scan(&taskID)
 
+	// Start background transcode
+	go h.processTranscode(taskID, fileID, userID, req.TargetFormat)
+
 	writeJSON(w, http.StatusCreated, map[string]int64{"task_id": taskID})
+}
+
+func (h *TranscodeHandler) processTranscode(taskID, fileID, userID int64, targetFormat string) {
+	db := h.db
+	now := time.Now().Format(time.RFC3339)
+	db.Exec(`UPDATE transcode_tasks SET status = 'processing', updated_at = $1 WHERE id = $2`, now, taskID)
+
+	// Get file path
+	var filePath, origFilename string
+	err := db.QueryRow(
+		`SELECT file_path, COALESCE(original_filename, filename) FROM file_items WHERE id = $1 AND user_id = $2`,
+		fileID, userID,
+	).Scan(&filePath, &origFilename)
+	if err != nil {
+		db.Exec(`UPDATE transcode_tasks SET status = 'failed', error_msg = 'file not found', updated_at = $1 WHERE id = $2`, now, taskID)
+		return
+	}
+
+	// Build ffmpeg command
+	outputPath := filePath + "." + targetFormat
+	cmd := exec.Command("ffmpeg", "-i", filePath, "-preset", "fast",
+		"-c:v", "libx264", "-c:a", "aac",
+		"-y", outputPath)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		db.Exec(`UPDATE transcode_tasks SET status = 'failed', error_msg = $1, updated_at = $2 WHERE id = $3`,
+			string(output[:min(len(output), 500)]), now, taskID)
+		return
+	}
+
+	// Update task
+	db.Exec(`UPDATE transcode_tasks SET status = 'completed', output_path = $1, progress = 100, updated_at = $2 WHERE id = $3`,
+		outputPath, now, taskID)
+
+	// Create notification
+	db.Exec(`INSERT INTO notifications (user_id, type, title, body, created_at)
+		VALUES ($1, 'transcode', '转码完成', $2, $3)`,
+		userID, fmt.Sprintf("文件 %s 转码为 %s 已完成", origFilename, targetFormat), now)
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // ---------- Version Management ----------

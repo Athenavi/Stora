@@ -133,13 +133,16 @@ func main() {
 	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder, pathCache, speedLimiter)
 	uploadHandler := fileapi.NewUploadHandler(db, store, cfg.TempFolder)
 	vaultHandler := fileapi.NewVaultHandler(db)
-	transcodeHandler := fileapi.NewTranscodeHandler(db)
+	transcodeHandler := fileapi.NewTranscodeHandler(db, store)
 	versionHandler := fileapi.NewVersionHandler(db)
 	batchHandler := fileapi.NewBatchHandler(db, store)
 	trashHandler := fileapi.NewTrashHandler(db)
 
 	// Initialize offline download handler
 	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
+
+	// Initialize webhook handler
+	webhookHandler := fileapi.NewWebhookHandler(db)
 
 	// Initialize share handler
 	shareHandler := shareapi.NewHandler(db, store)
@@ -272,6 +275,11 @@ func main() {
 			// Offline download
 			r.Post("/files/offline-download", offlineDownloadHandler.CreateDownloadTask)
 			r.Get("/files/offline-download", offlineDownloadHandler.ListDownloadTasks)
+
+			// Webhooks
+			r.Get("/webhooks", webhookHandler.ListWebhooks)
+			r.Post("/webhooks", webhookHandler.CreateWebhook)
+			r.Delete("/webhooks/{id}", webhookHandler.DeleteWebhook)
 
 			// Batch operations
 			r.Post("/files/batch/delete", batchHandler.BatchDelete)
