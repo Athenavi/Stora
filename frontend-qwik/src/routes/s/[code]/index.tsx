@@ -6,7 +6,7 @@ import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useLocation } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Input } from "~/components/ui/Button";
-import { api } from "~/lib/api";
+import { api, createServerApi } from "~/lib/api";
 
 interface ShareAccess {
   share_info: { short_code: string; permission: string; password_protected: boolean; download_count: number; max_downloads: number };
@@ -15,10 +15,11 @@ interface ShareAccess {
   protected?: boolean;
 }
 
-export const useShareData = routeLoader$(async ({ params }) => {
+export const useShareData = routeLoader$(async ({ params, request }) => {
   const code = params["code"];
   if (!code) return null;
-  return await api.get<ShareAccess>(`/files/shares/access/${code}`).catch(() => null);
+  const srv = createServerApi(request);
+  return await srv.get<ShareAccess>(`/files/shares/access/${code}`).catch(() => null);
 });
 
 function fmtSize(bytes: number | undefined): string {
