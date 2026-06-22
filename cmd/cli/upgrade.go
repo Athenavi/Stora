@@ -200,7 +200,7 @@ func updateVersionTxt(tagName string) error {
 	tag := strings.TrimPrefix(tagName, "V")
 	tag = strings.TrimPrefix(tag, "v")
 
-	data, err := os.ReadFile("version.txt")
+	data, err := os.ReadFile("version.ini")
 	if err != nil {
 		return err
 	}
@@ -229,8 +229,7 @@ func updateVersionTxt(tagName string) error {
 		}
 		newLines = append(newLines, line)
 	}
-	_ = tag
-	return os.WriteFile("version.txt", []byte(strings.Join(newLines, "\n")), 0644)
+	return os.WriteFile("version.ini", []byte(strings.Join(newLines, "\n")), 0644)
 }
 
 // ── 向后兼容（无子命令时执行 migrate up）───────────

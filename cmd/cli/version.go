@@ -10,31 +10,34 @@ import (
 	"time"
 )
 
-// ── version.txt 结构 ─────────────────────────────
+// ── version.ini [stora] 结构 ──────────────────────
 
 type VersionInfo struct {
-	Version     string `ini:"version"`
-	ReleaseDate string `ini:"release_date"`
-	Channel     string `ini:"channel"`
-	GoVersion   string `ini:"go_version"`
+	Version     string
+	ReleaseDate string
+	Channel     string
+	GoVersion   string
 }
 
-// CurrentVersion 读取 version.txt 返回当前版本信息
+// CurrentVersion 从 version.ini 的 [stora] 段读取版本信息
 func CurrentVersion() (*VersionInfo, error) {
-	data, err := os.ReadFile("version.txt")
+	data, err := os.ReadFile("version.ini")
 	if err != nil {
-		return nil, fmt.Errorf("读取 version.txt 失败: %w", err)
+		return nil, fmt.Errorf("读取 version.ini 失败: %w", err)
 	}
 
 	v := &VersionInfo{}
-	section := ""
+	inStora := false
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = line[1 : len(line)-1]
+		if line == "[stora]" {
+			inStora = true
 			continue
 		}
-		if section != "stora" {
+		if inStora && len(line) > 0 && line[0] == '[' {
+			break
+		}
+		if !inStora {
 			continue
 		}
 		parts := strings.SplitN(line, "=", 2)
@@ -55,15 +58,13 @@ func CurrentVersion() (*VersionInfo, error) {
 		}
 	}
 	if v.Version == "" {
-		return nil, fmt.Errorf("version.txt 中未找到 [stora] 版本信息")
+		return nil, fmt.Errorf("version.ini 中未找到 [stora] 版本信息")
 	}
 	return v, nil
 }
 
 // ── 版本比较 ──────────────────────────────────────
 
-// Semver 将 "V0.1.260622.01" 解析为可比较的整数
-// 返回 (major, minor, date, build)
 func parseVersion(ver string) (int, int, int, int) {
 	v := strings.TrimPrefix(ver, "V")
 	v = strings.TrimPrefix(v, "v")
@@ -90,15 +91,14 @@ func IsNewer(localVer, remoteVer string) bool {
 
 // ── GitHub Release API ───────────────────────────
 
-// GitHubRelease 对应 GitHub API /releases/latest 的响应
 type GitHubRelease struct {
-	TagName    string         `json:"tag_name"`
-	Name       string         `json:"name"`
-	Body       string         `json:"body"`
-	Prerelease bool           `json:"prerelease"`
+	TagName     string        `json:"tag_name"`
+	Name        string        `json:"name"`
+	Body        string        `json:"body"`
+	Prerelease  bool          `json:"prerelease"`
 	PublishedAt string        `json:"published_at"`
-	HTMLURL    string         `json:"html_url"`
-	Assets     []GitHubAsset  `json:"assets"`
+	HTMLURL     string        `json:"html_url"`
+	Assets      []GitHubAsset `json:"assets"`
 }
 
 type GitHubAsset struct {
@@ -139,12 +139,12 @@ func CheckLatestRelease(owner, repo string) (*GitHubRelease, error) {
 	return &release, nil
 }
 
-// FormatVersion 美化版本信息显示
+// ── 格式化 ────────────────────────────────────────
+
 func (v *VersionInfo) FormatVersion() string {
 	return v.Version
 }
 
-// FormatReleaseNotes 格式化 Release 信息
 func FormatReleaseNotes(r *GitHubRelease) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("\n  📦 %s\n", r.TagName))

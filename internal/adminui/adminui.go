@@ -97,7 +97,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Try reading version info
-	if v, err := readVersion("version.txt"); err == nil {
+	if v, err := readVersion("version.ini"); err == nil {
 		data.Version = v
 	}
 
@@ -135,14 +135,25 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// readVersion reads the version string from version.txt
+// readVersion reads the version string from version.ini [stora] section
 func readVersion(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
+	inStora := false
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
+		if line == "[stora]" {
+			inStora = true
+			continue
+		}
+		if inStora && len(line) > 0 && line[0] == '[' {
+			break
+		}
+		if !inStora {
+			continue
+		}
 		if strings.HasPrefix(line, "version") {
 			parts := strings.SplitN(line, "=", 2)
 			if len(parts) == 2 {
@@ -150,7 +161,7 @@ func readVersion(path string) (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("version not found")
+	return "", fmt.Errorf("version not found in [stora] section")
 }
 
 // MigratePage triggers pending migrations and shows result.
