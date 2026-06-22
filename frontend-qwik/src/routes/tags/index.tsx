@@ -25,14 +25,18 @@ const TAG_BG: Record<string, string> = {
 export default component$(() => {
   const tags = useTags();
   const nav = useNavigate();
-  const items = useSignal(tags.value);
+  const items = useSignal<Tag[]>([]);
   const showCreate = useSignal(false);
   const editId = useSignal(0);
   const name = useSignal("");
   const color = useSignal(TAG_COLORS[0]);
   const loading = useSignal(false);
 
-  const refresh = async () => { try { items.value = await api.get<Tag[]>("/files/tags"); } catch {} };
+  // Sync routeLoader data to writable signal
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(() => { items.value = tags.value || []; });
+
+  const refresh = async () => { try { items.value = await api.get<Tag[]>("/files/tags") || []; } catch {} };
 
   const createOrUpdate = async () => {
     if (!name.value.trim()) return;
@@ -41,7 +45,10 @@ export default component$(() => {
       if (editId.value > 0) { await api.patch(`/files/tags/${editId.value}`, { name: name.value, color: color.value }); }
       else { await api.post("/files/tags", { name: name.value, color: color.value }); }
       showCreate.value = false; editId.value = 0; name.value = ""; await refresh();
-    } catch {}
+    } catch (e: any) {
+      console.error("Tag create/update failed:", e);
+      alert(e.message || "操作失败");
+    }
     loading.value = false;
   };
 
@@ -57,6 +64,8 @@ export default component$(() => {
     backgroundColor: TAG_BG[tag.name] || `${tag.color}20`,
     color: tag.color,
   });
+
+  const tagList = items.value || [];
 
   return (
     <div class="flex flex-col h-full">
@@ -88,7 +97,7 @@ export default component$(() => {
 
       {/* Content */}
       <div class="flex-1 overflow-auto p-6">
-        {items.value.length === 0 ? (
+        {tagList.length === 0 ? (
           <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground">
             <div class="w-16 h-16 bg-stora-muted flex items-center justify-center text-3xl mb-4">🏷️</div>
             <h3 class="text-lg font-medium text-stora-foreground mb-1">暂无标签</h3>
@@ -100,7 +109,7 @@ export default component$(() => {
           <>
             {/* Tag cloud — pill/capsule per spec: 34px h, radius 17px */}
             <div class="flex flex-wrap gap-2.5 mb-8">
-              {items.value.map(tag => (
+              {tagList.map(tag => (
                 <div key={tag.id}
                   class="inline-flex items-center h-[34px] px-[14px] cursor-pointer hover:opacity-80"
                   style={tagStyle(tag)}
@@ -113,7 +122,7 @@ export default component$(() => {
 
             {/* Tag file list — 48px rows per spec */}
             <div class="divide-y divide-stora-border">
-              {items.value.map(tag => (
+              {tagList.map(tag => (
                 <div key={tag.id} class="flex items-center gap-4 px-4 h-12 hover:bg-stora-muted">
                   <span class="text-sm">📄</span>
                   <span class="text-sm font-medium text-stora-foreground flex-1 truncate">{tag.name}</span>

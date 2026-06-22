@@ -39,13 +39,13 @@ export default component$(() => {
   const isPublic =
     path === "/login" ||
     path === "/register" ||
-    path.startsWith("/s");
+    path.startsWith("/s/");
 
   // Auth guard
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
     const p = window.location.pathname.replace(/\/+$/, "");
-    const pub = p === "/login" || p === "/register" || p.startsWith("/s");
+    const pub = p === "/login" || p === "/register" || p.startsWith("/s/");
     if (!pub && !isAuthenticated()) {
       window.location.href = "/login";
     }
@@ -55,7 +55,7 @@ export default component$(() => {
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(async () => {
     const p = window.location.pathname.replace(/\/+$/, "");
-    const pub = p === "/login" || p === "/register" || p.startsWith("/s");
+    const pub = p === "/login" || p === "/register" || p.startsWith("/s/");
     if (pub) return;
     try {
       const [q, u] = await Promise.all([

@@ -29,7 +29,7 @@ export default component$(() => {
   const vaultList = useSignal<VaultInfo[]>([]);
   // Sync server data to client signal
   // eslint-disable-next-line qwik/no-use-visible-task
-  useVisibleTask$(() => { vaultList.value = vaultList.value || []; });
+  useVisibleTask$(() => { vaultList.value = vaults.value || []; });
   const vaultToken = useSignal<string | null>(null);
   const unlockId = useSignal(0);
   const unlockPw = useSignal("");
