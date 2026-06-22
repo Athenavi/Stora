@@ -715,7 +715,7 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	).Scan(&folderID)
 
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "create failed")
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create failed: %v", err))
 		return
 	}
 
@@ -1458,7 +1458,7 @@ func (h *Handler) CreateFolderByPath(w http.ResponseWriter, r *http.Request) {
 	rows, err := tx.Query(
 		`SELECT id, COALESCE(parent_id,0), name FROM folders WHERE user_id = $1`, userID)
 	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, "query failed")
+		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("query failed: %v", err))
 		return
 	}
 	nameOf := make(map[int64]string)
@@ -1504,12 +1504,12 @@ func (h *Handler) CreateFolderByPath(w http.ResponseWriter, r *http.Request) {
 		userID, parentPtr, req.Name, now,
 	).Scan(&newID)
 	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, "create failed")
+		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("create failed: %v", err))
 		return
 	}
 
 	if err := tx.Commit(); err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, "commit failed")
+		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("commit failed: %v", err))
 		return
 	}
 

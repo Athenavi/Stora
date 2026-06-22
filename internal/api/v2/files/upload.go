@@ -3,12 +3,14 @@ package files
 import (
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
@@ -99,6 +101,40 @@ func (h *UploadHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 	uploadID := chi.URLParam(r, "uploadId")
 	chunkIndexStr := chi.URLParam(r, "index")
 
+	var body []byte
+	ct := r.Header.Get("Content-Type")
+
+	if uploadID == "" || strings.HasPrefix(ct, "multipart/form-data") {
+		// Frontend format: POST /files/upload/chunk with FormData
+		if err := r.ParseMultipartForm(100 << 20); err != nil {
+			utils.WriteError(w, http.StatusBadRequest, "invalid form")
+			return
+		}
+		uploadID = r.FormValue("upload_id")
+		chunkIndexStr = r.FormValue("chunk_index")
+
+		file, _, err := r.FormFile("chunk")
+		if err != nil {
+			utils.WriteError(w, http.StatusBadRequest, "chunk field required")
+			return
+		}
+		defer file.Close()
+		body, err = io.ReadAll(file)
+		if err != nil {
+			utils.WriteError(w, http.StatusInternalServerError, "failed to read chunk")
+			return
+		}
+	} else {
+		// Legacy format: PUT /files/upload/{uploadId}/chunk/{index} with raw body
+		var err error
+		body, err = io.ReadAll(http.MaxBytesReader(w, r.Body, 100<<20))
+		if err != nil {
+			utils.WriteError(w, http.StatusBadRequest, "failed to read chunk body")
+			return
+		}
+		defer r.Body.Close()
+	}
+
 	chunkIndex, err := strconv.Atoi(chunkIndexStr)
 	if err != nil {
 		utils.WriteError(w, http.StatusBadRequest, "invalid chunk index")
@@ -120,14 +156,6 @@ func (h *UploadHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 		utils.WriteError(w, http.StatusConflict, "upload already completed")
 		return
 	}
-
-	// Read chunk body (limited to chunk_size + overhead)
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 100<<20)) // max 100MB per chunk
-	if err != nil {
-		utils.WriteError(w, http.StatusBadRequest, "failed to read chunk body")
-		return
-	}
-	defer r.Body.Close()
 
 	// Compute SHA256 of chunk
 	chunkHash := fmt.Sprintf("%x", sha256.Sum256(body))
@@ -232,6 +260,19 @@ func (h *UploadHandler) UploadStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	uploadID := chi.URLParam(r, "uploadId")
+
+	// Fallback: read from JSON body (frontend sends POST /files/upload/complete)
+	if uploadID == "" {
+		var req struct {
+			UploadID string `json:"upload_id"`
+			FolderID *int64 `json:"folder_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UploadID == "" {
+			utils.WriteError(w, http.StatusBadRequest, "upload_id required")
+			return
+		}
+		uploadID = req.UploadID
+	}
 
 	// Get upload task
 	var task struct {

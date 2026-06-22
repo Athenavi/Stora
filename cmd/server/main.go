@@ -238,8 +238,10 @@ func main() {
 			r.Post("/files/upload", fileHandler.UploadFile)
 			r.Post("/files/upload/init", uploadHandler.InitUpload)
 			r.Put("/files/upload/{uploadId}/chunk/{index}", uploadHandler.UploadChunk)
+			r.Post("/files/upload/chunk", uploadHandler.UploadChunk) // frontend sends POST with FormData
 			r.Get("/files/upload/{uploadId}/status", uploadHandler.UploadStatus)
 			r.Post("/files/upload/{uploadId}/complete", uploadHandler.CompleteUpload)
+			r.Post("/files/upload/complete", uploadHandler.CompleteUpload) // frontend sends POST with JSON body
 			r.Delete("/files/upload/{uploadId}", uploadHandler.CancelUpload)
 			r.Patch("/files/{id}", fileHandler.UpdateFile)
 			r.Put("/files/{id}/content", fileHandler.UpdateFileContent)
