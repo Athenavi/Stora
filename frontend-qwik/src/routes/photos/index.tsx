@@ -1,5 +1,5 @@
 /**
- * Stora Photo Wall — timeline-based photo album view with batch operations
+ * Stora Photo Wall — flat design timeline grid
  */
 import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
@@ -50,7 +50,6 @@ export default component$(() => {
   const touchStartX = useSignal(0);
   const currentPhotoIndex = useSignal(0);
   const selIds = useSignal<number[]>([]);
-  // Flatten all photos for swipe navigation
   const allPhotos = groups.value.flatMap(g => g.photos);
 
   const toggleSel = (id: number) => {
@@ -62,74 +61,66 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
-        <div>
-          <h1 class="text-lg font-semibold text-slate-900">照片墙</h1>
-          <p class="text-sm text-slate-500 mt-0.5">{allPhotos.length} 张照片</p>
-        </div>
-        {selIds.value.length > 0 && (
-          <div class="flex items-center gap-2">
-            <button onClick$={() => selIds.value = []} class="touch-target text-xs text-slate-500 hover:text-slate-700 px-2 py-1">取消选择</button>
-          </div>
-        )}
+      {/* Title area per spec */}
+      <div class="px-6 py-4 bg-stora-card border-b border-stora-border">
+        <h1 class="text-[28px] font-bold text-stora-foreground">照片墙</h1>
+        <p class="text-sm text-stora-muted-foreground mt-1">以时间线浏览你的照片回忆</p>
       </div>
 
       {/* Batch action bar */}
       {selIds.value.length > 0 && (
-        <div class="flex items-center gap-2 px-4 sm:px-6 py-2 bg-indigo-50/80 border-b border-indigo-100 shrink-0">
-          <span class="text-sm font-medium text-indigo-700">{selIds.value.length} 项已选</span>
+        <div class="flex items-center gap-2 px-6 py-2 bg-stora-muted border-b border-stora-border shrink-0">
+          <span class="text-sm font-medium text-stora-foreground">{selIds.value.length} 项已选</span>
           <div class="flex-1" />
+          <button onClick$={() => selIds.value = []} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-muted-foreground hover:bg-stora-muted">取消选择</button>
           <button onClick$={() => batchDownload([...selIds.value])}
-            class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">下载</button>
+            class="touch-target px-3 py-1.5 text-xs font-medium text-stora-primary">下载</button>
           <button onClick$={async () => {
             if (!confirm(`确认删除 ${selIds.value.length} 张照片？`)) return;
             await api.post("/files/batch/delete", { file_ids: [...selIds.value] }).catch(() => {});
             selIds.value = [];
             location.reload();
-          }} class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 rounded-lg transition-colors">删除</button>
+          }} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-destructive">删除</button>
         </div>
       )}
 
-      <div class={`flex-1 overflow-auto scrollbar-thin p-4 sm:p-6 ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
+      <div class={`flex-1 overflow-auto scrollbar-thin p-6 ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
         {groups.value.length === 0 ? (
-          <div class="flex flex-col items-center justify-center h-full text-slate-400">
-            <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">📷</div>
-            <h3 class="text-lg font-semibold text-slate-500 mb-1">暂无照片</h3>
-            <p class="text-sm text-slate-400 mb-6">上传图片文件后，它们将出现在这里</p>
+          <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground">
+            <div class="w-20 h-20 bg-stora-muted flex items-center justify-center text-4xl mb-5">📷</div>
+            <h3 class="text-lg font-semibold text-stora-foreground mb-1">暂无照片</h3>
+            <p class="text-sm text-stora-muted-foreground mb-6">上传图片文件后，它们将出现在这里</p>
           </div>
         ) : (
           <div class="space-y-8">
             {groups.value.map(group => (
               <div key={group.date}>
-                <h2 class="text-sm font-medium text-slate-700 mb-3 sticky top-0 bg-slate-50/95 backdrop-blur py-2 z-10">
+                <h2 class="text-sm font-medium text-stora-muted-foreground mb-3 sticky top-0 bg-stora-background py-2 z-10">
                   {fmtDate(group.date)} · {group.photos.length} 张
                 </h2>
-                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                {/* Photo grid: 220x220px per spec */}
+                <div class="flex flex-wrap gap-3">
                   {group.photos.map(photo => {
                     const sel = selIds.value.includes(photo.id);
                     return (
                       <div key={photo.id}
                         onClick$={() => {
-                          if (selIds.value.length > 0) {
-                            toggleSel(photo.id);
-                          } else {
-                            lightbox.value = photo;
-                            currentPhotoIndex.value = allPhotos.findIndex(p => p.id === photo.id);
-                          }
+                          if (selIds.value.length > 0) { toggleSel(photo.id); }
+                          else { lightbox.value = photo; currentPhotoIndex.value = allPhotos.findIndex(p => p.id === photo.id); }
                         }}
                         onContextMenu$={(e: any) => { e.preventDefault(); toggleSel(photo.id); }}
-                        class={`aspect-square rounded-xl overflow-hidden bg-slate-100 cursor-pointer hover:ring-2 hover:ring-indigo-400 transition-all group relative ${sel ? 'ring-2 ring-indigo-500' : ''}`}>
+                        class={`w-[220px] h-[220px] bg-stora-muted cursor-pointer relative overflow-hidden ${sel ? 'ring-2 ring-stora-primary' : 'hover:ring-2 hover:ring-stora-secondary'}`}>
                         <img
                           src={`/api/v2/files/preview/${photo.id}/thumbnail?size=400`}
                           alt={photo.filename}
                           class="w-full h-full object-cover"
                           loading="lazy"
                         />
-                        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2 opacity-0 hover:opacity-100">
                           <p class="text-xs text-white truncate">{photo.filename}</p>
                         </div>
                         {sel && (
-                          <div class="absolute top-2 right-2 w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center shadow-md">
+                          <div class="absolute top-2 right-2 w-6 h-6 bg-stora-primary flex items-center justify-center">
                             <Icon name="check" size={14} class="text-white" />
                           </div>
                         )}
@@ -143,7 +134,7 @@ export default component$(() => {
         )}
       </div>
 
-      {/* Enhanced Lightbox with swipe support */}
+      {/* Lightbox */}
       {lightbox.value && (
         <div class="fixed inset-0 z-50 bg-black/95 flex items-center justify-center"
           onClick$={() => lightbox.value = null}
@@ -153,42 +144,33 @@ export default component$(() => {
             if (Math.abs(dx) > 60) {
               const dir = dx > 0 ? -1 : 1;
               const newIdx = currentPhotoIndex.value + dir;
-              if (newIdx >= 0 && newIdx < allPhotos.length) {
-                currentPhotoIndex.value = newIdx;
-                lightbox.value = allPhotos[newIdx];
-              }
+              if (newIdx >= 0 && newIdx < allPhotos.length) { currentPhotoIndex.value = newIdx; lightbox.value = allPhotos[newIdx]; }
             }
           }}>
           <button onClick$={() => lightbox.value = null}
-            class="absolute top-4 right-4 w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors z-10 touch-target"
+            class="absolute top-4 right-4 w-12 h-12 bg-white/10 text-white flex items-center justify-center hover:bg-white/20 z-10 touch-target"
             aria-label="关闭">
             <Icon name="close" size={24} />
           </button>
-
           {currentPhotoIndex.value > 0 && (
             <button onClick$={(e: any) => { e.stopPropagation(); currentPhotoIndex.value--; lightbox.value = allPhotos[currentPhotoIndex.value]; }}
-              class="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors touch-target"
+              class="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/10 text-white flex items-center justify-center hover:bg-white/20 touch-target"
               aria-label="上一张">
               <Icon name="chevronLeft" size={24} />
             </button>
           )}
-
-          <img
-            src={`/api/v2/files/preview/${lightbox.value.id}/${encodeURIComponent(lightbox.value.filename)}`}
+          <img src={`/api/v2/files/preview/${lightbox.value.id}/${encodeURIComponent(lightbox.value.filename)}`}
             alt={lightbox.value.filename}
-            class="max-w-full max-h-full object-contain rounded-lg px-12 sm:px-16"
-            onClick$={(e: any) => e.stopPropagation()}
-          />
-
+            class="max-w-full max-h-full object-contain px-16"
+            onClick$={(e: any) => e.stopPropagation()} />
           {currentPhotoIndex.value < allPhotos.length - 1 && (
             <button onClick$={(e: any) => { e.stopPropagation(); currentPhotoIndex.value++; lightbox.value = allPhotos[currentPhotoIndex.value]; }}
-              class="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 text-white flex items-center justify-center hover:bg-white/20 transition-colors touch-target"
+              class="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/10 text-white flex items-center justify-center hover:bg-white/20 touch-target"
               aria-label="下一张">
               <Icon name="chevronRight" size={24} />
             </button>
           )}
-
-          <div class="absolute bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 bg-black/60 text-white text-xs sm:text-sm px-4 py-2 rounded-full whitespace-nowrap max-w-[90vw] truncate">
+          <div class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/60 text-white text-sm px-4 py-2 max-w-[90vw] truncate">
             {lightbox.value.filename}
             {lightbox.value.width && lightbox.value.height ? ` · ${lightbox.value.width}×${lightbox.value.height}` : ""}
             <span class="hidden sm:inline"> · {currentPhotoIndex.value + 1}/{allPhotos.length}</span>

@@ -96,17 +96,17 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      <div class="px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
-        <h1 class="text-lg font-semibold text-slate-900">管理面板</h1>
-        <p class="text-sm text-slate-500 mt-0.5">系统管理和监控</p>
+      <div class="px-6 py-4 border-b border-stora-border bg-stora-card">
+        <h1 class="text-lg font-semibold text-stora-foreground">管理面板</h1>
+        <p class="text-sm text-stora-muted-foreground mt-0.5">系统管理和监控</p>
       </div>
 
       {/* Tabs — scrollable on mobile */}
-      <div class="flex gap-1 px-4 sm:px-6 py-2 border-b border-slate-200 bg-white/80 shrink-0 overflow-x-auto scrollbar-thin">
+      <div class="flex gap-1 px-6 py-2 border-b border-stora-border bg-stora-card shrink-0 overflow-x-auto scrollbar-thin">
         {tabs.map(t => (
           <button key={t.id} onClick$={() => activeTab.value = t.id}
-            class={`flex items-center gap-2 px-3 sm:px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap touch-target
-              ${activeTab.value === t.id ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"}`}>
+            class={`flex items-center gap-2 px-4 py-2 text-sm font-medium whitespace-nowrap touch-target
+              ${activeTab.value === t.id ? "bg-stora-primary text-white" : "text-stora-muted-foreground hover:bg-stora-muted"}`}>
             <Icon name={t.icon} size={16} />
             <span class="hidden xs:inline sm:inline">{t.label}</span>
           </button>

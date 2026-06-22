@@ -1,10 +1,8 @@
 ﻿/**
- * Stora Trash — enterprise recycle bin
+ * Stora Trash — flat design recycle bin
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
-import { Icon } from "~/components/ui/Icon";
-import { Button, Skeleton } from "~/components/ui/Button";
 import { api, createServerApi } from "~/lib/api";
 
 interface TrashItem {
@@ -42,109 +40,81 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
-        <div>
-          <h1 class="text-lg font-semibold text-slate-900">回收站</h1>
-          <p class="text-sm text-slate-500 mt-0.5">被删除的文件会在此保留</p>
-        </div>
-        <div class="flex items-center gap-2">
-          {selIds.value.length > 0 && (
-            <>
-              <Button variant="secondary" size="sm" onClick$={async () => {
-                loading.value = true;
-                try {
-                  await api.post("/files/trash/batch-restore", { file_ids: selIds.value });
-                  items.value = items.value.filter(x => !selIds.value.includes(x.id));
-                  selIds.value = [];
-                } catch {}
-                loading.value = false;
-              }} loading={loading.value}>
-                <Icon name="restore" size={16} /> 恢复 ({selIds.value.length})
-              </Button>
-              <Button variant="danger" size="sm" onClick$={async () => {
-                if (!confirm("永久删除选中的文件？")) return;
-                loading.value = true;
-                try {
-                  await api.post("/files/trash/batch-destroy", { file_ids: selIds.value });
-                  items.value = items.value.filter(x => !selIds.value.includes(x.id));
-                  selIds.value = [];
-                } catch {}
-                loading.value = false;
-              }} loading={loading.value}>
-                <Icon name="trash" size={16} /> 永久删除
-              </Button>
-            </>
-          )}
-          {items.value.length > 0 && (
-            <Button variant="ghost" size="sm" onClick$={async () => {
-              if (!confirm("清空回收站？此操作不可恢复。")) return;
-              try { await api.post("/files/trash/clear"); items.value = []; } catch {}
-            }}>清空回收站</Button>
-          )}
-        </div>
+      {/* Title area per spec */}
+      <div class="px-6 py-4 bg-stora-card border-b border-stora-border">
+        <h1 class="text-[28px] font-bold text-stora-foreground">回收站</h1>
+        <p class="text-sm text-stora-muted-foreground mt-1">已删除的文件将在30天后自动清除</p>
       </div>
+
+      {/* Batch action bar */}
+      {selIds.value.length > 0 && (
+        <div class="flex items-center gap-2 px-6 py-2 bg-stora-muted border-b border-stora-border shrink-0">
+          <span class="text-sm font-medium text-stora-foreground">{selIds.value.length} 项已选</span>
+          <div class="flex-1" />
+          <button onClick$={async () => {
+            loading.value = true;
+            try { await api.post("/files/trash/batch-restore", { file_ids: selIds.value }); items.value = items.value.filter(x => !selIds.value.includes(x.id)); selIds.value = []; } catch {}
+            loading.value = false;
+          }} disabled={loading.value} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-primary">
+            {loading.value ? "..." : `恢复 (${selIds.value.length})`}
+          </button>
+          <button onClick$={async () => {
+            if (!confirm("永久删除选中的文件？")) return;
+            loading.value = true;
+            try { await api.post("/files/trash/batch-destroy", { file_ids: selIds.value }); items.value = items.value.filter(x => !selIds.value.includes(x.id)); selIds.value = []; } catch {}
+            loading.value = false;
+          }} disabled={loading.value} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-destructive">
+            {loading.value ? "..." : "永久删除"}
+          </button>
+        </div>
+      )}
 
       <div class={`flex-1 overflow-auto scrollbar-thin ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
         {!data.value ? (
-          <div class="p-4 sm:p-6 space-y-3">
-            {[1,2,3].map(i => <div key={i} class="flex items-center gap-4 px-4 py-3"><Skeleton class="w-5 h-5 rounded" /><Skeleton class="w-10 h-10 rounded-lg" /><div class="flex-1 space-y-2"><Skeleton class="h-4 w-48" /><Skeleton class="h-3 w-24" /></div></div>)}
+          <div class="p-6 space-y-3">
+            {[1,2,3].map(i => <div key={i} class="flex items-center gap-4 px-4 py-3"><div class="w-5 h-5 bg-stora-muted" /><div class="w-10 h-10 bg-stora-muted" /><div class="flex-1 space-y-2"><div class="h-4 w-48 bg-stora-muted" /><div class="h-3 w-24 bg-stora-muted" /></div></div>)}
           </div>
         ) : items.value.length === 0 ? (
-          <div class="flex flex-col items-center justify-center h-full text-slate-400">
-            <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">🗑️</div>
-            <h3 class="text-lg font-semibold text-slate-500 mb-1">回收站为空</h3>
-            <p class="text-sm text-slate-400">删除的文件将出现在这里</p>
+          <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground">
+            <div class="w-20 h-20 bg-stora-muted flex items-center justify-center text-4xl mb-5">🗑️</div>
+            <h3 class="text-lg font-semibold text-stora-foreground mb-1">回收站为空</h3>
+            <p class="text-sm text-stora-muted-foreground">删除的文件将出现在这里</p>
           </div>
         ) : (
           <>
             {/* Desktop table */}
             <div class="hidden sm:block overflow-x-auto">
-              <table class="w-full min-w-[600px]">
+              <table class="w-full">
                 <thead>
-                  <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 sticky top-0 bg-slate-50/95 backdrop-blur">
-                    <th class="w-10 px-4 py-3">
-                      <input type="checkbox" checked={selIds.value.length === items.value.length} onChange$={() => selIds.value = selIds.value.length === items.value.length ? [] : items.value.map(f => f.id)} class="rounded border-slate-300" />
+                  <tr class="text-left text-xs font-semibold text-stora-muted-foreground bg-stora-muted">
+                    <th class="w-10 px-4 py-3 font-semibold">
+                      <input type="checkbox" checked={selIds.value.length === items.value.length} onChange$={() => selIds.value = selIds.value.length === items.value.length ? [] : items.value.map(f => f.id)} class="border-stora-border" />
                     </th>
-                    <th class="px-2 py-3">文件名</th>
-                    <th class="px-2 py-3 w-28">大小</th>
-                    <th class="px-2 py-3 w-40">删除时间</th>
-                    <th class="w-32 px-2 py-3" />
+                    <th class="px-2 py-3 font-semibold">文件名称</th>
+                    <th class="px-2 py-3 w-[100px] font-semibold">大小</th>
+                    <th class="px-2 py-3 w-[160px] font-semibold">删除时间</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-50">
+                <tbody class="divide-y divide-stora-muted">
                   {items.value.map(f => {
                     const sel = selIds.value.includes(f.id);
                     return (
-                      <tr key={f.id} class={`group text-sm transition-colors ${sel ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}>
-                        <td class="px-4 py-3">
+                      <tr key={f.id} class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}>
+                        <td class="px-4">
                           <input type="checkbox" checked={sel} onChange$={() => {
                             const i = selIds.value.indexOf(f.id);
                             if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(f.id);
                             selIds.value = [...selIds.value];
-                          }} class="rounded border-slate-300" />
+                          }} class="border-stora-border" />
                         </td>
-                        <td class="px-2 py-3">
+                        <td class="px-2">
                           <div class="flex items-center gap-3">
-                            <div class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-sm">📄</div>
-                            <span class="text-slate-700 truncate max-w-xs">{f.filename}</span>
+                            <span class="text-sm">🗑</span>
+                            <span class="text-sm font-medium text-stora-foreground truncate max-w-xs">{f.filename}</span>
                           </div>
                         </td>
-                        <td class="px-2 py-3 text-slate-500">{fmtSize(f.file_size)}</td>
-                        <td class="px-2 py-3 text-slate-500 text-xs">{fmtDate(f.deleted_at)}</td>
-                        <td class="px-2 py-3">
-                          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button variant="ghost" size="sm" onClick$={async () => {
-                              try {
-                                await api.post(`/files/trash/${f.id}/restore`);
-                                items.value = items.value.filter(x => x.id !== f.id);
-                              } catch {}
-                            }}>恢复</Button>
-                            <Button variant="ghost" size="sm" onClick$={async () => {
-                              if (!confirm("永久删除此文件？")) return;
-                              try { await api.delete(`/files/trash/${f.id}/destroy`); items.value = items.value.filter(x => x.id !== f.id); } catch {}
-                            }} class="!text-red-500">删除</Button>
-                          </div>
-                        </td>
+                        <td class="px-2 text-sm text-stora-muted-foreground">{fmtSize(f.file_size)}</td>
+                        <td class="px-2 text-sm text-stora-muted-foreground">{fmtDate(f.deleted_at)}</td>
                       </tr>
                     );
                   })}
@@ -153,31 +123,22 @@ export default component$(() => {
             </div>
 
             {/* Mobile card list */}
-            <div class="sm:hidden space-y-3 p-4">
+            <div class="sm:hidden space-y-1 p-4">
               {items.value.map(f => {
                 const sel = selIds.value.includes(f.id);
                 return (
-                  <div key={f.id} class={`bg-white rounded-xl border transition-all p-4 ${sel ? "border-indigo-300 shadow-sm" : "border-slate-200"}`}>
+                  <div key={f.id} class={`bg-stora-card border border-stora-border p-4 ${sel ? "border-stora-primary" : ""}`}>
                     <div class="flex items-center gap-3">
                       <input type="checkbox" checked={sel} onChange$={() => {
                         const i = selIds.value.indexOf(f.id);
                         if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(f.id);
                         selIds.value = [...selIds.value];
-                      }} class="rounded border-slate-300 w-5 h-5" />
-                      <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-lg shrink-0">📄</div>
+                      }} class="border-stora-border w-5 h-5" />
+                      <span class="text-lg">🗑</span>
                       <div class="flex-1 min-w-0">
-                        <p class="text-sm font-medium text-slate-700 truncate">{f.filename}</p>
-                        <p class="text-xs text-slate-400 mt-0.5">{fmtSize(f.file_size)} · {fmtDate(f.deleted_at)}</p>
+                        <p class="text-sm font-medium text-stora-foreground truncate">{f.filename}</p>
+                        <p class="text-xs text-stora-muted-foreground mt-0.5">{fmtSize(f.file_size)} · {fmtDate(f.deleted_at)}</p>
                       </div>
-                    </div>
-                    <div class="flex gap-2 mt-3 pt-3 border-t border-slate-100">
-                      <button onClick$={async () => {
-                        try { await api.post(`/files/trash/${f.id}/restore`); items.value = items.value.filter(x => x.id !== f.id); } catch {}
-                      }} class="flex-1 touch-target px-3 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg">恢复</button>
-                      <button onClick$={async () => {
-                        if (!confirm("永久删除此文件？")) return;
-                        try { await api.delete(`/files/trash/${f.id}/destroy`); items.value = items.value.filter(x => x.id !== f.id); } catch {}
-                      }} class="flex-1 touch-target px-3 py-2 text-xs font-medium text-red-600 bg-red-50 rounded-lg">永久删除</button>
                     </div>
                   </div>
                 );
@@ -189,28 +150,20 @@ export default component$(() => {
 
       {/* Mobile bottom action bar for batch ops */}
       {selIds.value.length > 0 && (
-        <div class="bottom-action-bar sm:hidden">
-          <span class="text-sm font-medium text-slate-700">{selIds.value.length} 项已选</span>
+        <div class="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-stora-border px-4 py-3 flex items-center gap-2 sm:hidden">
+          <span class="text-sm font-medium text-stora-foreground">{selIds.value.length} 项已选</span>
           <div class="flex-1" />
           <button onClick$={async () => {
             loading.value = true;
-            try {
-              await api.post("/files/trash/batch-restore", { file_ids: selIds.value });
-              items.value = items.value.filter(x => !selIds.value.includes(x.id));
-              selIds.value = [];
-            } catch {}
+            try { await api.post("/files/trash/batch-restore", { file_ids: selIds.value }); items.value = items.value.filter(x => !selIds.value.includes(x.id)); selIds.value = []; } catch {}
             loading.value = false;
-          }} disabled={loading.value} class="touch-target px-4 py-2 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg">恢复</button>
+          }} disabled={loading.value} class="touch-target px-4 py-2 text-xs font-medium text-stora-primary">恢复</button>
           <button onClick$={async () => {
             if (!confirm("永久删除选中的文件？")) return;
             loading.value = true;
-            try {
-              await api.post("/files/trash/batch-destroy", { file_ids: selIds.value });
-              items.value = items.value.filter(x => !selIds.value.includes(x.id));
-              selIds.value = [];
-            } catch {}
+            try { await api.post("/files/trash/batch-destroy", { file_ids: selIds.value }); items.value = items.value.filter(x => !selIds.value.includes(x.id)); selIds.value = []; } catch {}
             loading.value = false;
-          }} disabled={loading.value} class="touch-target px-4 py-2 text-xs font-medium text-red-600 bg-red-50 rounded-lg">永久删除</button>
+          }} disabled={loading.value} class="touch-target px-4 py-2 text-xs font-medium text-stora-destructive">永久删除</button>
         </div>
       )}
     </div>

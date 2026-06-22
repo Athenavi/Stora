@@ -5,7 +5,7 @@ import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
 import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, type FileItem, type Folder } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
-import { Button, Skeleton, Input } from "~/components/ui/Button";
+import { Button, Input } from "~/components/ui/Button";
 
 export const useFileList = routeLoader$(async ({ url, request }) => {
   const folderId = url.searchParams.get("folder");
@@ -139,60 +139,56 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      {/* Toolbar — responsive: icons on mobile, labels on desktop */}
-      <div class="flex items-center gap-2 sm:gap-3 px-4 sm:px-6 py-3 border-b border-slate-200 bg-white shrink-0 flex-wrap min-h-[56px]">
-        {/* Search — collapsible on mobile */}
-        <div class="flex items-center gap-2 flex-1 min-w-0">
-          <div class="relative flex-1 max-w-sm">
-            <Icon name="search" size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
-            <input type="text" placeholder="搜索文件名..."
-              onKeyDown$={(e: any) => { if (e.key === "Enter" && e.target.value) nav(`/drive?search=${e.target.value}`); }}
-              onFocus$={async () => { try { const h = await api.get('/files/search/history?limit=5'); if (h?.length) searchHistory.value = h; } catch {} }}
-              onBlur$={() => setTimeout(() => searchHistory.value = [], 200)}
-              class="w-full sm:w-64 pl-9 pr-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white placeholder:text-slate-400 transition-all" />
-            {searchHistory.value.length > 0 && (
-              <div class="absolute top-full left-0 right-0 mt-1 bg-white rounded-lg border border-slate-200 shadow-lg z-50 py-1">
-                {searchHistory.value.map((h: any) => (
-                  <button key={h.keyword} onClick$={() => nav(`/drive?search=${h.keyword}`)}
-                    class="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 flex items-center gap-2">
-                    <Icon name="search" size={12} class="text-slate-400" />
-                    <span>{h.keyword}</span>
-                    <span class="text-xs text-slate-400 ml-auto">{h.results_count} 项</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+      {/* Toolbar — per spec: 40px height, search 320x40, buttons */}
+      <div class="flex items-center gap-4 px-6 py-3 border-b border-stora-border bg-white shrink-0">
+        {/* Search — 320x40 per spec */}
+        <div class="relative flex-1 max-w-[320px]">
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stora-nav-text text-sm pointer-events-none">🔍</span>
+          <input type="text" placeholder="搜索文件..."
+            onKeyDown$={(e: any) => { if (e.key === "Enter" && e.target.value) nav(`/drive?search=${e.target.value}`); }}
+            onFocus$={async () => { try { const h = await api.get('/files/search/history?limit=5'); if (h?.length) searchHistory.value = h; } catch {} }}
+            onBlur$={() => setTimeout(() => searchHistory.value = [], 200)}
+            class="w-full h-10 pl-9 pr-3 text-sm border border-stora-border bg-white text-stora-foreground placeholder:text-stora-nav-text outline-none focus:border-stora-primary" />
+          {searchHistory.value.length > 0 && (
+            <div class="absolute top-full left-0 right-0 mt-1 bg-white border border-stora-border z-50 py-1">
+              {searchHistory.value.map((h: any) => (
+                <button key={h.keyword} onClick$={() => nav(`/drive?search=${h.keyword}`)}
+                  class="w-full text-left px-3 py-2 text-sm text-stora-foreground hover:bg-stora-muted flex items-center gap-2">
+                  <span class="text-stora-nav-text">🔍</span>
+                  <span>{h.keyword}</span>
+                  <span class="text-xs text-stora-muted-foreground ml-auto">{h.results_count} 项</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* View mode toggle */}
-        <div class="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 shrink-0">
-          <button onClick$={() => viewMode.value = "list"}
-            class={`p-1.5 rounded-md ${viewMode.value === "list" ? "bg-white shadow-sm text-indigo-600" : "text-slate-400"}`}><Icon name="list" size={18} /></button>
-          <button onClick$={() => viewMode.value = "grid"}
-            class={`p-1.5 rounded-md ${viewMode.value === "grid" ? "bg-white shadow-sm text-indigo-600" : "text-slate-400"}`}><Icon name="grid" size={18} /></button>
-        </div>
+        <div class="flex-1" />
 
-        {/* Desktop action buttons — hidden on mobile (FAB takes over) */}
-        <Button variant="primary" size="sm" onClick$={() => showUpload.value = !showUpload.value} class="hidden sm:inline-flex">
-          <Icon name="upload" size={16} /> 上传
-        </Button>
-        <Button variant="secondary" size="sm" onClick$={() => { showNewFolder.value = true; newFolderName.value = ""; }} class="hidden sm:inline-flex">
-          <Icon name="plus" size={16} /> 新建文件夹
-        </Button>
+        {/* Upload button — primary blue */}
+        <button onClick$={() => showUpload.value = !showUpload.value}
+          class="hidden sm:inline-flex items-center gap-2 h-10 px-4 text-sm font-medium text-white bg-stora-primary hover:bg-[#1D4ED8] active:bg-[#1E40AF]">
+          <span>⬆</span> 上传文件
+        </button>
+
+        {/* New folder button — white outline */}
+        <button onClick$={() => { showNewFolder.value = true; newFolderName.value = ""; }}
+          class="hidden sm:inline-flex items-center gap-2 h-10 px-4 text-sm font-medium text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-background">
+          <span>➕</span> 新建文件夹
+        </button>
 
         {/* Mobile compact actions */}
-        <button onClick$={() => showUpload.value = !showUpload.value} class="sm:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="上传">
-          <Icon name="upload" size={20} />
+        <button onClick$={() => showUpload.value = !showUpload.value} class="sm:hidden touch-target p-2 text-stora-muted-foreground hover:bg-stora-muted" aria-label="上传">
+          <span>⬆</span>
         </button>
-        <button onClick$={() => { showNewFolder.value = true; newFolderName.value = ""; }} class="sm:hidden p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="新建文件夹">
-          <Icon name="plus" size={20} />
+        <button onClick$={() => { showNewFolder.value = true; newFolderName.value = ""; }} class="sm:hidden touch-target p-2 text-stora-muted-foreground hover:bg-stora-muted" aria-label="新建文件夹">
+          <span>➕</span>
         </button>
       </div>
 
       {/* Mobile bottom action bar for batch operations */}
       {selIds.value.length > 0 && (
-        <div class="bottom-action-bar lg:hidden">
+        <div class="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-stora-border px-4 py-3 flex items-center gap-2 lg:hidden">
           <span class="text-sm font-medium text-slate-700 shrink-0">{selIds.value.length} 项</span>
           <div class="flex-1" />
           <button onClick$={async () => { showMoveDialog.value = true; }}
@@ -208,7 +204,7 @@ export default component$(() => {
 
       {/* Desktop batch operations — inline */}
       {selIds.value.length > 0 && (
-        <div class="hidden lg:flex items-center gap-2 px-6 py-2 bg-indigo-50/80 border-b border-indigo-100 shrink-0 animate-slide-down">
+        <div class="hidden lg:flex items-center gap-2 px-6 py-2 bg-stora-muted border-b border-stora-border shrink-0">
           <span class="text-sm font-medium text-indigo-700">{selIds.value.length} 项已选</span>
           <div class="flex-1" />
           <button onClick$={async () => { showMoveDialog.value = true; }}
@@ -246,7 +242,7 @@ export default component$(() => {
       )}
 
       {/* Breadcrumb */}
-      <div class="flex items-center gap-1.5 px-4 sm:px-6 py-2.5 text-sm border-b border-slate-100 bg-white/80 shrink-0 overflow-x-auto">
+      <div class="flex items-center gap-1.5 px-6 py-2.5 text-sm border-b border-stora-border bg-white shrink-0 overflow-x-auto">
         {folderId && (
           <button onClick$={() => {
             const idx = (data.value?.path || []).findIndex(p => p.id === folderId);
@@ -301,10 +297,10 @@ export default component$(() => {
       )}
 
       {/* Filter tabs */}
-      <div class="flex gap-1 px-4 sm:px-6 py-2 border-b border-slate-100 bg-white/60 shrink-0 overflow-x-auto scrollbar-thin">
+      <div class="flex gap-1 px-6 py-2 border-b border-stora-border bg-white shrink-0 overflow-x-auto scrollbar-thin">
         {["all", "image", "video", "audio", "document", "archive"].map(ft => (
           <button key={ft} onClick$={() => { const p = folderId ? `?folder=${folderId}${ft !== "all" ? `&type=${ft}` : ""}` : `${ft !== "all" ? `?type=${ft}` : ""}`; nav(`/drive${p}`); }}
-            class={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors whitespace-nowrap touch-target ${(!loc.url.searchParams.get("type") && ft === "all") || loc.url.searchParams.get("type") === ft ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:text-slate-700 hover:bg-slate-100"}`}>
+            class={`px-3 py-1.5 text-xs font-medium whitespace-nowrap touch-target ${(!loc.url.searchParams.get("type") && ft === "all") || loc.url.searchParams.get("type") === ft ? "bg-stora-primary text-white" : "text-stora-muted-foreground hover:text-stora-foreground hover:bg-stora-muted"}`}>
             {{ all: "全部", image: "🖼 图片", video: "🎬 视频", audio: "🎵 音频", document: "📄 文档", archive: "📦 压缩包", other: "📎 其他" }[ft] || ft}
           </button>
         ))}
@@ -313,14 +309,13 @@ export default component$(() => {
       {/* Content */}
       <div class={`flex-1 overflow-auto scrollbar-thin ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
         {!data.value ? (
-          <div class="p-6 space-y-3">{[1,2,3,4,5].map(i => <div key={i} class="flex items-center gap-4 px-4 py-3"><Skeleton class="w-5 h-5 rounded" /><Skeleton class="w-10 h-10 rounded-lg" /><div class="flex-1 space-y-2"><Skeleton class="h-4 w-48" /><Skeleton class="h-3 w-24" /></div></div>)}</div>
+          <div class="p-6 space-y-3">{[1,2,3,4,5].map(i => <div key={i} class="flex items-center gap-4 px-4 py-3"><div class="w-5 h-5 bg-stora-muted" /><div class="w-10 h-10 bg-stora-muted" /><div class="flex-1 space-y-2"><div class="h-4 w-48 bg-stora-muted" /><div class="h-3 w-24 bg-stora-muted" /></div></div>)}</div>
         ) : allItems.length === 0 ? (
-          <div class="flex flex-col items-center justify-center h-full text-slate-400 p-8 text-center">
-            <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">📂</div>
-            <h3 class="text-lg font-semibold text-slate-500 mb-1">空目录</h3>
-            <p class="text-sm text-slate-400 mb-6">拖拽文件到此处，或点击上传按钮</p>
-            <Button variant="primary" class="hidden sm:inline-flex" onClick$={() => showUpload.value = true}><Icon name="upload" size={16} /> 上传文件</Button>
-            <button onClick$={() => showUpload.value = true} class="sm:hidden touch-target px-6 py-3 bg-indigo-600 text-white rounded-xl text-sm font-medium">上传文件</button>
+          <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground p-8 text-center">
+            <div class="w-20 h-20 bg-stora-muted flex items-center justify-center text-4xl mb-5">📂</div>
+            <h3 class="text-lg font-semibold text-stora-foreground mb-1">空目录</h3>
+            <p class="text-sm text-stora-muted-foreground mb-6">拖拽文件到此处，或点击上传按钮</p>
+            <button onClick$={() => showUpload.value = true} class="px-6 py-3 bg-stora-primary text-white text-sm font-medium">上传文件</button>
           </div>
         ) : viewMode.value === "list" ? <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} folderId={folderId}
           onContextItem$={(item: any, e: any) => openCtx(item, e)} /> : <GridView items={allItems} selIds={selIds} nav={nav} folderId={folderId}
@@ -331,45 +326,45 @@ export default component$(() => {
       {ctxItem.value && !showActionSheet.value && (
         <>
           <div class="fixed inset-0 z-50" onClick$={() => ctxItem.value = null} onContextMenu$={(e: any) => { e.preventDefault(); ctxItem.value = null; }} />
-          <div class="fixed z-50 min-w-[180px] bg-white rounded-xl shadow-lg border border-slate-200 py-1.5"
+          <div class="fixed z-50 min-w-[180px] bg-white border border-stora-border"
             style={{ left: `${ctxPos.value.x}px`, top: `${ctxPos.value.y}px` }}>
             {ctxItem.value.type === "file" ? (
               <>
                 <button onClick$={() => { nav(`/view?id=${ctxItem.value!.id}`); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">👁 预览</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">👁 预览</button>
                 <button onClick$={() => { window.open(`/api/v2/files/download/${ctxItem.value!.id}`, "_blank"); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">⬇ 下载</button>
-                <div class="h-px bg-slate-100 my-1" />
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">⬇ 下载</button>
+                <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">✏ 重命名</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">✏ 重命名</button>
                 <button onClick$={async () => {
                   const id = ctxItem.value!.id;
                   ctxItem.value = null;
                   updateFile(id, { is_favorite: true }).catch(() => {});
-                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">⭐ 收藏</button>
-                <div class="h-px bg-slate-100 my-1" />
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">⭐ 收藏</button>
+                <div class="h-px bg-stora-border my-1" />
                 <button onClick$={async () => {
                   if (confirm("删除?")) { await deleteFile(ctxItem.value!.id).catch(() => {}); location.reload(); }
                   ctxItem.value = null;
-                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50 touch-target">🗑 删除</button>
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-destructive hover:bg-red-50 touch-target">🗑 删除</button>
               </>
             ) : (
               <>
                 <button onClick$={() => { nav(`/drive?folder=${ctxItem.value!.id}`); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">📂 打开</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📂 打开</button>
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">✏ 重命名</button>
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">✏ 重命名</button>
                 <button onClick$={async () => {
                   const id = ctxItem.value!.id;
                   ctxItem.value = null;
                   selIds.value = [id];
                   showShareDialog.value = true;
-                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 touch-target">🔗 分享</button>
-                <div class="h-px bg-slate-100 my-1" />
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">🔗 分享</button>
+                <div class="h-px bg-stora-border my-1" />
                 <button onClick$={async () => {
                   if (confirm("删除?")) { await deleteFolder(ctxItem.value!.id).catch(() => {}); location.reload(); }
                   ctxItem.value = null;
-                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50 touch-target">🗑 删除</button>
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-destructive hover:bg-red-50 touch-target">🗑 删除</button>
               </>
             )}
           </div>
@@ -379,8 +374,8 @@ export default component$(() => {
       {/* Mobile action sheet (replaces context menu on small screens) */}
       {ctxItem.value && showActionSheet.value && (
         <>
-          <div class="action-sheet-overlay" onClick$={() => { ctxItem.value = null; showActionSheet.value = false; }} />
-          <div class="action-sheet">
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => { ctxItem.value = null; showActionSheet.value = false; }} />
+          <div class="fixed bottom-0 left-0 right-0 z-51 bg-white px-4 pb-6 pt-3">
             <div class="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-3" />
             <p class="text-xs text-slate-400 text-center mb-3">{ctxItem.value.type === "file" ? ctxItem.value.name : ctxItem.value.name}</p>
             {ctxItem.value.type === "file" ? (
@@ -425,11 +420,11 @@ export default component$(() => {
       {showMoveDialog.value && (
         <>
           <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => showMoveDialog.value = false} />
-          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 sm:max-h-[70vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col">
-            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 class="text-sm font-semibold text-slate-900">移动到文件夹</h3>
-              <button onClick$={() => showMoveDialog.value = false} class="touch-target p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
-                <Icon name="close" size={18} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 sm:max-h-[70vh] bg-white flex flex-col">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-stora-border">
+              <h3 class="text-sm font-semibold text-stora-foreground">移动到文件夹</h3>
+              <button onClick$={() => showMoveDialog.value = false} class="touch-target p-1.5 text-stora-muted-foreground hover:bg-stora-muted">
+                <span>✕</span>
               </button>
             </div>
             <div class="flex-1 overflow-auto p-4 max-h-[50vh]">
@@ -437,8 +432,8 @@ export default component$(() => {
                 const ids = [...selIds.value]; selIds.value = [];
                 showMoveDialog.value = false;
                 try { await api.post('/files/batch/move', { file_ids: ids }); refresh(); } catch {}
-              }} class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 touch-target mb-1">
-                <Icon name="folder" size={16} class="text-amber-500" />
+              }} class="w-full text-left px-3 py-2.5 text-sm text-stora-foreground hover:bg-stora-muted flex items-center gap-3 touch-target mb-1">
+                <span class="text-stora-accent">📁</span>
                 <span>根目录（我的文件）</span>
               </button>
               {moveTree.value.length > 0 && (
@@ -448,8 +443,8 @@ export default component$(() => {
                       const ids = [...selIds.value]; selIds.value = [];
                       showMoveDialog.value = false;
                       try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: node.id }); refresh(); } catch {}
-                    }} class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 touch-target">
-                      <Icon name="folder" size={16} class="text-amber-500" />
+                    }} class="w-full text-left px-3 py-2.5 text-sm text-stora-foreground hover:bg-stora-muted flex items-center gap-3 touch-target">
+                      <span class="text-stora-accent">📁</span>
                       <span class="truncate">{node.name}</span>
                     </button>
                   ))}
@@ -464,8 +459,8 @@ export default component$(() => {
       {showShareDialog.value && (
         <>
           <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => { showShareDialog.value = false; shareResult.value = []; }} />
-          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col p-5 max-h-[85vh] overflow-auto">
-            <h3 class="text-sm font-semibold text-slate-900 mb-3">批量分享 ({selIds.value.length} 项)</h3>
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col p-5 max-h-[85vh] overflow-auto">
+            <h3 class="text-sm font-semibold text-stora-foreground mb-3">批量分享 ({selIds.value.length} 项)</h3>
             {shareResult.value.length === 0 ? (
               <>
                 {/* Permission */}
@@ -569,65 +564,61 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
 
   return (
   <div class="overflow-x-auto">
-  <table class="w-full min-w-[600px]">
+  <table class="w-full">
     <thead>
-      <tr class="text-left text-xs font-medium text-slate-400 uppercase tracking-wider border-b border-slate-100 sticky top-0 bg-slate-50/95 backdrop-blur">
-        <th class="w-10 px-4 py-3"><input type="checkbox" checked={selIds.value.length === items.length && items.length > 0}
-          onChange$={() => selIds.value = selIds.value.length === items.length ? [] : items.map((x: any) => x.id)} class="rounded border-slate-300" /></th>
-        <th class="px-2 py-3 cursor-pointer hover:text-indigo-600 select-none" onClick$={() => nav(sortUrl("filename"))}>文件名 <span class="text-slate-300 ml-1">{sortIcon("filename")}</span></th>
-        <th class="px-2 py-3 w-28 cursor-pointer hover:text-indigo-600 select-none" onClick$={() => nav(sortUrl("file_size"))}>大小 <span class="text-slate-300 ml-1">{sortIcon("file_size")}</span></th>
-        <th class="px-2 py-3 w-24">类型</th>
-        <th class="px-2 py-3 w-40">操作</th>
+      <tr class="text-left text-xs font-semibold text-stora-muted-foreground bg-stora-muted">
+        <th class="w-10 px-4 py-3 font-semibold"><input type="checkbox" checked={selIds.value.length === items.length && items.length > 0}
+          onChange$={() => selIds.value = selIds.value.length === items.length ? [] : items.map((x: any) => x.id)} class="border-stora-border" /></th>
+        <th class="px-2 py-3 font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("filename"))}>名称 {sortIcon("filename")}</th>
+        <th class="px-2 py-3 w-[100px] font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("file_size"))}>大小 {sortIcon("file_size")}</th>
+        <th class="px-2 py-3 w-[100px] font-semibold">类型</th>
+        <th class="px-2 py-3 w-[140px] font-semibold">修改时间</th>
+        <th class="px-2 py-3 w-[80px] font-semibold">操作</th>
       </tr>
     </thead>
-    <tbody class="divide-y divide-slate-50">
+    <tbody class="divide-y divide-stora-muted">
       {items.map((item: any) => {
         if (item.t === "f") {
           const sel = selIds.value.includes(item.id);
           return (
-            <tr key={`f-${item.id}`} draggable class={`group text-sm transition-colors ${sel ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}
+            <tr key={`f-${item.id}`} draggable class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}
               onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
               onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}>
-              <td class="px-4 py-3" onClick$={(e: any) => e.stopPropagation()}>
+              <td class="px-4" onClick$={(e: any) => e.stopPropagation()}>
                 <input type="checkbox" checked={sel}
-                  onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="rounded border-slate-300" />
+                  onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" />
               </td>
-              <td class="px-2 py-3 cursor-pointer" onClick$={() => nav(`/drive?folder=${item.id}`)}>
-                <div class="flex items-center gap-3"><div class="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center text-sm">📁</div><span class="text-slate-700 font-medium">{item.name}</span></div>
+              <td class="px-2 cursor-pointer" onClick$={() => nav(`/drive?folder=${item.id}`)}>
+                <div class="flex items-center gap-3">
+                  <div class="w-7 h-7 flex items-center justify-center text-sm shrink-0">📁</div>
+                  <span class="text-sm font-medium text-stora-foreground">{item.name}</span>
+                </div>
               </td>
-              <td class="px-2 py-3 text-slate-500">—</td>
-              <td class="px-2 py-3"><span class="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">folder</span></td>
-              <td class="px-2 py-3"><div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"><Button variant="ghost" size="sm" onClick$={() => { renameId.value = item.id; renameVal.value = item.name; }}>重命名</Button><Button variant="ghost" size="sm" class="!text-red-500" onClick$={async () => { if (confirm("删除?")) { await deleteFolder(item.id).catch(() => {}); location.reload(); } }}>删除</Button></div></td>
+              <td class="px-2 text-sm text-stora-muted-foreground">—</td>
+              <td class="px-2"><span class="text-xs text-stora-muted-foreground">文件夹</span></td>
+              <td class="px-2 text-sm text-stora-muted-foreground">{item.created_at?.split("T")[0] || "—"}</td>
+              <td class="px-2 text-stora-muted-foreground text-base font-semibold">⋯</td>
             </tr>
           );
         }
         const sel = selIds.value.includes(item.id);
         const tc = typeMeta[item.file_type] || typeMeta.other;
         return (
-          <tr key={item.id} draggable class={`group text-sm transition-colors ${sel ? "bg-indigo-50/50" : "hover:bg-slate-50"}`}
+          <tr key={item.id} draggable class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}
             onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
             onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>
-            <td class="px-4 py-3"><input type="checkbox" checked={sel}
-              onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="rounded border-slate-300" /></td>
-            <td class="px-2 py-3 cursor-pointer" onClick$={() => nav(`/view?id=${item.id}`)}>
+            <td class="px-4"><input type="checkbox" checked={sel}
+              onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" /></td>
+            <td class="px-2 cursor-pointer" onClick$={() => nav(`/view?id=${item.id}`)}>
               <div class="flex items-center gap-3">
-                <div class={`w-9 h-9 rounded-lg flex items-center justify-center text-sm shrink-0 ${tc.color}`}>{tc.icon}</div>
-                <span class="text-slate-700 truncate max-w-xs font-medium">{item.filename}</span>
+                <div class={`w-7 h-7 flex items-center justify-center text-sm shrink-0`}>{tc.icon}</div>
+                <span class="text-sm font-medium text-stora-foreground truncate max-w-xs">{item.filename}</span>
               </div>
             </td>
-            <td class="px-2 py-3 text-slate-500">{fmtSize(item.file_size)}</td>
-            <td class="px-2 py-3"><span class="px-2 py-0.5 rounded text-xs bg-slate-100 text-slate-600">{item.file_type}</span></td>
-            <td class="px-2 py-3">
-              <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Button variant="ghost" size="sm" onClick$={() => nav(`/view?id=${item.id}`)}>预览</Button>
-                <Button variant="ghost" size="sm" onClick$={() => {
-                  const newVal = !item.is_favorite;
-                  updateFile(item.id, { is_favorite: newVal }).then(() => { item.is_favorite = newVal; }).catch(() => {});
-                }}>{item.is_favorite ? "★" : "☆"}</Button>
-                <Button variant="ghost" size="sm" onClick$={() => { renameId.value = item.id; renameVal.value = item.filename; }}>重命名</Button>
-                <Button variant="ghost" size="sm" class="!text-red-500" onClick$={async () => { if (confirm("删除?")) { await deleteFile(item.id).catch(() => {}); location.reload(); } }}>删除</Button>
-              </div>
-            </td>
+            <td class="px-2 text-sm text-stora-muted-foreground">{fmtSize(item.file_size)}</td>
+            <td class="px-2 text-sm text-stora-muted-foreground">{item.file_type}</td>
+            <td class="px-2 text-sm text-stora-muted-foreground">{item.created_at?.split("T")[0] || "—"}</td>
+            <td class="px-2 text-stora-muted-foreground text-base font-semibold">⋯</td>
           </tr>
         );
       })}
@@ -640,15 +631,15 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
 // ─── Grid View ───
 
 export const GridView = component$<{ items: any[]; selIds: any; nav: any; folderId?: number; onContextItem$?: any }>(({ items, selIds, nav, onContextItem$ }) => (
-  <div class="card-grid p-4 sm:p-6">
+  <div class="card-grid p-6">
     {items.map((item: any) => {
       if (item.t === "f") return (
         <div key={`f-${item.id}`} draggable onClick$={() => nav(`/drive?folder=${item.id}`)}
           onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
           onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}
-          class="bg-white rounded-xl border-2 border-slate-100 hover:border-amber-300 hover:shadow-sm transition-all cursor-pointer p-3">
-          <div class="aspect-square rounded-lg bg-amber-50 flex items-center justify-center text-5xl mb-2.5">📁</div>
-          <p class="text-xs font-medium text-slate-700 truncate text-center">{item.name}</p>
+          class="bg-stora-card border border-stora-border hover:border-stora-accent cursor-pointer p-3">
+          <div class="aspect-square bg-stora-muted flex items-center justify-center text-5xl mb-2.5">📁</div>
+          <p class="text-xs font-medium text-stora-foreground truncate text-center">{item.name}</p>
         </div>
       );
       const sel = selIds.value.includes(item.id);
@@ -657,8 +648,8 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; folder
         <div key={item.id} draggable onClick$={() => nav(`/view?id=${item.id}`)}
           onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
           onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}
-          class={`bg-white rounded-xl border-2 transition-all cursor-pointer p-3 relative ${sel ? "border-indigo-500 shadow-md" : "border-slate-100 hover:border-slate-200 hover:shadow-sm"}`}>
-          <div class={`aspect-square rounded-lg flex items-center justify-center text-4xl mb-2.5 overflow-hidden ${tc.color}`}>
+          class={`bg-stora-card border cursor-pointer p-3 relative ${sel ? "border-stora-primary" : "border-stora-border hover:border-stora-muted-foreground"}`}>
+          <div class={`aspect-square flex items-center justify-center text-4xl mb-2.5 overflow-hidden`}>
             {item.file_type === "image" ? (
               <img src={`/api/v2/files/preview/${item.id}/thumbnail?size=256`} alt={item.filename}
                 class="w-full h-full object-cover" loading="lazy" />
@@ -666,9 +657,9 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; folder
               <span>{tc.icon}</span>
             )}
           </div>
-          <p class="text-xs font-medium text-slate-700 truncate text-center">{item.filename}</p>
-          <p class="text-xs text-slate-400 text-center mt-0.5">{fmtSize(item.file_size)}</p>
-          {sel && <div class="absolute top-2 right-2 w-5 h-5 bg-indigo-600 rounded-full flex items-center justify-center"><Icon name="check" size={12} class="text-white" /></div>}
+          <p class="text-xs font-medium text-stora-foreground truncate text-center">{item.filename}</p>
+          <p class="text-xs text-stora-muted-foreground text-center mt-0.5">{fmtSize(item.file_size)}</p>
+          {sel && <div class="absolute top-2 right-2 w-5 h-5 bg-stora-primary flex items-center justify-center"><span class="text-white text-xs">✓</span></div>}
         </div>
       );
     })}

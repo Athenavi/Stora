@@ -1,11 +1,9 @@
 /**
- * Stora Vault — 私密空间管理
- * 独立于主文件系统的加密存储区域
+ * Stora Vault — flat design centered unlock + file list
  */
 import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
 import { api, createServerApi } from "~/lib/api";
-import { Button } from "~/components/ui/Button";
 import { Icon } from "~/components/ui/Icon";
 
 interface VaultInfo {
@@ -41,51 +39,29 @@ export default component$(() => {
   const loading = useSignal(false);
   const vaultSelIds = useSignal<number[]>([]);
 
-  // Check URL for existing vault token (from unlock flow)
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
     const t = loc.url.searchParams.get("vault_token");
     const id = loc.url.searchParams.get("vault_id");
-    if (t && id) {
-      vaultToken.value = t;
-      unlockId.value = Number(id);
-      loadItems(Number(id), t);
-    }
+    if (t && id) { vaultToken.value = t; unlockId.value = Number(id); loadItems(Number(id), t); }
   });
 
   const loadItems = async (id: number, token: string) => {
-    try {
-      const data = await api.get<VaultItem[]>(`/vaults/${id}/items`, { headers: { "X-Vault-Token": token } });
-      items.value = data || [];
-    } catch { items.value = []; }
+    try { const data = await api.get<VaultItem[]>(`/vaults/${id}/items`, { headers: { "X-Vault-Token": token } }); items.value = data || []; } catch { items.value = []; }
   };
 
   const doUnlock = async () => {
-    unlockErr.value = "";
-    const fd = new FormData(); fd.append("password", unlockPw.value);
-    try {
-      const res: any = await api.post(`/vaults/${unlockId.value}/verify-password`, fd);
-      vaultToken.value = res.token;
-      await loadItems(unlockId.value, res.token);
-    } catch (e: any) { unlockErr.value = e.message || "密码错误"; }
+    unlockErr.value = ""; const fd = new FormData(); fd.append("password", unlockPw.value);
+    try { const res: any = await api.post(`/vaults/${unlockId.value}/verify-password`, fd); vaultToken.value = res.token; await loadItems(unlockId.value, res.token); } catch (e: any) { unlockErr.value = e.message || "密码错误"; }
   };
 
-  const doLock = () => {
-    vaultToken.value = null; items.value = []; unlockPw.value = "";
-  };
+  const doLock = () => { vaultToken.value = null; items.value = []; unlockPw.value = ""; };
 
   const doCreate = async () => {
     if (!newName.value || !newPw.value) { createErr.value = "请填写名称和密码"; return; }
     if (newPw.value !== newPw2.value) { createErr.value = "两次密码不一致"; return; }
-    createErr.value = ""; loading.value = true;
-    const fd = new FormData(); fd.append("name", newName.value); fd.append("password", newPw.value);
-    try {
-      const v: any = await api.post("/vaults", fd);
-      showCreate.value = false; newName.value = ""; newPw.value = ""; newPw2.value = "";
-      // Reload vault list
-      const data = await api.get<VaultInfo[]>("/vaults");
-      vaults.value = data || [];
-    } catch (e: any) { createErr.value = e.message || "创建失败"; }
+    createErr.value = ""; loading.value = true; const fd = new FormData(); fd.append("name", newName.value); fd.append("password", newPw.value);
+    try { await api.post("/vaults", fd); showCreate.value = false; newName.value = ""; newPw.value = ""; newPw2.value = ""; const data = await api.get<VaultInfo[]>("/vaults"); vaults.value = data || []; } catch (e: any) { createErr.value = e.message || "创建失败"; }
     loading.value = false;
   };
 
@@ -102,16 +78,8 @@ export default component$(() => {
         const reader = new FileReader();
         reader.onload = async () => {
           const base64 = (reader.result as string).split(",")[1];
-          const fd = new FormData();
-          fd.append("filename", file.name); fd.append("file_size", String(file.size));
-          fd.append("mime_type", file.type || "application/octet-stream");
-          fd.append("file_content", base64);
-          try {
-            await api.post(`/vaults/${unlockId.value}/items/upload`, fd, {
-              headers: { "X-Vault-Token": vaultToken.value! }
-            });
-            await loadItems(unlockId.value, vaultToken.value!);
-          } catch {}
+          const fd = new FormData(); fd.append("filename", file.name); fd.append("file_size", String(file.size)); fd.append("mime_type", file.type || "application/octet-stream"); fd.append("file_content", base64);
+          try { await api.post(`/vaults/${unlockId.value}/items/upload`, fd, { headers: { "X-Vault-Token": vaultToken.value! } }); await loadItems(unlockId.value, vaultToken.value!); } catch {}
         };
         reader.readAsDataURL(file);
       }
@@ -119,38 +87,36 @@ export default component$(() => {
     input.click();
   };
 
-  const doDownload = async (itemId: number) => {
-    window.open(`/api/v2/vaults/${unlockId.value}/items/${itemId}`, "_blank");
-  };
+  const doDownload = async (itemId: number) => { window.open(`/api/v2/vaults/${unlockId.value}/items/${itemId}`, "_blank"); };
 
   const doDeleteItem = async (itemId: number) => {
     if (!confirm("确认删除？")) return;
-    try {
-      // Use raw fetch with vault token
-      await fetch(`/api/v2/vaults/${unlockId.value}/items/${itemId}`, {
-        method: "DELETE", headers: { "X-Vault-Token": vaultToken.value! }
-      });
-      items.value = items.value.filter(i => i.id !== itemId);
-    } catch {}
+    try { await fetch(`/api/v2/vaults/${unlockId.value}/items/${itemId}`, { method: "DELETE", headers: { "X-Vault-Token": vaultToken.value! } }); items.value = items.value.filter(i => i.id !== itemId); } catch {}
   };
 
-  // Locked vault display — show list + unlock prompt
+  // Locked vault unlock screen — per spec centered layout
   if (unlockId.value > 0 && !vaultToken.value) {
     const vault = vaults.value.find(v => v.id === unlockId.value);
     return (
-      <div class="flex flex-col items-center justify-center h-full gap-5 p-6 text-center max-w-sm mx-auto">
-        <div class="w-20 h-20 rounded-2xl bg-indigo-50 flex items-center justify-center text-4xl">🔒</div>
-        <h2 class="text-xl font-semibold text-slate-900">{vault?.name || "私密空间"}</h2>
-        <p class="text-sm text-slate-500">请输入密码解锁</p>
-        {unlockErr.value && <div class="w-full px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 text-center">{unlockErr.value}</div>}
+      <div class="flex flex-col items-center justify-center h-full gap-6 p-10 text-center max-w-sm mx-auto">
+        {/* Lock icon 80x80 circle per spec */}
+        <div class="w-20 h-20 rounded-full bg-stora-vault flex items-center justify-center text-4xl">🔒</div>
+        {/* Title 28px Bold per spec */}
+        <h1 class="text-[28px] font-bold text-stora-foreground">{vault?.name || "私密空间"}</h1>
+        {/* Subtitle per spec */}
+        <p class="text-sm text-stora-muted-foreground">输入密码以访问你的私密文件</p>
+        {unlockErr.value && <div class="w-full px-4 py-3 bg-red-50 border border-stora-border text-sm text-stora-destructive">{unlockErr.value}</div>}
+        {/* Password input 360x48 per spec */}
         <input type="password" bind:value={unlockPw}
           onKeyDown$={(e: any) => { if (e.key === "Enter") doUnlock(); }}
-          class="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          placeholder="输入私密空间密码" />
-        <div class="flex gap-3 w-full">
-          <Button onClick$={doUnlock} class="flex-1">解锁</Button>
-          <Button variant="ghost" onClick$={() => { unlockId.value = 0; nav("/vault"); }}>返回</Button>
-        </div>
+          class="w-[360px] max-w-full h-12 px-4 text-sm border border-stora-border bg-white text-stora-foreground placeholder:text-stora-nav-text outline-none focus:border-stora-vault"
+          placeholder="请输入访问密码" />
+        {/* Unlock button 160x48 per spec */}
+        <button onClick$={doUnlock}
+          class="w-[160px] h-12 text-[15px] font-semibold text-white bg-stora-vault hover:bg-[#6D28D9]">
+          解锁
+        </button>
+        <button onClick$={() => { unlockId.value = 0; nav("/vault"); }} class="text-sm text-stora-muted-foreground hover:text-stora-foreground">返回</button>
       </div>
     );
   }
@@ -160,56 +126,52 @@ export default component$(() => {
     const vault = vaults.value.find(v => v.id === unlockId.value);
     return (
       <div class="flex flex-col h-full">
-        <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-stora-border bg-stora-card">
           <div class="flex items-center gap-3 min-w-0">
-            <button onClick$={() => { doLock(); nav("/vault"); }} class="text-slate-400 hover:text-slate-600 touch-target p-1">
+            <button onClick$={() => { doLock(); nav("/vault"); }} class="text-stora-muted-foreground hover:text-stora-foreground touch-target p-1">
               <Icon name="chevronLeft" size={20} />
             </button>
-            <h1 class="text-lg font-semibold text-slate-900 truncate">{vault?.name || "私密空间"}</h1>
-            <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">🔒 已解锁</span>
+            <h1 class="text-lg font-semibold text-stora-foreground truncate">{vault?.name || "私密空间"}</h1>
+            <span class="text-xs text-stora-muted-foreground bg-stora-muted px-2 py-0.5">🔒 已解锁</span>
           </div>
           <div class="flex gap-2 shrink-0">
             {vaultSelIds.value.length > 0 ? (
               <>
                 <button onClick$={async () => {
                   if (!confirm(`确认删除 ${vaultSelIds.value.length} 项？`)) return;
-                  for (const id of vaultSelIds.value) {
-                    try { await fetch(`/api/v2/vaults/${unlockId.value}/items/${id}`, { method: "DELETE", headers: { "X-Vault-Token": vaultToken.value! } }); } catch {}
-                  }
-                  items.value = items.value.filter(i => !vaultSelIds.value.includes(i.id));
-                  vaultSelIds.value = [];
-                }} class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">删除 ({vaultSelIds.value.length})</button>
-                <button onClick$={() => vaultSelIds.value = []} class="touch-target px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">取消</button>
+                  for (const id of vaultSelIds.value) { try { await fetch(`/api/v2/vaults/${unlockId.value}/items/${id}`, { method: "DELETE", headers: { "X-Vault-Token": vaultToken.value! } }); } catch {} }
+                  items.value = items.value.filter(i => !vaultSelIds.value.includes(i.id)); vaultSelIds.value = [];
+                }} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-destructive hover:bg-red-50">删除 ({vaultSelIds.value.length})</button>
+                <button onClick$={() => vaultSelIds.value = []} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-muted-foreground hover:bg-stora-muted">取消</button>
               </>
             ) : (
-              <Button variant="primary" size="sm" onClick$={doUpload}><Icon name="upload" size={16} /> 上传</Button>
+              <button onClick$={doUpload} class="h-9 px-4 text-sm font-medium text-white bg-stora-vault hover:bg-[#6D28D9]"><span>⬆</span> 上传</button>
             )}
-            <Button variant="ghost" size="sm" onClick$={doLock}>锁定</Button>
+            <button onClick$={doLock} class="h-9 px-4 text-sm font-medium text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-muted">锁定</button>
           </div>
         </div>
-        <div class="flex-1 overflow-auto p-4 sm:p-6">
+        <div class="flex-1 overflow-auto p-6">
           {items.value.length === 0 ? (
-            <div class="flex flex-col items-center justify-center h-full text-slate-400">
+            <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground">
               <div class="text-5xl mb-4">📁</div>
-              <p class="text-lg font-medium text-slate-500">此私密空间为空</p>
+              <p class="text-lg font-medium text-stora-foreground">此私密空间为空</p>
               <p class="text-sm mt-1">点击「上传」按钮添加加密文件</p>
             </div>
           ) : (
-            <div class="space-y-2">
+            <div class="divide-y divide-stora-border">
               {items.value.map(item => {
                 const sel = vaultSelIds.value.includes(item.id);
                 return (
                   <div key={item.id} onClick$={() => { const i = vaultSelIds.value.indexOf(item.id); if (i >= 0) vaultSelIds.value.splice(i, 1); else vaultSelIds.value.push(item.id); vaultSelIds.value = [...vaultSelIds.value]; }}
-                    class={`flex items-center gap-3 sm:gap-4 px-4 py-3 bg-white rounded-xl border transition-all cursor-pointer ${sel ? 'border-indigo-400 shadow-sm' : 'border-slate-200 hover:shadow-sm'}`}>
-                    <input type="checkbox" checked={sel} class="rounded border-slate-300 w-4 h-4 shrink-0"
-                      onChange$={() => { /* handled by parent click */ }} />
-                    <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-lg shrink-0">📄</div>
+                    class={`flex items-center gap-4 px-4 py-3 bg-stora-card cursor-pointer ${sel ? 'bg-stora-muted' : 'hover:bg-stora-muted'}`}>
+                    <input type="checkbox" checked={sel} class="border-stora-border w-4 h-4 shrink-0" />
+                    <span class="text-lg">📄</span>
                     <div class="flex-1 min-w-0">
-                      <p class="text-sm font-medium text-slate-700 truncate">{item.filename}</p>
-                      <p class="text-xs text-slate-400">{fmtSize(item.file_size)} · {item.mime_type}</p>
+                      <p class="text-sm font-medium text-stora-foreground truncate">{item.filename}</p>
+                      <p class="text-xs text-stora-muted-foreground">{fmtSize(item.file_size)} · {item.mime_type}</p>
                     </div>
-                    <button onClick$={(e: any) => { e.stopPropagation(); doDownload(item.id); }} class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">下载</button>
-                    <button onClick$={(e: any) => { e.stopPropagation(); doDeleteItem(item.id); }} class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">删除</button>
+                    <button onClick$={(e: any) => { e.stopPropagation(); doDownload(item.id); }} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-primary hover:bg-stora-muted">下载</button>
+                    <button onClick$={(e: any) => { e.stopPropagation(); doDeleteItem(item.id); }} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-destructive hover:bg-red-50">删除</button>
                   </div>
                 );
               })}
@@ -223,60 +185,54 @@ export default component$(() => {
   // Vault list view (default)
   return (
     <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
-        <div>
-          <h1 class="text-lg font-semibold text-slate-900">私密空间</h1>
-          <p class="text-sm text-slate-500 mt-0.5">加密存储你的私密文件</p>
-        </div>
-        <Button variant="primary" size="sm" onClick$={() => showCreate.value = !showCreate.value}>
-          <Icon name="plus" size={16} /> 新建私密空间
-        </Button>
+      <div class="px-6 py-4 bg-stora-card border-b border-stora-border">
+        <h1 class="text-[28px] font-bold text-stora-foreground">私密空间</h1>
+        <p class="text-sm text-stora-muted-foreground mt-1">加密存储你的私密文件</p>
       </div>
 
       {/* Create form */}
       {showCreate.value && (
-        <div class="px-4 sm:px-6 py-4 border-b border-slate-200 bg-slate-50/80 space-y-3">
+        <div class="px-6 py-4 border-b border-stora-border bg-stora-muted space-y-3">
           <input type="text" bind:value={newName} placeholder="私密空间名称"
-            class="w-full max-w-md px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            class="w-full max-w-md h-10 px-3 text-sm border border-stora-border bg-white text-stora-foreground placeholder:text-stora-nav-text outline-none focus:border-stora-vault" />
           <div class="flex flex-col sm:flex-row gap-3">
             <input type="password" bind:value={newPw} placeholder="设置密码（至少6位）"
-              class="w-full sm:w-48 px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              class="w-full sm:w-48 h-10 px-3 text-sm border border-stora-border bg-white text-stora-foreground placeholder:text-stora-nav-text outline-none focus:border-stora-vault" />
             <input type="password" bind:value={newPw2} placeholder="确认密码"
-              class="w-full sm:w-48 px-3 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              class="w-full sm:w-48 h-10 px-3 text-sm border border-stora-border bg-white text-stora-foreground placeholder:text-stora-nav-text outline-none focus:border-stora-vault" />
           </div>
-          {createErr.value && <p class="text-sm text-red-600">{createErr.value}</p>}
+          {createErr.value && <p class="text-sm text-stora-destructive">{createErr.value}</p>}
           <div class="flex gap-2">
-            <Button size="sm" onClick$={doCreate} loading={loading.value}>创建</Button>
-            <Button variant="ghost" size="sm" onClick$={() => showCreate.value = false}>取消</Button>
+            <button onClick$={doCreate} disabled={loading.value} class="h-9 px-4 text-sm font-medium text-white bg-stora-vault hover:bg-[#6D28D9]">{loading.value ? "..." : "创建"}</button>
+            <button onClick$={() => showCreate.value = false} class="h-9 px-4 text-sm font-medium text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-muted">取消</button>
           </div>
           <p class="text-xs text-amber-600">⚠ 密码丢失后数据无法恢复！请牢记密码。</p>
         </div>
       )}
 
-      {/* Vault list */}
-      <div class="flex-1 overflow-auto p-4 sm:p-6">
+      <div class="flex-1 overflow-auto p-6">
         {vaults.value.length === 0 ? (
-          <div class="flex flex-col items-center justify-center h-full text-slate-400">
-            <div class="w-20 h-20 rounded-2xl bg-slate-100 flex items-center justify-center text-4xl mb-5">🔒</div>
-            <h3 class="text-lg font-semibold text-slate-500 mb-1">暂无私密空间</h3>
-            <p class="text-sm text-slate-400 mb-6">创建加密空间，安全存储你的私密文件</p>
-            <Button variant="primary" onClick$={() => showCreate.value = true}>新建私密空间</Button>
+          <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground">
+            <div class="w-20 h-20 bg-stora-muted flex items-center justify-center text-4xl mb-5">🔒</div>
+            <h3 class="text-lg font-semibold text-stora-foreground mb-1">暂无私密空间</h3>
+            <p class="text-sm text-stora-muted-foreground mb-6">创建加密空间，安全存储你的私密文件</p>
+            <button onClick$={() => showCreate.value = true} class="px-6 py-3 bg-stora-vault text-white text-sm font-medium">新建私密空间</button>
           </div>
         ) : (
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {vaults.value.map(v => (
-              <div key={v.id} class="bg-white rounded-xl border border-slate-200 hover:shadow-md transition-all p-5 cursor-pointer"
+              <div key={v.id} class="bg-stora-card border border-stora-border hover:border-stora-vault cursor-pointer p-5"
                 onClick$={() => { unlockId.value = v.id; unlockPw.value = ""; unlockErr.value = ""; }}>
                 <div class="flex items-center gap-3 mb-3">
-                  <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-xl shrink-0">🔒</div>
+                  <div class="w-10 h-10 bg-stora-muted flex items-center justify-center text-xl shrink-0">🔒</div>
                   <div class="flex-1 min-w-0">
-                    <h3 class="text-sm font-semibold text-slate-900 truncate">{v.name}</h3>
-                    <p class="text-xs text-slate-400">{v.file_count} 个文件 · {fmtSize(v.total_size)}</p>
+                    <h3 class="text-sm font-semibold text-stora-foreground truncate">{v.name}</h3>
+                    <p class="text-xs text-stora-muted-foreground">{v.file_count} 个文件 · {fmtSize(v.total_size)}</p>
                   </div>
                 </div>
-                <div class="flex gap-3 pt-3 border-t border-slate-100">
-                  <button onClick$={(e: any) => { e.stopPropagation(); unlockId.value = v.id; }} class="text-xs font-medium text-indigo-600 hover:text-indigo-800 touch-target px-3 py-1.5 rounded-lg hover:bg-indigo-50">解锁</button>
-                  <button onClick$={(e: any) => { e.stopPropagation(); doDeleteVault(v.id); }} class="text-xs font-medium text-red-500 hover:text-red-700 touch-target px-3 py-1.5 rounded-lg hover:bg-red-50">删除</button>
+                <div class="flex gap-3 pt-3 border-t border-stora-border">
+                  <button onClick$={(e: any) => { e.stopPropagation(); unlockId.value = v.id; }} class="text-xs font-medium text-stora-vault hover:bg-stora-muted touch-target px-3 py-1.5">解锁</button>
+                  <button onClick$={(e: any) => { e.stopPropagation(); doDeleteVault(v.id); }} class="text-xs font-medium text-stora-destructive hover:bg-red-50 touch-target px-3 py-1.5">删除</button>
                 </div>
               </div>
             ))}

@@ -44,6 +44,6 @@
   },
   "dependencies": {
     "@flyfish-group/file-viewer-web": "^1.0.25",
-    "@fontsource/geist-sans": "^5.2.5"
+    "@fontsource/plus-jakarta-sans": "^5.2.8"
   }
 }

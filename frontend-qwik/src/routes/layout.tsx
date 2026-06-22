@@ -1,13 +1,32 @@
 /**
- * Stora App Layout - enterprise sidebar + topbar
+ * Stora App Layout — flat design sidebar + topbar
  */
 import { component$, useSignal, useVisibleTask$, Slot, $ } from "@builder.io/qwik";
 import { useLocation, Link } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
-import FolderTree from "~/components/ui/FolderTree";
 import TransferQueue from "~/components/ui/TransferQueue";
 import { api, isAuthenticated } from "~/lib/api";
 import { ToastContainer } from "~/components/ui/index";
+
+type NavIcon = "folder" | "share" | "trash" | "star" | "image" | "lock" | "tag" | "setting";
+type NavColor = "#2563EB" | "#2563EB" | "#DC2626" | "#D97706" | "#3B82F6" | "#7C3AED" | "#059669" | "#64748B";
+
+interface NavItem {
+  href: string;
+  icon: NavIcon;
+  label: string;
+  activeColor: NavColor;
+}
+
+const navItems: NavItem[] = [
+  { href: "/drive", icon: "folder", label: "我的文件", activeColor: "#2563EB" },
+  { href: "/share", icon: "share", label: "我的分享", activeColor: "#2563EB" },
+  { href: "/trash", icon: "trash", label: "回收站", activeColor: "#DC2626" },
+  { href: "/favorites", icon: "star", label: "收藏夹", activeColor: "#D97706" },
+  { href: "/photos", icon: "image", label: "照片墙", activeColor: "#3B82F6" },
+  { href: "/vault", icon: "lock", label: "私密空间", activeColor: "#7C3AED" },
+  { href: "/tags", icon: "tag", label: "标签", activeColor: "#059669" },
+];
 
 export default component$(() => {
   const loc = useLocation();
@@ -20,7 +39,7 @@ export default component$(() => {
     path === "/register" ||
     path.startsWith("/s");
 
-  // Auth guard - redirect unauthenticated users to /login
+  // Auth guard
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
     const p = window.location.pathname.replace(/\/+$/, "");
@@ -30,7 +49,7 @@ export default component$(() => {
     }
   });
 
-  // Load quota on mount
+  // Load quota
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(async () => {
     const p = window.location.pathname.replace(/\/+$/, "");
@@ -39,7 +58,7 @@ export default component$(() => {
     try { const q = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); quota.value = q; } catch {}
   });
 
-  // Poll maintenance status
+  // Poll maintenance
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
     const poll = async () => {
@@ -52,12 +71,11 @@ export default component$(() => {
       } catch {}
     };
     poll();
-    const timer = setInterval(poll, 30000); // 30s polling
+    const timer = setInterval(poll, 30000);
     return () => clearInterval(timer);
   });
 
   if (isPublic) {
-    // Show maintenance banner on public pages too
     return (
       <>
         {maintenance.value?.enabled && (
@@ -84,151 +102,110 @@ export default component$(() => {
   const isTags = path.startsWith("/tags");
   const isPhotos = path.startsWith("/photos");
   const isAdmin = path.startsWith("/admin");
-  const darkMode = useSignal(false);
   const mobileMenuOpen = useSignal(false);
-  const sidebarOpen = useSignal(true);
-  const sidebarHover = useSignal(false);
-
-  // Restore dark mode and sidebar preferences
-  // eslint-disable-next-line qwik/no-use-visible-task
-  useVisibleTask$(() => {
-    const saved = localStorage.getItem("stora-dark-mode");
-    if (saved === "true") darkMode.value = true;
-    const sidebar = localStorage.getItem("stora-sidebar-collapsed");
-    sidebarOpen.value = sidebar !== "true";
-  });
-
-  const navItems = [
-    { href: "/drive", icon: "folder" as const, label: "我的文件", active: isDrive },
-    { href: "/share", icon: "share" as const, label: "我的分享", active: isShare },
-    { href: "/trash", icon: "trash" as const, label: "回收站", active: isTrash },
-    { href: "/favorites", icon: "star" as const, label: "收藏夹", active: isFavorites },
-    { href: "/photos", icon: "image" as const, label: "照片墙", active: isPhotos },
-    { href: "/vault", icon: "lock" as const, label: "私密空间", active: isVault },
-    { href: "/tags", icon: "tag" as const, label: "标签", active: isTags },
-    { href: "/admin", icon: "setting" as const, label: "管理面板", active: isAdmin },
-  ];
 
   const toggleSidebar = $(() => {
-    sidebarOpen.value = !sidebarOpen.value;
-    localStorage.setItem("stora-sidebar-collapsed", String(!sidebarOpen.value));
+    mobileMenuOpen.value = !mobileMenuOpen.value;
   });
 
-  const isCollapsed = !sidebarOpen.value;
-
   return (
-    <div class={`flex min-h-dvh overflow-hidden ${darkMode.value ? 'dark bg-slate-900' : 'bg-slate-50'}`}>
+    <div class="flex min-h-dvh bg-stora-background">
       {/* Mobile overlay */}
       {mobileMenuOpen.value && (
-        <div class="fixed inset-0 bg-black/50 z-30 lg:hidden animate-fade-in" onClick$={() => mobileMenuOpen.value = false} />
+        <div class="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick$={() => mobileMenuOpen.value = false} />
       )}
 
-      {/* Sidebar */}
+      {/* Sidebar — 260px fixed */}
       <aside
-        onMouseEnter$={() => { if (isCollapsed) sidebarHover.value = true; }}
-        onMouseLeave$={() => sidebarHover.value = false}
-        class={`${
-          sidebarHover.value && isCollapsed ? "w-[260px]" : isCollapsed ? "w-[64px]" : "w-[260px]"
-        } ${mobileMenuOpen.value ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
-          transition-all duration-300 bg-slate-900 text-white flex flex-col shrink-0 overflow-hidden noise-bg
+        class={`${mobileMenuOpen.value ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
+          w-[260px] transition-transform duration-200 bg-stora-sidebar text-white flex flex-col shrink-0
           fixed lg:static inset-y-0 left-0 z-40 lg:z-auto`}
       >
-        {/* Logo */}
-        <div class={`flex items-center h-16 border-b border-slate-800 shrink-0 ${isCollapsed && !sidebarHover.value ? "justify-center px-0" : "gap-3 px-6"}`}>
-          <div class="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center text-white text-sm font-bold shrink-0">
+        {/* Logo — 48px height, padding 24px */}
+        <div class="flex items-center gap-3 px-6 h-12 shrink-0 mt-6">
+          <div class="w-8 h-8 rounded-lg bg-stora-primary flex items-center justify-center text-white text-lg font-bold shrink-0">
             S
           </div>
-          {(!isCollapsed || sidebarHover.value) && (
-            <div class="overflow-hidden whitespace-nowrap">
-              <h1 class="text-base font-semibold tracking-tight text-white">Stora</h1>
-              <p class="text-xs text-slate-400 -mt-0.5">Enterprise Storage</p>
-            </div>
-          )}
+          <h1 class="text-xl font-bold text-white">Stora</h1>
         </div>
 
-        <nav class="flex-1 overflow-y-auto scrollbar-thin">
-          <div class={`${isCollapsed && !sidebarHover.value ? "px-1.5 py-4" : "px-3 py-4"} space-y-1`}>
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick$={() => mobileMenuOpen.value = false}
-              title={isCollapsed && !sidebarHover.value ? item.label : undefined}
-              class={`flex items-center gap-3 rounded-lg text-sm transition-all duration-150 ${
-                isCollapsed && !sidebarHover.value ? "px-2.5 py-2.5 justify-center" : "px-3 py-2.5"
-              } ${
-                item.active
-                  ? "bg-indigo-600/20 text-indigo-300 font-medium"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
-              }`}
-            >
-              <Icon name={item.icon} size={20} class="shrink-0" />
-              {(!isCollapsed || sidebarHover.value) && <span class="truncate">{item.label}</span>}
-            </Link>
-          ))}
-          </div>
-          {/* Folder tree - only shown on drive page when sidebar is not collapsed */}
-          {isDrive && (!isCollapsed || sidebarHover.value) && <FolderTree />}
+        {/* Divider */}
+        <div class="mx-6 my-0 h-px bg-stora-nav-divider" />
+
+        {/* Navigation — padding 8px, gap 2px */}
+        <nav class="flex-1 overflow-y-auto px-2 py-2 space-y-[2px]">
+          {navItems.map((item) => {
+            const isActive =
+              (item.href === "/drive" && isDrive) ||
+              (item.href === "/share" && isShare) ||
+              (item.href === "/trash" && isTrash) ||
+              (item.href === "/favorites" && isFavorites) ||
+              (item.href === "/vault" && isVault) ||
+              (item.href === "/tags" && isTags) ||
+              (item.href === "/photos" && isPhotos) ||
+              (item.href === "/admin" && isAdmin);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick$={() => mobileMenuOpen.value = false}
+                class={`flex items-center gap-3 rounded-lg text-sm h-10 px-3 transition-colors ${
+                  isActive
+                    ? "text-white font-medium"
+                    : "text-stora-nav-text hover:bg-stora-nav-hover hover:text-slate-200"
+                }`}
+                style={isActive ? { backgroundColor: item.activeColor } : {}}
+              >
+                <Icon name={item.icon} size={20} class="shrink-0" />
+                <span class="truncate">{item.label}</span>
+              </Link>
+            );
+          })}
         </nav>
 
-        {/* Bottom user area - collapsed mode shows only avatar */}
-        {(!isCollapsed || sidebarHover.value) ? (
-          <div class="px-4 py-4 border-t border-slate-800">
-            <div class="flex items-center gap-3">
-              <div class="w-9 h-9 rounded-full bg-slate-700 flex items-center justify-center text-white text-sm font-medium shrink-0">
-                U
-              </div>
-              <div class="flex-1 min-w-0">
-                <p class="text-sm text-slate-200 truncate font-medium">用户</p>
-                <p class="text-xs text-slate-500 truncate">个人存储</p>
-              </div>
-            </div>
-            {/* Storage bar */}
-            <div class="mt-3">
-              <div class="flex justify-between text-xs text-slate-500 mb-1">
-                <span>存储空间</span>
-                <span>{quota.value ? `${(quota.value.used_storage / 1073741824).toFixed(1)} GB / ${(quota.value.max_storage / 1073741824).toFixed(1)} GB` : '加载中...'}</span>
-              </div>
-              <div class="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                <div class="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${Math.min(quota.value?.usage_percent || 0, 100)}%` }} />
-              </div>
-            </div>
+        {/* Storage area — 75px, #1E293B card, padding 12px, margin 24px */}
+        <div class="mx-6 mb-2 bg-stora-storage-bg rounded-lg p-3">
+          <p class="text-xs font-medium text-stora-nav-text mb-1.5">存储空间</p>
+          <div class="h-1.5 bg-stora-storage-track rounded-sm overflow-hidden mb-1.5">
+            <div class="h-full bg-stora-primary rounded-sm transition-all" style={{ width: `${Math.min(quota.value?.usage_percent || 0, 100)}%` }} />
           </div>
-        ) : (
-          <div class="py-4 border-t border-slate-800 flex justify-center">
-            <div class="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-white text-xs font-medium">
-              U
-            </div>
+          <p class="text-xs text-stora-muted-foreground">
+            {quota.value
+              ? `${(quota.value.used_storage / 1073741824).toFixed(1)} GB / ${(quota.value.max_storage / 1073741824).toFixed(1)} GB`
+              : '加载中...'}
+          </p>
+        </div>
+
+        {/* User area — 52px, horizontal, gap 12px, padding 24px */}
+        <div class="flex items-center gap-3 px-6 h-[52px] mb-6">
+          <div class="w-9 h-9 rounded-full bg-stora-accent flex items-center justify-center text-white text-sm font-bold shrink-0">
+            Y
           </div>
-        )}
+          <div class="flex-1 min-w-0">
+            <p class="text-sm font-medium text-stora-muted truncate">张三</p>
+            <p class="text-xs text-stora-muted-foreground truncate">zhangsan@email.com</p>
+          </div>
+        </div>
       </aside>
 
       {/* Main area */}
       <div class="flex-1 flex flex-col min-w-0">
-        {/* Topbar */}
-        <header class="h-16 bg-white border-b border-slate-200 flex items-center gap-2 sm:gap-4 px-4 sm:px-6 shrink-0">
+        {/* Topbar — 66px, padding 24px, flat */}
+        <header class="h-[66px] flex items-center gap-4 px-6 shrink-0 border-b border-stora-border bg-stora-card">
           <button
-            onClick$={() => { if (window.innerWidth < 1024) mobileMenuOpen.value = true; else toggleSidebar(); }}
-            class="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            onClick$={toggleSidebar}
+            class="p-2 -ml-2 rounded-lg text-stora-muted-foreground hover:bg-stora-muted transition-colors touch-target lg:hidden"
             aria-label="菜单"
           >
             <Icon name="menu" size={20} />
           </button>
+          {/* Breadcrumb placeholder — pages override this area */}
           <div class="flex-1" />
-          <button onClick$={() => { darkMode.value = !darkMode.value; localStorage.setItem("stora-dark-mode", String(darkMode.value)); }} class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors" title={darkMode.value ? "亮色模式" : "暗色模式"}>
-            {darkMode.value ? <Icon name="sun" size={20} /> : <Icon name="moon" size={20} />}
-          </button>
-          <button class="p-2 rounded-lg text-slate-500 hover:bg-slate-100 transition-colors hidden sm:block" title="设置">
-            <Icon name="setting" size={20} />
-          </button>
-          <div class="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-600 text-sm font-medium shrink-0">
-            U
-          </div>
         </header>
 
         {/* Maintenance banner */}
         {maintenance.value?.enabled && (
-          <div class="bg-amber-50 border-b border-amber-200 px-3 sm:px-4 py-2 text-center text-sm text-amber-800 flex items-center justify-center gap-2 shrink-0">
+          <div class="bg-amber-50 border-b border-amber-200 px-6 py-2 text-center text-sm text-amber-800 flex items-center justify-center gap-2 shrink-0">
             <Icon name="setting" size={16} class="shrink-0" />
             <span class="truncate">{maintenance.value.message || '系统正在维护中'}</span>
             {maintenance.value.time_until_maintenance !== undefined && maintenance.value.time_until_maintenance > 0 && (
@@ -240,26 +217,11 @@ export default component$(() => {
         )}
 
         {/* Page content */}
-        <main class="flex-1 overflow-auto scrollbar-thin">
+        <main class="flex-1 overflow-auto">
           <TransferQueue>
             <Slot />
           </TransferQueue>
         </main>
-
-        {/* Mobile FAB — visible on action pages */}
-        {(isDrive || isVault || isPhotos) && (
-          <button
-            onClick$={() => {
-              // Dispatch a custom event that pages can listen for
-              window.dispatchEvent(new CustomEvent('stora:fab-click'));
-            }}
-            class="lg:hidden fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg
-              flex items-center justify-center text-2xl hover:bg-indigo-700 active:scale-95 transition-all z-40 animate-scale-in"
-            aria-label="新建"
-          >
-            <Icon name="plus" size={24} />
-          </button>
-        )}
       </div>
       <ToastContainer />
     </div>

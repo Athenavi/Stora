@@ -1,10 +1,9 @@
 ﻿/**
- * Stora Share Management — with multi-select batch revoke, search, filter
+ * Stora Share Management — flat design card layout
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi, revokeShare, type ShareLink } from "~/lib/api";
-import { Icon } from "~/components/ui/Icon";
 
 interface ShareListResponse {
   items: ShareLink[];
@@ -43,12 +42,10 @@ export default component$(() => {
 
   const filteredShares = () => {
     let list = shares.value;
-    // Search
     if (searchQuery.value) {
       const q = searchQuery.value.toLowerCase();
       list = list.filter(s => s.short_code.toLowerCase().includes(q) || s.filename?.toLowerCase().includes(q));
     }
-    // Status filter
     if (filterStatus.value === "active") {
       list = list.filter(s => !isExpired(s));
     } else if (filterStatus.value === "expired") {
@@ -59,26 +56,24 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      <div class="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-slate-200 bg-white">
-        <div class="min-w-0">
-          <h1 class="text-lg font-semibold text-slate-900">我的分享</h1>
-          <p class="text-sm text-slate-500 mt-0.5">管理所有分享链接</p>
-        </div>
-        <span class="text-sm text-slate-400 bg-slate-100 px-3 py-1 rounded-full shrink-0">{shares.value.length} 个链接</span>
+      {/* Page title area per spec */}
+      <div class="px-6 py-4 bg-stora-card border-b border-stora-border">
+        <h1 class="text-[28px] font-bold text-stora-foreground">我的分享</h1>
+        <p class="text-sm text-stora-muted-foreground mt-1">管理你的所有分享链接</p>
       </div>
 
       {/* Search + Filter */}
-      <div class="flex items-center gap-2 px-4 sm:px-6 py-2 border-b border-slate-100 bg-white/80 shrink-0 flex-wrap">
+      <div class="flex items-center gap-2 px-6 py-2 border-b border-stora-border bg-stora-card shrink-0 flex-wrap">
         <div class="relative flex-1 min-w-[120px] max-w-xs">
-          <Icon name="search" size={14} class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stora-nav-text text-sm pointer-events-none">🔍</span>
           <input type="text" bind:value={searchQuery} placeholder="搜索文件名或链接..."
-            class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white placeholder:text-slate-400" />
+            class="w-full h-9 pl-8 pr-3 text-xs border border-stora-border bg-white text-stora-foreground placeholder:text-stora-nav-text outline-none focus:border-stora-primary" />
         </div>
         <div class="flex gap-1">
           {(["all", "active", "expired"] as const).map(f => (
             <button key={f} onClick$={() => filterStatus.value = f}
-              class={`touch-target px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                filterStatus.value === f ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
+              class={`touch-target px-3 py-1.5 text-xs font-medium ${
+                filterStatus.value === f ? "bg-stora-primary text-white" : "text-stora-muted-foreground hover:bg-stora-muted"
               }`}>
               {{ all: "全部", active: "有效", expired: "已失效" }[f]}
             </button>
@@ -88,8 +83,8 @@ export default component$(() => {
 
       {/* Batch action bar */}
       {selIds.value.length > 0 && (
-        <div class="flex items-center gap-2 px-4 sm:px-6 py-2 bg-indigo-50/80 border-b border-indigo-100 shrink-0">
-          <span class="text-sm font-medium text-indigo-700">{selIds.value.length} 项已选</span>
+        <div class="flex items-center gap-2 px-6 py-2 bg-stora-muted border-b border-stora-border shrink-0">
+          <span class="text-sm font-medium text-stora-foreground">{selIds.value.length} 项已选</span>
           <div class="flex-1" />
           <button onClick$={async () => {
             if (!confirm(`确认撤销 ${selIds.value.length} 个分享链接？`)) return;
@@ -98,74 +93,60 @@ export default component$(() => {
             }
             shares.value = shares.value.filter(x => !selIds.value.includes(x.id));
             selIds.value = [];
-          }} class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 rounded-lg transition-colors">批量撤销</button>
-          <button onClick$={() => selIds.value = []} class="touch-target px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">取消</button>
+          }} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-destructive hover:bg-red-50">批量撤销</button>
+          <button onClick$={() => selIds.value = []} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-muted-foreground hover:bg-stora-muted">取消</button>
         </div>
       )}
 
-      <div class={`flex-1 overflow-auto scrollbar-thin p-4 sm:p-6 ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
+      <div class={`flex-1 overflow-auto scrollbar-thin ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
         {filteredShares().length === 0 ? (
-          <div class="flex flex-col items-center justify-center h-full text-slate-400">
-            <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl mb-4">
+          <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground p-8">
+            <div class="w-16 h-16 bg-stora-muted flex items-center justify-center text-3xl mb-4">
               {searchQuery.value || filterStatus.value !== "all" ? "🔍" : "🔗"}
             </div>
-            <h3 class="text-lg font-medium text-slate-500 mb-1">
+            <h3 class="text-lg font-medium text-stora-foreground mb-1">
               {searchQuery.value ? "未找到匹配的分享链接" : filterStatus.value !== "all" ? "暂无该状态的链接" : "暂无分享链接"}
             </h3>
-            <p class="text-sm">{searchQuery.value ? "尝试其他搜索词" : "在文件列表中选择文件创建分享"}</p>
+            <p class="text-sm text-stora-muted-foreground">{searchQuery.value ? "尝试其他搜索词" : "在文件列表中选择文件创建分享"}</p>
           </div>
         ) : (
-          <div class="space-y-3 animate-stagger">
+          <div class="divide-y divide-stora-border">
             {filteredShares().map((s) => {
               const sel = selIds.value.includes(s.id);
               const expired = isExpired(s);
               return (
                 <div key={s.id}
                   onClick$={() => { const i = selIds.value.indexOf(s.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(s.id); selIds.value = [...selIds.value]; }}
-                  class={`flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 bg-white rounded-xl border transition-all cursor-pointer ${sel ? 'border-indigo-400 shadow-sm' : 'border-slate-200 hover:shadow-sm'}`}>
-                  <div class="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
-                    <input type="checkbox" checked={sel} class="rounded border-slate-300 w-4 h-4 shrink-0"
-                      onChange$={() => {/* handled by row click */}} />
-                    <div class={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${s.is_folder ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                      {s.is_folder ? "📁" : s.password_protected ? "🔒" : "🔓"}
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-sm font-medium text-slate-700 truncate">{s.filename || `分享 ${s.short_code}`}</span>
-                        {s.is_folder && <span class="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">文件夹</span>}
-                        {expired && <span class="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-xs rounded-full">已失效</span>}
-                        {!expired && s.expires_at && (new Date(s.expires_at).getTime() - Date.now() < 86400000) && (
-                          <span class="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full">即将过期</span>
-                        )}
-                      </div>
-                      <div class="flex items-center gap-2 sm:gap-3 mt-1 text-xs text-slate-400 flex-wrap">
-                        <span>{s.is_folder ? "文件夹" : permLabel(s.permission)}</span>
-                        <span>· 浏览 {s.view_count} 次</span>
-                        <span>· 下载 {s.download_count} 次</span>
-                        {s.expires_at && <span>· {fmtDate(s.expires_at)} 过期</span>}
-                      </div>
-                    </div>
+                  class={`flex items-center gap-4 px-6 py-5 bg-stora-card cursor-pointer ${sel ? 'bg-stora-muted' : 'hover:bg-stora-muted'}`}>
+                  <input type="checkbox" checked={sel} class="border-stora-border w-4 h-4 shrink-0"
+                    onChange$={() => {/* handled by row click */}} />
+                  {/* File icon 44x44 per spec */}
+                  <div class={`w-11 h-11 flex items-center justify-center text-xl shrink-0 ${s.is_folder ? 'bg-stora-accent' : 'bg-[#FEF3C7]'}`}>
+                    {s.is_folder ? "📁" : s.password_protected ? "🔒" : "📄"}
                   </div>
-                  <div class="flex items-center gap-2 shrink-0 ml-0 sm:ml-2" onClick$={(e: any) => e.stopPropagation()}>
-                    <button
-                      onClick$={() => navigator.clipboard.writeText(`${window.location.origin}/s/${s.short_code}`)}
-                      class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">
-                      复制链接
+                  {/* Info area */}
+                  <div class="flex-1 min-w-0">
+                    <p class="text-[15px] font-semibold text-stora-foreground truncate">{s.filename || `分享 ${s.short_code}`}</p>
+                    <p class="text-xs text-stora-muted-foreground mt-1">
+                      分享链接 · {s.view_count}人访问 · {fmtDate(s.created_at)}
+                      {expired && <span class="ml-2 text-stora-destructive">已失效</span>}
+                    </p>
+                  </div>
+                  {/* Link area 240x36 per spec */}
+                  <div class="hidden sm:flex items-center bg-stora-muted px-3 h-9 w-[240px] shrink-0">
+                    <span class="text-xs text-stora-primary truncate">{window.location.origin}/s/{s.short_code}</span>
+                  </div>
+                  {/* Copy button 64x32 per spec */}
+                  <button onClick$={(e: any) => { e.stopPropagation(); navigator.clipboard.writeText(`${window.location.origin}/s/${s.short_code}`); }}
+                    class="h-8 px-4 text-xs font-medium text-white bg-stora-primary hover:bg-[#1D4ED8] shrink-0">
+                    复制
+                  </button>
+                  {s.is_active && (
+                    <button onClick$={async (e: any) => { e.stopPropagation(); if (!confirm("确认撤销？")) return; try { await revokeShare(s.id); shares.value = shares.value.filter(x => x.id !== s.id); } catch {} }}
+                      class="h-8 px-3 text-xs font-medium text-stora-destructive hover:bg-red-50 shrink-0">
+                      撤销
                     </button>
-                    {s.is_active && (
-                      <button
-                        onClick$={async () => {
-                          if (!confirm("确认撤销此分享链接？撤销后链接将立即失效。")) return;
-                          try {
-                            await revokeShare(s.id);
-                            shares.value = shares.value.filter(x => x.id !== s.id);
-                          } catch { /* ignore */ }
-                        }}
-                        class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">
-                        撤销
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
               );
             })}
