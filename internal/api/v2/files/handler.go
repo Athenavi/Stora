@@ -37,6 +37,8 @@ type Handler struct {
 	pathCache   map[string]pathCacheEntry
 	pathCacheMu sync.RWMutex
 	redisCache  *cache.PathCache // optional L2 cache (nil = disabled)
+
+	limiter *middleware.SpeedLimiter // upload/download speed control (nil = no limit)
 }
 
 type pathCacheEntry struct {
@@ -44,13 +46,14 @@ type pathCacheEntry struct {
 	expiresAt time.Time
 }
 
-func NewHandler(db *sql.DB, store storage.Driver, tempDir string, redisCache *cache.PathCache) *Handler {
+func NewHandler(db *sql.DB, store storage.Driver, tempDir string, redisCache *cache.PathCache, limiter *middleware.SpeedLimiter) *Handler {
 	h := &Handler{
 		db:        db,
 		storage:   store,
 		tempDir:   tempDir,
 		pathCache: make(map[string]pathCacheEntry),
 		redisCache: redisCache,
+		limiter:   limiter,
 	}
 	// Periodic cache cleanup: removes expired entries and evicts oldest if over maxCacheSize
 	go func() {
@@ -281,8 +284,14 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	mimeType := header.Header.Get("Content-Type")
 	fileType := detectFileType(mimeType, filename)
 
+	// Apply upload speed limit if configured
+	uploadSrc := io.Reader(file)
+	if h.limiter != nil {
+		uploadSrc = h.limiter.WrapUploadReader(userID, file)
+	}
+
 	// Compute SHA256 hash and store via content-addressable path (objects/{hash[:2]}/{hash[2:]})
-	fileHash, storagePath, err := h.storage.StoreHash(file)
+	fileHash, storagePath, err := h.storage.StoreHash(uploadSrc)
 	if err != nil {
 		utils.WriteError(w, http.StatusInternalServerError, "storage failed")
 		return
@@ -863,7 +872,8 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	w.WriteHeader(http.StatusOK)
-	io.Copy(w, reader)
+	limited := h.wrapDownloadReader(userID, reader)
+	io.Copy(w, limited)
 }
 
 // PreviewFile serves a file for inline preview (optional auth, works for <img> tags).
@@ -910,7 +920,20 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
 	w.WriteHeader(http.StatusOK)
-	io.Copy(w, reader)
+	// Speed limit if user is authenticated
+	if userID, ok := middleware.GetUserID(r.Context()); ok {
+		io.Copy(w, h.wrapDownloadReader(userID, reader))
+	} else {
+		io.Copy(w, reader)
+	}
+}
+
+// wrapDownloadReader 如果启用了限速，包装 reader 为限速版本
+func (h *Handler) wrapDownloadReader(userID int64, reader io.Reader) io.Reader {
+	if h.limiter != nil {
+		return h.limiter.WrapDownloadReader(userID, reader)
+	}
+	return reader
 }
 
 // ---------- Utilities ----------

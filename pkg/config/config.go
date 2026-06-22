@@ -59,6 +59,10 @@ type Config struct {
 
 	// Vault
 	VaultEncryptionKey string
+
+	// Speed limits (KB/s, 0 = unlimited)
+	UploadSpeedLimit   int64
+	DownloadSpeedLimit int64
 }
 
 // Load reads configuration from environment variables and .env file.
@@ -107,6 +111,9 @@ func Load() *Config {
 		SMTPFrom:     getEnv("SMTP_FROM", ""),
 
 		VaultEncryptionKey: getEnv("VAULT_ENCRYPTION_KEY", ""),
+
+		UploadSpeedLimit:   int64(getEnvInt("UPLOAD_SPEED_LIMIT", 0)),
+		DownloadSpeedLimit: int64(getEnvInt("DOWNLOAD_SPEED_LIMIT", 0)),
 	}
 
 	// Ensure domain ends with /

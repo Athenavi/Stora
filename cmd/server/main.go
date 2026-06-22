@@ -112,6 +112,9 @@ func main() {
 	// Initialize JWT manager
 	jwtManager := auth.NewJWTManager(cfg.SecretKey, cfg.JWTExpiration, cfg.JWTRefreshExpiration)
 
+	// Initialize speed limiter (KB/s, 0 = unlimited)
+	speedLimiter := middleware.NewSpeedLimiter(cfg.UploadSpeedLimit, cfg.DownloadSpeedLimit)
+
 	// Rate limiters for auth endpoints
 	loginLimiter := middleware.NewRateLimiter(10, 1*time.Minute)    // 10 login attempts/min per IP
 	registerLimiter := middleware.NewRateLimiter(3, 1*time.Minute)  // 3 registrations/min per IP
@@ -127,7 +130,7 @@ func main() {
 	if database.RedisClient != nil {
 		pathCache = cache.NewPathCache(database.RedisClient, 10*time.Second)
 	}
-	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder, pathCache)
+	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder, pathCache, speedLimiter)
 	uploadHandler := fileapi.NewUploadHandler(db, store, cfg.TempFolder)
 	vaultHandler := fileapi.NewVaultHandler(db)
 	transcodeHandler := fileapi.NewTranscodeHandler(db)

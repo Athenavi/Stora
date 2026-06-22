@@ -9,12 +9,12 @@
 
 | # | 功能 | 优先级 | 估算 | 说明 |
 |---|------|--------|------|------|
-| G1 | **上传/下载限速** | P1 | 4h | 后端流量整形 + 前端控制 |
-| G2 | **批量下载 ZIP 打包** | P1 | 4h | 后端流式 ZIP + 前端进度 |
+| G1 | **上传/下载限速** | P1 | 4h | ✅ 已实现 (TokenBucket + 配置项) |
+| G2 | **批量下载 ZIP 打包** | P1 | 4h | ✅ 已实现 (BatchDownload 流式 ZIP) |
 | G3 | **系统维护通知** | P1 | 2h | 公告栏/邮件通知维护窗口 |
-| G4 | **分享密码保护** | P2 | 3h | 分享链接加密 + 密码验证 |
-| G5 | **分享有效期** | P2 | 3h | 过期时间 + 自动失效 |
-| G6 | **分享下载次数限制** | P2 | 2h | 计数器 + 达到上限自动关闭 |
+| G4 | **分享密码保护** | P2 | 3h | ✅ 已实现 (bcrypt + 前端弹窗) |
+| G5 | **分享有效期** | P2 | 3h | ✅ 已实现 (expires_in_hours + 前端选择器) |
+| G6 | **分享下载次数限制** | P2 | 2h | ✅ 已实现 (max_downloads) |
 | G7 | **团队空间/群组** | P2 | 12h | 多用户共享空间 + 权限体系 |
 | G8 | **图片编辑/标注** | P2 | 8h | 裁剪/旋转/标注/滤镜 |
 | G9 | **AI 字幕** | P2 | 6h | 语音识别 + 字幕嵌入 |
@@ -36,40 +36,39 @@
 - ~~分享文件夹~~ — `folder_id` 支持 + `nullIfZero` 修复 + `VerifySharePassword` 文件夹查询
 - ~~分享密码验证~~ — 后端 bcrypt 哈希 + `checkSharePassword`
 - ~~分享密码枚举防护~~ — 统一错误信息 "invalid or expired share link"
+- ~~分享有效期~~ — 后端 `expires_in_hours` + 前端选择器（1天/7天/30天/永久）
+- ~~分享下载次数限制~~ — 后端 `max_downloads` + 前端 FormData 传参
+- ~~分享权限级别~~ — 前端 read/download 选择器 + 后端 permission 字段
 - ~~系统初始化向导~~ — `stora-cli init` 交互式 5 步向导
 - ~~数据库迁移系统~~ — Alembic 风格 migrate generate/up/down/history/current
 - ~~CLI 管理工具~~ — 8 个子命令 + Go 模板管理页面
 - ~~版本管理~~ — version.ini `[stora]` 段 + GitHub Release 集成 + `upgrade check/apply`
+- ~~上传/下载限速~~ — TokenBucket 限速器 + `UPLOAD_SPEED_LIMIT` / `DOWNLOAD_SPEED_LIMIT` 配置
 
 ---
 
 ## 实施规划
 
-### Phase 1 — 传输体验（P1，本周）
+### Phase 1 — 传输体验（P1，已完成）
 
 ```
-G1 上传/下载限速     ─ 后端流量整形（token bucket）+ 前端进度条限速滑块
-G2 批量下载 ZIP 打包  ─ 后端流式 ZIP（已部分实现 BatchDownload），前端批量勾选 → ZIP
+G1 上传/下载限速     ─ ✅ TokenBucket + 配置项 UPLOAD_SPEED_LIMIT / DOWNLOAD_SPEED_LIMIT
+G2 批量下载 ZIP 打包  ─ ✅ BatchDownload 流式 ZIP + 前端 fetch blob
 ```
 
-### Phase 2 — 分享增强（P2，下周）
+### Phase 2 — 分享增强（P2，已完成）
 
 ```
-G4 密码保护    ─ 创建分享时设置密码（后端已就绪，前端弹窗补全）
-G5 有效期      ─ 1天/7天/30天/永久 选择器（后端已就绪）
-G6 下载次数限制 ─ max_downloads 前端暴露（后端已就绪）
+G4 密码保护    ─ ✅ 创建分享弹窗密码输入 + 后端 bcrypt
+G5 有效期      ─ ✅ 前端 1天/7天/30天/永久 选择器 + 后端 expires_in_hours
+G6 下载次数限制 ─ ✅ 前端 max_downloads 传参 + 后端限制逻辑
 ```
 
-### Phase 3 — 系统运维（P2，两周内）
+### Phase 3 — 待实现（P1/P2）
 
 ```
 G3 维护通知    ─ 公告栏 + 邮件通知维护窗口
 G7 团队空间    ─ 多用户共享空间 + 权限继承体系
-```
-
-### Phase 4 — 媒体增值（P2，三周内）
-
-```
 G8 图片编辑    ─ 裁剪/旋转/标注/滤镜（前端 Canvas + 后端存储优化版本）
 G9 AI 字幕    ─ 语音识别 → SRT 字幕嵌入
 G14 Office    ─ Collabora Online 集成文档完善
