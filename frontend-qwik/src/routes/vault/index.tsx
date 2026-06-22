@@ -1,7 +1,7 @@
 /**
  * Stora Vault — flat design centered unlock + file list
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
 import { api, createServerApi } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
@@ -58,13 +58,13 @@ export default component$(() => {
 
   const doLock = () => { vaultToken.value = null; items.value = []; unlockPw.value = ""; };
 
-  const doCreate = async () => {
+  const doCreate = $(async () => {
     if (!newName.value || !newPw.value) { createErr.value = "请填写名称和密码"; return; }
     if (newPw.value !== newPw2.value) { createErr.value = "两次密码不一致"; return; }
     createErr.value = ""; loading.value = true; const fd = new FormData(); fd.append("name", newName.value); fd.append("password", newPw.value);
     try { await api.post("/vaults", fd); showCreate.value = false; newName.value = ""; newPw.value = ""; newPw2.value = ""; const data = await api.get<VaultInfo[]>("/vaults"); vaultList.value = data || []; } catch (e: any) { createErr.value = e.message || "创建失败"; }
     loading.value = false;
-  };
+  });
 
   const doDeleteVault = async (id: number) => {
     if (!confirm("确认删除此私密空间？所有加密文件将永久丢失！")) return;

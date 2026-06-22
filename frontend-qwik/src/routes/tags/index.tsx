@@ -1,7 +1,7 @@
 /**
  * Stora Tags — flat design tag cloud + file list
  */
-import { component$, useSignal } from "@builder.io/qwik";
+import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { api, createServerApi } from "~/lib/api";
 
@@ -34,7 +34,7 @@ export default component$(() => {
 
   const refresh = async () => { try { items.value = await api.get<Tag[]>("/files/tags") || []; } catch {} };
 
-  const createOrUpdate = async () => {
+  const createOrUpdate = $(async () => {
     if (!name.value.trim()) return;
     loading.value = true;
     try {
@@ -46,7 +46,7 @@ export default component$(() => {
       alert(e.message || "操作失败");
     }
     loading.value = false;
-  };
+  });
 
   const startEdit = (tag: Tag) => { editId.value = tag.id; name.value = tag.name; color.value = tag.color; showCreate.value = true; };
 
