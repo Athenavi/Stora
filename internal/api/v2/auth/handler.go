@@ -55,7 +55,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var userID int64
 	err = h.db.QueryRow(
 		`INSERT INTO users (username, email, password, is_active, date_joined, locale, total_storage, used_storage)
-		 VALUES ($1, $2, $3, true, $4, $5, 1073741824, 0) RETURNING id`,
+		 VALUES ($1, $2, $3, true, $4, $5, 10737418240, 0) RETURNING id`,
 		username, email, string(hashedPassword), now, locale,
 	).Scan(&userID)
 

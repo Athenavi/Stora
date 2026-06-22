@@ -25,7 +25,7 @@ models:
       is_2fa_enabled:  { type: boolean, default: "false" }
       totp_secret:   { type: text, nullable: true }
       backup_codes:  { type: text, nullable: true }
-      total_storage: { type: bigint, default: "1073741824" }
+      total_storage: { type: bigint, default: "10737418240" }
       used_storage:  { type: bigint, default: "0" }
     indexes:
       - { columns: [username] }
