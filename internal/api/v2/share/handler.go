@@ -149,9 +149,9 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 
 	var linkID int64
 	err := h.db.QueryRow(
-		`INSERT INTO share_links (file_id, user_id, token, short_code, permission, password, expires_at, max_downloads, is_active, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9) RETURNING id`,
-		fileID, userID, shortCode, shortCode, permission, hashedPw, expiresAt, maxDownloads, nowStr,
+		`INSERT INTO share_links (file_id, user_id, short_code, permission, password, expires_at, max_downloads, is_active, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8) RETURNING id`,
+		fileID, userID, shortCode, permission, hashedPw, expiresAt, maxDownloads, nowStr,
 	).Scan(&linkID)
 
 	if err != nil {
@@ -498,6 +498,7 @@ func (h *Handler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 // EnsureCompat runs migration to add missing columns.
 func EnsureCompat(db *sql.DB) {
 	for _, m := range []string{
+		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS token VARCHAR(64) DEFAULT ''`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS short_code VARCHAR(32) DEFAULT ''`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS permission VARCHAR(20) DEFAULT 'read'`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS view_count INT DEFAULT 0`,
