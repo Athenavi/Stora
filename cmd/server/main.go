@@ -15,6 +15,7 @@ import (
 	shareapi "github.com/Athenavi/Stora/internal/api/v2/share"
 	adminapi "github.com/Athenavi/Stora/internal/api/v2/admin"
 	"github.com/Athenavi/Stora/internal/adminui"
+	"github.com/Athenavi/Stora/internal/api/v2/wopi"
 	"github.com/Athenavi/Stora/pkg/cache"
 	mobileapi "github.com/Athenavi/Stora/internal/api/v3/mobile"
 	"github.com/Athenavi/Stora/internal/middleware"
@@ -159,6 +160,9 @@ func main() {
 	if err != nil {
 		log.Printf("[Server] Admin UI init warning: %v", err)
 	}
+
+	// Initialize WOPI handler (Collabora Online integration)
+	wopiHandler := wopi.NewHandler(db, store)
 
 	// Setup cleanup notifier and scheduler
 	notifier := cleanup.NewCleanupNotifier()
@@ -398,6 +402,13 @@ func main() {
 			r.Get("/admin/ui/", adminUIHandler.Dashboard)
 			r.Get("/admin/ui/migrate", adminUIHandler.MigratePage)
 		}
+	})
+
+	// WOPI routes (public — Collabora Online calls server-to-server)
+	r.Route("/api/v2/wopi", func(r chi.Router) {
+		r.Get("/files/{fileId}", wopiHandler.CheckFileInfo)
+		r.Get("/files/{fileId}/contents", wopiHandler.GetFile)
+		r.Post("/files/{fileId}/contents", wopiHandler.PutFile)
 	})
 
 	// API v3 (mobile)

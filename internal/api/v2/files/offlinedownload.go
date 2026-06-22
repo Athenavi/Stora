@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -92,9 +93,14 @@ func (h *OfflineDownloadHandler) ListDownloadTasks(w http.ResponseWriter, r *htt
 }
 
 func (h *OfflineDownloadHandler) processDownload(taskID int64, userID int64, url string, filename *string) {
-	// Update status to downloading
 	now := time.Now().Format(time.RFC3339)
 	h.db.Exec(`UPDATE download_tasks SET status = 'downloading', updated_at = $1 WHERE id = $2`, now, taskID)
+
+	// Handle magnet links via aria2c
+	if strings.HasPrefix(url, "magnet:") {
+		h.processMagnet(taskID, userID, url, filename, now)
+		return
+	}
 
 	// Download the file
 	resp, err := http.Get(url)
@@ -174,4 +180,87 @@ func (h *OfflineDownloadHandler) processDownload(taskID int64, userID int64, url
 		fileID, now, taskID,
 	)
 	log.Printf("[OfflineDownload] completed task %d: %s (%d bytes)", taskID, fname, written)
+}
+
+// processMagnet handles BitTorrent magnet links via aria2c.
+func (h *OfflineDownloadHandler) processMagnet(taskID, userID int64, url string, filename *string, now string) {
+	h.db.Exec(`UPDATE download_tasks SET status = 'downloading', updated_at = $1 WHERE id = $2`, now, taskID)
+
+	// Use aria2c for BT downloads (must be installed separately)
+	// aria2c --bt-metadata-only=true --bt-save-metadata=true -d <dir> <magnet>
+	tmpDir := filepath.Join(h.tempDir, fmt.Sprintf("bt_%d", taskID))
+	os.MkdirAll(tmpDir, 0755)
+	defer os.RemoveAll(tmpDir)
+
+	cmd := exec.Command("aria2c", "--bt-metadata-only=true", "--bt-save-metadata=true",
+		"-d", tmpDir, url)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		h.db.Exec(`UPDATE download_tasks SET status = 'failed', updated_at = $1 WHERE id = $2`, now, taskID)
+		log.Printf("[BT] aria2c failed for task %d: %v - %s", taskID, err, string(output))
+		return
+	}
+
+	// Find the downloaded .torrent file
+	entries, _ := os.ReadDir(tmpDir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".torrent") {
+			// Found torrent metadata — now download the actual data
+			torrentPath := filepath.Join(tmpDir, e.Name())
+			dataDir := filepath.Join(tmpDir, "data")
+			os.MkdirAll(dataDir, 0755)
+
+			cmd2 := exec.Command("aria2c", "--seed-time=0",
+				"-d", dataDir, torrentPath)
+			output2, err := cmd2.CombinedOutput()
+			if err != nil {
+				h.db.Exec(`UPDATE download_tasks SET status = 'failed', updated_at = $1 WHERE id = $2`, now, taskID)
+				log.Printf("[BT] aria2c download failed for task %d: %v - %s", taskID, err, string(output2))
+				return
+			}
+
+			// Find downloaded files and store them
+			h.storeDownloadedFiles(taskID, userID, dataDir, now)
+			return
+		}
+	}
+
+	h.db.Exec(`UPDATE download_tasks SET status = 'failed', updated_at = $1 WHERE id = $2`, now, taskID)
+}
+
+func (h *OfflineDownloadHandler) storeDownloadedFiles(taskID, userID int64, dir, now string) {
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.IsDir() {
+			h.storeDownloadedFiles(taskID, userID, filepath.Join(dir, e.Name()), now)
+			continue
+		}
+		fullPath := filepath.Join(dir, e.Name())
+		f, err := os.Open(fullPath)
+		if err != nil {
+			continue
+		}
+		fileHash, storagePath, err := h.storage.StoreHash(f)
+		f.Close()
+		if err != nil {
+			continue
+		}
+		fi, _ := os.Stat(fullPath)
+		var fileSize int64
+		if fi != nil {
+			fileSize = fi.Size()
+		}
+		mimeType := detectFileType("", e.Name())
+		fileType := detectFileType("", e.Name())
+		var fileID int64
+		h.db.QueryRow(
+			`INSERT INTO file_items (user_id, filename, original_filename, file_path, file_size,
+			                         mime_type, file_type, storage_driver, file_hash, is_folder, created_at, updated_at)
+			 VALUES ($1, $2, $2, $3, $4, $5, $6, 'local', $7, false, $8, $8) RETURNING id`,
+			userID, e.Name(), storagePath, fileSize, mimeType, fileType, fileHash, now,
+		).Scan(&fileID)
+	}
+
+	h.db.Exec(`UPDATE download_tasks SET status = 'completed', progress = 100, updated_at = $1 WHERE id = $2`, now, taskID)
+	log.Printf("[BT] completed task %d", taskID)
 }
