@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { useNavigate, useLocation } from "@builder.io/qwik-city";
-import { login, setToken, loginWithCode, sendCode } from "~/lib/api";
+import { login, setToken, loginWithCode, sendCode, isAuthenticated } from "~/lib/api";
 
 export default component$(() => {
   const nav = useNavigate();
@@ -16,6 +16,10 @@ export default component$(() => {
     const token = loc.url.searchParams.get("token");
     if (token) {
       setToken(token);
+      nav("/drive");
+    }
+    // Redirect to /drive if already logged in
+    if (isAuthenticated()) {
       nav("/drive");
     }
   });

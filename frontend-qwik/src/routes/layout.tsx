@@ -6,7 +6,7 @@ import { useLocation, Link } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
 import FolderTree from "~/components/ui/FolderTree";
 import TransferQueue from "~/components/ui/TransferQueue";
-import { api, isAuthenticated } from "~/lib/api";
+import { api, isAuthenticated, getProfile } from "~/lib/api";
 import { ToastContainer } from "~/components/ui/index";
 
 type NavIcon = "folder" | "share" | "trash" | "star" | "image" | "lock" | "tag" | "setting";
@@ -33,6 +33,7 @@ export default component$(() => {
   const loc = useLocation();
   const path = loc.url.pathname.replace(/\/+$/, "");
   const quota = useSignal<{ max_storage: number; used_storage: number; usage_percent: number } | null>(null);
+  const userProfile = useSignal<{ username: string; email: string } | null>(null);
   const maintenance = useSignal<{ enabled: boolean; message: string; scheduled_start?: string; scheduled_end?: string; time_until_maintenance?: number } | null>(null);
 
   const isPublic =
@@ -50,13 +51,20 @@ export default component$(() => {
     }
   });
 
-  // Load quota
+  // Load quota and profile
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(async () => {
     const p = window.location.pathname.replace(/\/+$/, "");
     const pub = p === "/login" || p === "/register" || p.startsWith("/s");
     if (pub) return;
-    try { const q = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); quota.value = q; } catch {}
+    try {
+      const [q, u] = await Promise.all([
+        api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"),
+        getProfile(),
+      ]);
+      quota.value = q;
+      userProfile.value = u;
+    } catch {}
   });
 
   // Poll maintenance
@@ -175,18 +183,18 @@ export default component$(() => {
           <p class="text-xs text-stora-muted-foreground">
             {quota.value
               ? `${(quota.value.used_storage / 1073741824).toFixed(1)} GB / ${(quota.value.max_storage / 1073741824).toFixed(1)} GB`
-              : '加载中...'}
+              : '— GB / — GB'}
           </p>
         </div>
 
         {/* User area — 52px, horizontal, gap 12px, padding 24px */}
         <div class="flex items-center gap-3 px-6 h-[52px] mb-6">
           <div class="w-9 h-9 rounded-full bg-stora-accent flex items-center justify-center text-white text-sm font-bold shrink-0">
-            Y
+            {userProfile.value ? userProfile.value.username.charAt(0).toUpperCase() : "?"}
           </div>
           <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-stora-muted truncate">张三</p>
-            <p class="text-xs text-stora-muted-foreground truncate">zhangsan@email.com</p>
+            <p class="text-sm font-medium text-stora-muted truncate">{userProfile.value?.username || "用户"}</p>
+            <p class="text-xs text-stora-muted-foreground truncate">{userProfile.value?.email || "加载中..."}</p>
           </div>
         </div>
       </aside>
