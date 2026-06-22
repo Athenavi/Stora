@@ -58,6 +58,12 @@ export const listShares = (page = 1, pageSize = 20): Promise<ShareListResponse> 
 export const revokeShare = (linkId: number): Promise<void> =>
   api.delete(`/files/shares/${linkId}`);
 
+export const updateShare = (linkId: number, params: Partial<CreateShareParams>): Promise<void> =>
+  api.put(`/files/shares/${linkId}`, params);
+
+export const shareWithUser = (fileId: number, sharedWith: number, permission = 'view'): Promise<any> =>
+  api.post('/files/shares/share-with-user', { file_id: fileId, shared_with: sharedWith, permission });
+
 export const accessShare = (
   shortCode: string,
   password?: string,

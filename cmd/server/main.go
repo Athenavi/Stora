@@ -183,6 +183,8 @@ func main() {
 			// Auth (authenticated)
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)
+			r.Get("/auth/sessions", authHandler.ListSessions)
+			r.Delete("/auth/sessions/{id}", authHandler.RevokeSession)
 
 			// User quota
 			r.Get("/users/me/quota", func(w http.ResponseWriter, r *http.Request) {
@@ -274,7 +276,9 @@ func main() {
 			// Share links — frontend calls /files/shares/*
 			r.Get("/files/shares", shareHandler.ListShareLinks)
 			r.Post("/files/shares", shareHandler.CreateShareLink)
+			r.Put("/files/shares/{id}", shareHandler.UpdateShareLink)
 			r.Delete("/files/shares/{id}", shareHandler.DeleteShareLink)
+			r.Post("/files/shares/share-with-user", shareHandler.ShareWithUser)
 			// Legacy paths
 			r.Get("/share/links", shareHandler.ListShareLinks)
 			r.Post("/share/links", shareHandler.CreateShareLink)

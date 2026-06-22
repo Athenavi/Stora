@@ -3,6 +3,7 @@ package authapi
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/models"
 	"github.com/Athenavi/Stora/pkg/utils"
+	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -201,6 +203,58 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		"used_storage":   user.UsedStorage,
 		"profile_picture": user.ProfilePicture,
 	})
+}
+
+// ── Session Management ──
+
+func (h *Handler) ListSessions(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	rows, err := h.db.Query(
+		`SELECT id, ip_address, COALESCE(user_agent, ''), is_active, created_at, expires_at
+		 FROM user_sessions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50`,
+		userID,
+	)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	defer rows.Close()
+
+	type Session struct {
+		ID        int64   `json:"id"`
+		IPAddress *string `json:"ip_address"`
+		UserAgent string  `json:"user_agent"`
+		IsActive  bool    `json:"is_active"`
+		CreatedAt *string `json:"created_at"`
+		ExpiresAt *string `json:"expires_at"`
+	}
+	var sessions = make([]Session, 0)
+	for rows.Next() {
+		var s Session
+		if err := rows.Scan(&s.ID, &s.IPAddress, &s.UserAgent, &s.IsActive, &s.CreatedAt, &s.ExpiresAt); err == nil {
+			sessions = append(sessions, s)
+		}
+	}
+	utils.WriteJSON(w, http.StatusOK, sessions)
+}
+
+func (h *Handler) RevokeSession(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	result, err := h.db.Exec(
+		`UPDATE user_sessions SET is_active = false WHERE id = $1 AND user_id = $2`,
+		sessionID, userID,
+	)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "revoke failed")
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		utils.WriteError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "revoked"})
 }
 
 func (h *Handler) SendCode(w http.ResponseWriter, r *http.Request) {

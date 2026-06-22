@@ -616,6 +616,100 @@ func (h *Handler) DeleteShareLink(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
+// UpdateShareLink updates an existing share link's properties.
+func (h *Handler) UpdateShareLink(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	linkID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	var req struct {
+		Permission     *string `json:"permission"`
+		Password       *string `json:"password"`
+		ExpiresInHours *int    `json:"expires_in_hours"`
+		MaxDownloads   *int    `json:"max_downloads"`
+		IsActive       *bool   `json:"is_active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	// Verify ownership
+	var ownerID int64
+	err := h.db.QueryRow(`SELECT user_id FROM share_links WHERE id = $1`, linkID).Scan(&ownerID)
+	if err != nil || ownerID != userID {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	// Build dynamic UPDATE
+	var sets []string
+	var args []interface{}
+	argIdx := 1
+
+	if req.Permission != nil {
+		allowedPerms := map[string]bool{"read": true, "download": true, "edit": true}
+		if !allowedPerms[*req.Permission] {
+			writeError(w, http.StatusBadRequest, "invalid permission")
+			return
+		}
+		sets = append(sets, fmt.Sprintf("permission = $%d", argIdx))
+		args = append(args, *req.Permission)
+		argIdx++
+	}
+	if req.Password != nil {
+		if *req.Password == "" {
+			sets = append(sets, fmt.Sprintf("password = $%d", argIdx))
+			args = append(args, "")
+		} else {
+			hashed, err := hashPassword(*req.Password)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, "password hash failed")
+				return
+			}
+			sets = append(sets, fmt.Sprintf("password = $%d", argIdx))
+			args = append(args, hashed)
+		}
+		argIdx++
+	}
+	if req.ExpiresInHours != nil {
+		if *req.ExpiresInHours <= 0 {
+			sets = append(sets, fmt.Sprintf("expires_at = $%d", argIdx))
+			args = append(args, nil)
+		} else {
+			exp := time.Now().Add(time.Duration(*req.ExpiresInHours) * time.Hour).Format(time.RFC3339)
+			sets = append(sets, fmt.Sprintf("expires_at = $%d", argIdx))
+			args = append(args, exp)
+		}
+		argIdx++
+	}
+	if req.MaxDownloads != nil {
+		sets = append(sets, fmt.Sprintf("max_downloads = $%d", argIdx))
+		args = append(args, *req.MaxDownloads)
+		argIdx++
+	}
+	if req.IsActive != nil {
+		sets = append(sets, fmt.Sprintf("is_active = $%d", argIdx))
+		args = append(args, *req.IsActive)
+		argIdx++
+	}
+
+	if len(sets) == 0 {
+		writeError(w, http.StatusBadRequest, "no fields to update")
+		return
+	}
+
+	args = append(args, linkID, userID)
+	q := fmt.Sprintf("UPDATE share_links SET %s WHERE id = $%d AND user_id = $%d",
+		strings.Join(sets, ", "), argIdx, argIdx+1)
+	_, err = h.db.Exec(q, args...)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
+}
+
 // ShareWithUser shares a file directly with another user.
 func (h *Handler) ShareWithUser(w http.ResponseWriter, r *http.Request) {
 	ownerID, _ := middleware.GetUserID(r.Context())
