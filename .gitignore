@@ -47,6 +47,10 @@ frontend-qwik/server/
 # Reasonix
 .reasonix/
 
+# Reference files from analysis
+*.jinja2
+generate_routes.py
+
 # Debug
 debug/
 

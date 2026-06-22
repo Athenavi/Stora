@@ -117,7 +117,7 @@
       {{end}}
     </table>
     {{else}}
-    <p style="color: var(--muted);">暂无迁移记录</p>
+    <p style="color: var(--muted);">暂无迁移记录 — 运行 <code>stora-cli init</code> 或 <code>stora-cli upgrade</code> 初始化系统</p>
     {{end}}
     <div class="actions mt-16">
       <a href="/admin/ui/migrate" class="btn btn-primary btn-sm">执行待迁移</a>
@@ -133,6 +133,18 @@
       <a href="/api/v2/admin/settings" class="btn btn-outline btn-sm">⚙️ 系统设置</a>
       <a href="/api/health" class="btn btn-outline btn-sm">🔍 健康检查</a>
     </div>
+  </div>
+
+  <!-- CLI 快速参考 -->
+  <div class="card" style="border-color: #f59e0b;">
+    <h2 style="color: #f59e0b;">💡 CLI 快速参考</h2>
+    <table>
+      <tr><td><code>stora-cli init</code></td><td>交互式系统初始化向导（小白专用）</td></tr>
+      <tr><td><code>stora-cli upgrade</code></td><td>系统升级（迁移 + 数据迁移）</td></tr>
+      <tr><td><code>stora-cli config verify</code></td><td>验证 .env 配置完整性</td></tr>
+      <tr><td><code>stora-cli backup</code></td><td>数据库备份</td></tr>
+      <tr><td><code>stora-cli health</code></td><td>系统健康检查</td></tr>
+    </table>
   </div>
 
 </div>

@@ -78,6 +78,7 @@ var commands = map[string]func(*appConfig, []string) error{
 	"upgrade": cmdUpgrade,
 	"config":  cmdConfig,
 	"backup":  cmdBackup,
+	"init":    cmdInit,
 	"serve":   cmdServe,
 }
 
@@ -88,5 +89,6 @@ var summaries = map[string]string{
 	"upgrade": "系统升级（迁移 + 数据迁移）",
 	"config":  "生成/验证 .env 配置文件",
 	"backup":  "数据库备份",
+	"init":    "⚡ 系统初始化向导（交互式）",
 	"serve":   "启动管理 Web UI",
 }
