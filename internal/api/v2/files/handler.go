@@ -1067,8 +1067,8 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
 	w.WriteHeader(http.StatusOK)
 	// Speed limit if user is authenticated
-	if userID, ok := middleware.GetUserID(r.Context()); ok {
-		io.Copy(w, h.wrapDownloadReader(userID, reader))
+	if uid, ok := middleware.GetUserID(r.Context()); ok {
+		io.Copy(w, h.wrapDownloadReader(uid, reader))
 	} else {
 		io.Copy(w, reader)
 	}
