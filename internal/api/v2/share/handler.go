@@ -231,7 +231,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 
 	var linkID int64
-	var fileID int64
+	var fileID sql.NullInt64
 	var hashedPw *string
 	err := h.db.QueryRow(
 		`SELECT s.id, s.file_id, s.password FROM share_links s
@@ -343,11 +343,15 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return share info + single file details
+	if !fileID.Valid {
+		writeError(w, http.StatusNotFound, "link invalid or expired")
+		return
+	}
 	var filename, mimeType string
 	var fileSize int64
 	h.db.QueryRow(
 		`SELECT COALESCE(filename, ''), COALESCE(mime_type, ''), COALESCE(file_size, 0) FROM file_items WHERE id = $1`,
-		fileID,
+		fileID.Int64,
 	).Scan(&filename, &mimeType, &fileSize)
 
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
@@ -360,7 +364,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 			"password_protected": hashedPw != nil && *hashedPw != "",
 		},
 		"item": map[string]interface{}{
-			"id":        fileID,
+			"id":        fileID.Int64,
 			"filename":  filename,
 			"file_size": fileSize,
 			"mime_type": mimeType,
@@ -493,7 +497,7 @@ func (h *Handler) AccessShareLink(w http.ResponseWriter, r *http.Request) {
 		code = token // fallback
 	}
 
-	var fileID int64
+	var fileID sql.NullInt64
 	var hashedPw *string
 	err := h.db.QueryRow(
 		`SELECT s.file_id, s.password FROM share_links s
@@ -504,6 +508,11 @@ func (h *Handler) AccessShareLink(w http.ResponseWriter, r *http.Request) {
 	).Scan(&fileID, &hashedPw)
 
 	if err != nil {
+		writeError(w, http.StatusNotFound, "link invalid or expired")
+		return
+	}
+
+	if !fileID.Valid {
 		writeError(w, http.StatusNotFound, "link invalid or expired")
 		return
 	}
@@ -527,7 +536,7 @@ func (h *Handler) AccessShareLink(w http.ResponseWriter, r *http.Request) {
 	// Increment download count
 	h.db.Exec(`UPDATE share_links SET download_count = download_count + 1 WHERE (token = $1 OR short_code = $1)`, code)
 
-	writeJSON(w, http.StatusOK, map[string]int64{"file_id": fileID})
+	writeJSON(w, http.StatusOK, map[string]int64{"file_id": fileID.Int64})
 }
 
 // ListShareLinks lists the user's share links (paginated).
