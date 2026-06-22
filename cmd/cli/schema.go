@@ -315,10 +315,33 @@ func readRevisionINI(path string) (string, error) {
 }
 
 func writeRevisionINI(path, revision string) error {
+	// 读取原有文件，保留 [stora] 段
+	var storaBlock strings.Builder
+	inStora := false
+	if data, err := os.ReadFile(path); err == nil {
+		for _, line := range strings.Split(string(data), "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "[stora]" {
+				inStora = true
+				storaBlock.WriteString(line + "\n")
+				continue
+			}
+			if inStora && len(trimmed) > 0 && trimmed[0] == '[' {
+				inStora = false
+			}
+			if inStora {
+				storaBlock.WriteString(line + "\n")
+			}
+		}
+	}
+
 	content := fmt.Sprintf(`[schema]
 # 当前数据库 revision（对应 migrations/ 目录下的迁移文件名）
 # 由 `+"`stora-cli migrate up/down`"+` 自动维护
 revision = %s
 `, revision)
+	if storaBlock.Len() > 0 {
+		content += "\n" + strings.TrimRight(storaBlock.String(), "\n") + "\n"
+	}
 	return os.WriteFile(path, []byte(content), 0644)
 }
