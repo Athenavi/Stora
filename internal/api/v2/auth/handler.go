@@ -124,6 +124,22 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Login anomaly detection: check if IP changed significantly
+	clientIP := r.RemoteAddr
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		clientIP = strings.Split(fwd, ",")[0]
+	}
+	if user.LastLoginIP != nil && *user.LastLoginIP != "" && *user.LastLoginIP != clientIP {
+		h.db.Exec(`INSERT INTO notifications (user_id, type, title, body, created_at)
+			VALUES ($1, 'security', '异地登录提醒', $2, $3)`,
+			user.ID,
+			fmt.Sprintf("您的账号从新位置登录（IP: %s）。上次登录 IP: %s", clientIP, *user.LastLoginIP),
+			time.Now().Format(time.RFC3339))
+	}
+	// Update last login info
+	h.db.Exec(`UPDATE users SET last_login_at = $1, last_login_ip = $2 WHERE id = $3`,
+		time.Now().Format(time.RFC3339), clientIP, user.ID)
+
 	// Format response matching frontend's LoginResponse expectations
 	setAuthCookie(w, tokens.AccessToken, tokens.ExpiresIn)
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
