@@ -180,7 +180,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 		`SELECT s.id, s.file_id, s.password FROM share_links s
 		 WHERE s.short_code = $1 AND s.is_active = true
 		 AND (s.expires_at IS NULL OR s.expires_at > $2)
-		 AND (s.max_downloads IS NULL OR s.download_count < s.max_downloads)`,
+		 AND (s.max_downloads IS NULL OR s.max_downloads = 0 OR s.download_count < s.max_downloads)`,
 		code, time.Now().Format(time.RFC3339),
 	).Scan(&linkID, &fileID, &hashedPw)
 
@@ -253,7 +253,7 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 		`SELECT s.file_id, s.password FROM share_links s
 		 WHERE (s.short_code = $1 OR s.token = $1) AND s.is_active = true
 		 AND (s.expires_at IS NULL OR s.expires_at > $2)
-		 AND (s.max_downloads IS NULL OR s.download_count < s.max_downloads)`,
+		 AND (s.max_downloads IS NULL OR s.max_downloads = 0 OR s.download_count < s.max_downloads)`,
 		code, time.Now().Format(time.RFC3339),
 	).Scan(&fileID, &hashedPw)
 
@@ -321,7 +321,7 @@ func (h *Handler) AccessShareLink(w http.ResponseWriter, r *http.Request) {
 		`SELECT s.file_id, s.password FROM share_links s
 		 WHERE (s.token = $1 OR s.short_code = $1) AND s.is_active = true
 		 AND (s.expires_at IS NULL OR s.expires_at > $2)
-		 AND (s.max_downloads IS NULL OR s.download_count < s.max_downloads)`,
+		 AND (s.max_downloads IS NULL OR s.max_downloads = 0 OR s.download_count < s.max_downloads)`,
 		code, time.Now().Format(time.RFC3339),
 	).Scan(&fileID, &hashedPw)
 
