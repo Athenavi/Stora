@@ -143,6 +143,7 @@ func main() {
 
 	// Initialize share handler
 	shareHandler := shareapi.NewHandler(db, store)
+	shareapi.StartShareCleanup(db)
 
 	// Initialize admin handler
 	adminHandler := adminapi.NewHandler(db)
@@ -337,6 +338,9 @@ func main() {
 		r.Get("/share/{token}", shareHandler.AccessShareLink)
 		r.Get("/share/{code}/info", shareHandler.GetShareInfo)
 		r.Get("/share/{code}/download", shareHandler.ShareFileDownload)
+		r.Post("/share/{code}/upload", shareHandler.ShareFileUpload)
+		r.Post("/share/{code}/save", shareHandler.SaveToMyDrive)
+		r.Get("/share/{code}/qrcode", shareHandler.ShareQRCode)
 		r.Get("/files/shares/access/{code}", shareHandler.VerifySharePassword)
 
 		// File preview (optional auth for <img> tags)

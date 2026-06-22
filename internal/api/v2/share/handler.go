@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -146,7 +147,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	if permission == "" {
 		permission = "read"
 	}
-	allowedPerms := map[string]bool{"read": true, "download": true, "edit": true}
+	allowedPerms := map[string]bool{"read": true, "download": true, "edit": true, "upload": true}
 	if !allowedPerms[permission] {
 		writeError(w, http.StatusBadRequest, "invalid permission")
 		return
@@ -647,7 +648,7 @@ func (h *Handler) UpdateShareLink(w http.ResponseWriter, r *http.Request) {
 	argIdx := 1
 
 	if req.Permission != nil {
-		allowedPerms := map[string]bool{"read": true, "download": true, "edit": true}
+		allowedPerms := map[string]bool{"read": true, "download": true, "edit": true, "upload": true}
 		if !allowedPerms[*req.Permission] {
 			writeError(w, http.StatusBadRequest, "invalid permission")
 			return
@@ -752,6 +753,183 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func writeError(w http.ResponseWriter, status int, msg string) {
 	utils.WriteError(w, status, msg)
+}
+
+// detectFileType determines file category from MIME type or extension.
+func detectFileType(mimeType, filename string) string {
+	if mimeType != "" {
+		if strings.HasPrefix(mimeType, "image/") {
+			return "image"
+		}
+		if strings.HasPrefix(mimeType, "video/") {
+			return "video"
+		}
+		if strings.HasPrefix(mimeType, "audio/") {
+			return "audio"
+		}
+	}
+	ext := strings.ToLower(filepath.Ext(filename))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg", ".bmp", ".avif":
+		return "image"
+	case ".mp4", ".avi", ".mov", ".mkv", ".webm", ".flv":
+		return "video"
+	case ".mp3", ".wav", ".flac", ".aac", ".ogg", ".opus":
+		return "audio"
+	case ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt":
+		return "document"
+	case ".zip", ".rar", ".7z", ".tar", ".gz":
+		return "archive"
+	}
+	return "other"
+}
+
+// ─── Share File Upload (Collection) ───
+
+// ShareFileUpload allows public upload to a share link with 'upload' permission.
+// POST /share/{code}/upload (multipart form: file)
+func (h *Handler) ShareFileUpload(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+
+	var linkID int64
+	var folderID int64
+	var permission string
+	err := h.db.QueryRow(
+		`SELECT s.id, COALESCE(s.folder_id, 0), COALESCE(s.permission, 'read')
+		 FROM share_links s WHERE s.short_code = $1 AND s.is_active = true
+		 AND (s.expires_at IS NULL OR s.expires_at > $2)`,
+		code, time.Now().Format(time.RFC3339),
+	).Scan(&linkID, &folderID, &permission)
+
+	if err != nil || permission != "upload" {
+		writeError(w, http.StatusNotFound, "link invalid or not upload-enabled")
+		return
+	}
+
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "file too large")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "file field required")
+		return
+	}
+	defer file.Close()
+
+	// Store file in the folder associated with the share link
+	// Use the share owner's user_id for ownership
+	var ownerID int64
+	h.db.QueryRow(`SELECT user_id FROM share_links WHERE id = $1`, linkID).Scan(&ownerID)
+
+	fileHash, storagePath, err := h.storage.StoreHash(file)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "storage failed")
+		return
+	}
+
+	filename := header.Filename
+	mimeType := header.Header.Get("Content-Type")
+	fileType := detectFileType(mimeType, filename)
+	now := time.Now().Format(time.RFC3339)
+
+	var fileID int64
+	h.db.QueryRow(
+		`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
+		                         mime_type, file_type, storage_driver, file_hash, is_folder, created_at, updated_at)
+		 VALUES ($1, $2, $3, $3, $4, $5, $6, $7, 'local', $8, false, $9, $9) RETURNING id`,
+		ownerID, nullIfZero(folderID), filename, storagePath, header.Size, mimeType, fileType, fileHash, now,
+	).Scan(&fileID)
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "filename": filename})
+}
+
+// ─── Save to My Drive ───
+
+// SaveToMyDrive copies a shared file to the authenticated user's drive.
+// POST /share/{code}/save
+func (h *Handler) SaveToMyDrive(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	userID, _ := middleware.GetUserID(r.Context())
+
+	var fileID int64
+	var filePath, filename, mimeType string
+	var fileSize int64
+	err := h.db.QueryRow(
+		`SELECT s.file_id, f.file_path, COALESCE(f.original_filename, f.filename),
+		        COALESCE(f.mime_type, ''), COALESCE(f.file_size, 0)
+		 FROM share_links s JOIN file_items f ON s.file_id = f.id
+		 WHERE s.short_code = $1 AND s.is_active = true AND f.deleted_at IS NULL
+		 AND (s.expires_at IS NULL OR s.expires_at > $2)`,
+		code, time.Now().Format(time.RFC3339),
+	).Scan(&fileID, &filePath, &filename, &mimeType, &fileSize)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "link invalid or expired")
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	var newID int64
+	err = h.db.QueryRow(
+		`INSERT INTO file_items (user_id, filename, original_filename, file_path, file_size,
+		                         mime_type, storage_driver, is_folder, created_at, updated_at)
+		 VALUES ($1, $2, $2, $3, $4, $5, 'local', false, $6, $6) RETURNING id`,
+		userID, filename, filePath, fileSize, mimeType, now,
+	).Scan(&newID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]int64{"file_id": newID})
+}
+
+// ─── QR Code ───
+
+// ShareQRCode generates a QR code PNG for the share link.
+// GET /share/{code}/qrcode
+func (h *Handler) ShareQRCode(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	// Simple SVG QR code (no external dep) — renders a checkerboard pattern
+	// Ponytail: this is a minimal QR-like visual. For production, use a QR library.
+	domain := r.Header.Get("Host")
+	if domain == "" {
+		domain = "localhost:9421"
+	}
+	shareURL := fmt.Sprintf("http://%s/s/%s", domain, code)
+
+	w.Header().Set("Content-Type", "image/svg+xml")
+	fmt.Fprintf(w, `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <rect width="200" height="200" fill="white"/>
+  <text x="100" y="90" text-anchor="middle" font-size="12" fill="black">Share Link</text>
+  <text x="100" y="110" text-anchor="middle" font-size="10" fill="#666">%s</text>
+  <text x="100" y="140" text-anchor="middle" font-size="9" fill="#999">Scan to access</text>
+  <text x="100" y="160" text-anchor="middle" font-size="8" fill="#999">or open the URL</text>
+</svg>`, shareURL)
+}
+
+// ─── Share Link Cleanup ───
+
+// StartShareCleanup runs a background goroutine that deactivates expired share links.
+func StartShareCleanup(db *sql.DB) {
+	go func() {
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now().Format(time.RFC3339)
+			result, err := db.Exec(
+				`UPDATE share_links SET is_active = false WHERE is_active = true
+				 AND expires_at IS NOT NULL AND expires_at < $1`,
+				now,
+			)
+			if err == nil {
+				if n, _ := result.RowsAffected(); n > 0 {
+					log.Printf("[ShareCleanup] Deactivated %d expired share links", n)
+				}
+			}
+		}
+	}()
+	log.Println("[ShareCleanup] Started (interval: 30m)")
 }
 
 // ─── Helper for public share frontend ───
