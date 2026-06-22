@@ -52,6 +52,19 @@ export interface FolderChildrenResponse {
   path: { id: number; name: string }[];
 }
 
+export interface PathFolderItem {
+  id: number;
+  name: string;
+  path: string;
+}
+
+export interface PathChildrenResponse {
+  folders: PathFolderItem[];
+  files: FileItem[];
+  path: string[];
+  folder_id: number;
+}
+
 // ─── File CRUD ───
 
 export const listFiles = (params?: {
@@ -105,6 +118,12 @@ export const getFolderChildren = (id: number): Promise<FolderChildrenResponse> =
 
 export const getFolderTree = (): Promise<Folder[]> =>
   api.get('/files/folders/tree');
+
+export const getFolderChildrenByPath = (path: string): Promise<PathChildrenResponse> =>
+  api.get(`/files/folders/by-path?path=${encodeURIComponent(path.replace(/^\//, ''))}`);
+
+export const createFolderByPath = (name: string, parentPath: string): Promise<{ id: number; name: string; path: string }> =>
+  api.post('/files/folders/by-path', { name, parent_path: parentPath.replace(/^\//, '') });
 
 // ─── Move ───
 

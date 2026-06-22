@@ -10,7 +10,9 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/storage"
@@ -18,14 +20,34 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+const (
+	maxPathDepth = 50
+	maxPathLen   = 4096
+	maxSegLen    = 255
+	cacheTTL     = 10 * time.Second
+)
+
 type Handler struct {
 	db      *sql.DB
 	storage storage.Driver
 	tempDir string
+
+	pathCache   map[string]pathCacheEntry
+	pathCacheMu sync.RWMutex
+}
+
+type pathCacheEntry struct {
+	folderID  int64
+	expiresAt time.Time
 }
 
 func NewHandler(db *sql.DB, store storage.Driver, tempDir string) *Handler {
-	return &Handler{db: db, storage: store, tempDir: tempDir}
+	return &Handler{
+		db:        db,
+		storage:   store,
+		tempDir:   tempDir,
+		pathCache: make(map[string]pathCacheEntry),
+	}
 }
 
 // ---------- File CRUD ----------
@@ -882,4 +904,382 @@ func detectFileType(mimeType, filename string) string {
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	utils.WriteJSON(w, status, data)
+}
+
+// ─── Path Helpers ───
+
+func validateFolderPath(raw string) ([]string, error) {
+	cleaned := strings.Trim(raw, "/")
+	if len(cleaned) > maxPathLen {
+		return nil, fmt.Errorf("path too long")
+	}
+	if !utf8.ValidString(cleaned) {
+		return nil, fmt.Errorf("invalid utf-8")
+	}
+	if cleaned == "" {
+		return nil, nil
+	}
+	segs := strings.Split(cleaned, "/")
+	if len(segs) > maxPathDepth {
+		return nil, fmt.Errorf("path too deep")
+	}
+	for _, s := range segs {
+		if s == "" {
+			continue
+		}
+		if s == "." || s == ".." {
+			return nil, fmt.Errorf("invalid path segment")
+		}
+		if len(s) > maxSegLen {
+			return nil, fmt.Errorf("segment too long")
+		}
+		if strings.ContainsAny(s, "\x00/\\") {
+			return nil, fmt.Errorf("invalid characters in segment")
+		}
+	}
+	return segs, nil
+}
+
+func validateFolderName(name string) error {
+	if name == "" || len(name) > maxSegLen {
+		return fmt.Errorf("name length invalid")
+	}
+	if name == "." || name == ".." {
+		return fmt.Errorf("invalid folder name")
+	}
+	if strings.ContainsAny(name, "/\\\x00") {
+		return fmt.Errorf("name contains invalid characters")
+	}
+	if !utf8.ValidString(name) {
+		return fmt.Errorf("invalid utf-8")
+	}
+	return nil
+}
+
+// --- Path Cache ---
+
+func (h *Handler) cacheKey(userID int64, path string) string {
+	return fmt.Sprintf("%d:%s", userID, path)
+}
+
+func (h *Handler) getCachedPath(userID int64, path string) (int64, bool) {
+	h.pathCacheMu.RLock()
+	defer h.pathCacheMu.RUnlock()
+	entry, ok := h.pathCache[h.cacheKey(userID, path)]
+	if !ok || time.Now().After(entry.expiresAt) {
+		return 0, false
+	}
+	return entry.folderID, true
+}
+
+func (h *Handler) setCachedPath(userID int64, path string, folderID int64) {
+	h.pathCacheMu.Lock()
+	defer h.pathCacheMu.Unlock()
+	h.pathCache[h.cacheKey(userID, path)] = pathCacheEntry{
+		folderID:  folderID,
+		expiresAt: time.Now().Add(cacheTTL),
+	}
+}
+
+func (h *Handler) invalidateUserCache(userID int64) {
+	h.pathCacheMu.Lock()
+	defer h.pathCacheMu.Unlock()
+	prefix := fmt.Sprintf("%d:", userID)
+	for k := range h.pathCache {
+		if strings.HasPrefix(k, prefix) {
+			delete(h.pathCache, k)
+		}
+	}
+}
+
+// --- In-memory folder tree builder ---
+
+type folderNode struct {
+	ID       int64
+	Name     string
+	ParentID int64
+}
+
+// loadFolderTree loads all user folders and builds lookup maps.
+// Returns: nameOf[id], childrenOf[parentID], roots, error
+func (h *Handler) loadFolderTree(userID int64) (map[int64]string, map[int64][]int64, []int64, error) {
+	rows, err := h.db.Query(
+		`SELECT id, COALESCE(parent_id,0), name FROM folders WHERE user_id = $1`,
+		userID,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer rows.Close()
+
+	nameOf := make(map[int64]string)
+	childrenOf := make(map[int64][]int64)
+	var roots []int64
+
+	for rows.Next() {
+		var n folderNode
+		if err := rows.Scan(&n.ID, &n.ParentID, &n.Name); err != nil {
+			return nil, nil, nil, err
+		}
+		nameOf[n.ID] = n.Name
+		if n.ParentID == 0 {
+			roots = append(roots, n.ID)
+		} else {
+			childrenOf[n.ParentID] = append(childrenOf[n.ParentID], n.ID)
+		}
+	}
+	return nameOf, childrenOf, roots, rows.Err()
+}
+
+// resolvePath resolves a validated path to a folder ID, using cache when available.
+func (h *Handler) resolvePath(userID int64, segments []string, nameOf map[int64]string, childrenOf map[int64][]int64, roots []int64) (int64, error) {
+	if len(segments) == 0 {
+		return 0, nil // root
+	}
+	pathStr := strings.Join(segments, "/")
+	if cached, ok := h.getCachedPath(userID, pathStr); ok {
+		return cached, nil
+	}
+	curIDs := roots
+	var resolvedID int64
+	for _, seg := range segments {
+		if len(curIDs) == 0 {
+			return 0, fmt.Errorf("path not found")
+		}
+		found := false
+		for _, cid := range curIDs {
+			if nameOf[cid] == seg {
+				resolvedID = cid
+				curIDs = childrenOf[cid]
+				found = true
+				break
+			}
+		}
+		if !found {
+			return 0, fmt.Errorf("path not found")
+		}
+	}
+	h.setCachedPath(userID, pathStr, resolvedID)
+	return resolvedID, nil
+}
+
+// buildChildPath constructs the child's full path from parent path + child name.
+func buildChildPath(parentPath, childName string) string {
+	if parentPath == "" || parentPath == "/" {
+		return "/" + childName
+	}
+	return strings.TrimRight(parentPath, "/") + "/" + childName
+}
+
+// ─── Path-based Handlers ───
+
+// GetFolderChildrenByPath returns folder children resolved by path instead of ID.
+// GET /files/folders/by-path?path=文档/设计
+func (h *Handler) GetFolderChildrenByPath(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	rawPath := r.URL.Query().Get("path")
+
+	segments, err := validateFolderPath(rawPath)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	nameOf, childrenOf, roots, err := h.loadFolderTree(userID)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+
+	folderID, err := h.resolvePath(userID, segments, nameOf, childrenOf, roots)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "path not found"})
+		return
+	}
+
+	// Build breadcrumb from segments
+	breadcrumb := []string{"我的文件"}
+	for _, seg := range segments {
+		breadcrumb = append(breadcrumb, seg)
+	}
+
+	// Fetch child folders
+	type FolderItem struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+		Path string `json:"path"`
+	}
+	var folders []FolderItem
+
+	if folderID == 0 {
+		// Root level
+		for _, rid := range roots {
+			folders = append(folders, FolderItem{
+				ID:   rid,
+				Name: nameOf[rid],
+				Path: "/" + nameOf[rid],
+			})
+		}
+	} else {
+		// Non-root: look up children of this folderID from the tree
+		for _, cid := range childrenOf[folderID] {
+			folders = append(folders, FolderItem{
+				ID:   cid,
+				Name: nameOf[cid],
+				Path: buildChildPath(strings.Join(segments, "/"), nameOf[cid]),
+			})
+		}
+	}
+
+	// Fetch child files
+	type FileItem struct {
+		ID        int64   `json:"id"`
+		Filename  *string `json:"filename"`
+		FileSize  *int64  `json:"file_size"`
+		MimeType  *string `json:"mime_type"`
+		FileType  *string `json:"file_type"`
+		IsFav     *bool   `json:"is_favorite"`
+		ThumbURL  *string `json:"thumbnail_url"`
+		FolderID  *int64  `json:"folder_id"`
+		CreatedAt *string `json:"created_at"`
+		UpdatedAt *string `json:"updated_at"`
+	}
+	var files []FileItem
+	if folderID == 0 {
+		rows, err := h.db.Query(
+			`SELECT id, filename, file_size, mime_type, file_type, is_favorite, thumbnail_url, folder_id, created_at, updated_at
+			 FROM file_items WHERE user_id = $1 AND folder_id IS NULL AND deleted_at IS NULL
+			 ORDER BY created_at DESC`, userID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var f FileItem
+				rows.Scan(&f.ID, &f.Filename, &f.FileSize, &f.MimeType, &f.FileType, &f.IsFav, &f.ThumbURL, &f.FolderID, &f.CreatedAt, &f.UpdatedAt)
+				files = append(files, f)
+			}
+		}
+	} else {
+		rows, err := h.db.Query(
+			`SELECT id, filename, file_size, mime_type, file_type, is_favorite, thumbnail_url, folder_id, created_at, updated_at
+			 FROM file_items WHERE user_id = $1 AND folder_id = $2 AND deleted_at IS NULL
+			 ORDER BY created_at DESC`, userID, folderID)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var f FileItem
+				rows.Scan(&f.ID, &f.Filename, &f.FileSize, &f.MimeType, &f.FileType, &f.IsFav, &f.ThumbURL, &f.FolderID, &f.CreatedAt, &f.UpdatedAt)
+				files = append(files, f)
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"folders":    folders,
+		"files":      files,
+		"path":       breadcrumb,
+		"folder_id":  folderID,
+	})
+}
+
+// CreateFolderByPath creates a folder using path-based parent reference.
+// POST /files/folders/by-path
+func (h *Handler) CreateFolderByPath(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+
+	var req struct {
+		Name       string `json:"name"`
+		ParentPath string `json:"parent_path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid json"})
+		return
+	}
+
+	if err := validateFolderName(req.Name); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	segments, err := validateFolderPath(req.ParentPath)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	// Load and resolve parent path inside a transaction
+	tx, err := h.db.Begin()
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "transaction failed")
+		return
+	}
+	defer tx.Rollback()
+
+	// Build tree from tx
+	rows, err := tx.Query(
+		`SELECT id, COALESCE(parent_id,0), name FROM folders WHERE user_id = $1`, userID)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	nameOf := make(map[int64]string)
+	childrenOf := make(map[int64][]int64)
+	var roots []int64
+	for rows.Next() {
+		var n folderNode
+		rows.Scan(&n.ID, &n.ParentID, &n.Name)
+		nameOf[n.ID] = n.Name
+		if n.ParentID == 0 {
+			roots = append(roots, n.ID)
+		} else {
+			childrenOf[n.ParentID] = append(childrenOf[n.ParentID], n.ID)
+		}
+	}
+	rows.Close()
+
+	parentID, resolveErr := h.resolvePath(userID, segments, nameOf, childrenOf, roots)
+	if resolveErr != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "parent path not found"})
+		return
+	}
+
+	// Verify parent still exists
+	var exists int
+	if parentID > 0 {
+		err = tx.QueryRow(`SELECT 1 FROM folders WHERE id = $1 AND user_id = $2`, parentID, userID).Scan(&exists)
+		if err != nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "parent folder no longer exists"})
+			return
+		}
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	var newID int64
+	var parentPtr *int64
+	if parentID > 0 {
+		parentPtr = &parentID
+	}
+	err = tx.QueryRow(
+		`INSERT INTO folders (user_id, parent_id, name, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $4) RETURNING id`,
+		userID, parentPtr, req.Name, now,
+	).Scan(&newID)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "create failed")
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+
+	// Invalidate cache
+	h.invalidateUserCache(userID)
+
+	childPath := buildChildPath(req.ParentPath, req.Name)
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"id":   newID,
+		"name": req.Name,
+		"path": childPath,
+	})
 }

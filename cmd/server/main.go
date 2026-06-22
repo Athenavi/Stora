@@ -200,6 +200,8 @@ func main() {
 
 			// Folders
 			r.Get("/files/folders/tree", fileHandler.ListFolders)
+			r.Get("/files/folders/by-path", fileHandler.GetFolderChildrenByPath)
+			r.Post("/files/folders/by-path", fileHandler.CreateFolderByPath)
 			r.Get("/files/folders/{id}/children", fileHandler.GetFolderChildren)
 			r.Post("/files/folders", fileHandler.CreateFolder)
 			r.Delete("/files/folders/{id}", fileHandler.DeleteFolder)

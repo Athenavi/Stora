@@ -3,33 +3,36 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, type FileItem, type Folder } from "~/lib/api";
+import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, type PathChildrenResponse, type FileItem } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Input } from "~/components/ui/Button";
 
 export const useFileList = routeLoader$(async ({ url, request }) => {
-  const folderId = url.searchParams.get("folder");
+  const folderPath = url.searchParams.get("Path") || "";
   const search = url.searchParams.get("search");
   const fileType = url.searchParams.get("type");
   const sortBy = url.searchParams.get("sort_by") || "created_at";
   const sortOrder = url.searchParams.get("sort_order") || "desc";
   const api = createServerApi(request);
 
-  if (folderId) {
-    const d = await api.get(`/files/folders/${folderId}/children`).catch(() => null);
-    return d || { folders: [], files: [], path: [{ id: 0, name: "我的文件" }] };
+  if (folderPath !== "") {
+    const d = await api.get<PathChildrenResponse>(`/files/folders/by-path?path=${encodeURIComponent(folderPath.replace(/^\//, ''))}`).catch(() => null);
+    if (!d) return { folders: [], files: [], path: ["我的文件"] };
+    // Map folders to include full path for navigation
+    const mappedFolders = d.folders.map(f => ({ ...f, id: f.id, name: f.name, path: f.path }));
+    return { folders: mappedFolders, files: d.files, path: d.path };
   }
   if (search) {
     const d = await api.get(`/files/search?q=${encodeURIComponent(search)}&page=1&page_size=50`).catch(() => null);
     if (!d) return null;
     const folders = (d.items || []).filter((x: any) => x.is_folder || x.file_type === "folder");
     const fileItems = (d.items || []).filter((x: any) => !x.is_folder && x.file_type !== "folder");
-    return { folders, files: fileItems, path: [{ id: 0, name: `搜索: ${search}` }] };
+    return { folders, files: fileItems, path: [`搜索: ${search}`] };
   }
   const typeParam = fileType ? `&file_type=${fileType}` : "";
   const sortParam = `&sort_by=${sortBy}&sort_order=${sortOrder}`;
   const files = await api.get(`/files?page=1&page_size=50${typeParam}${sortParam}`).catch(() => null);
-  return files ? { folders: [], files: files.items, path: [{ id: 0, name: "我的文件" }] } : null;
+  return files ? { folders: [], files: files.items, path: ["我的文件"] } : null;
 });
 
 function fmtSize(b: number): string {
@@ -51,12 +54,18 @@ export default component$(() => {
   const data = useFileList();
   const nav = useNavigate();
   const loc = useLocation();
-  const folderId = loc.url.searchParams.get("folder") ? Number(loc.url.searchParams.get("folder")) : undefined;
+  const currentPath = loc.url.searchParams.get("Path") || "";
+  const resolvedFolderId = useSignal<number | undefined>(undefined);
 
-  const allItems: ({ t: "f" } & Folder | { t: "d" } & FileItem)[] = [];
+  const allItems: ({ t: "f" } & { id: number; name: string; path?: string } | { t: "d" } & FileItem)[] = [];
   if (data.value) {
     for (const f of data.value.folders || []) allItems.push({ t: "f" as const, ...f });
     for (const f of data.value.files || []) allItems.push({ t: "d" as const, ...f });
+    // Extract folder_id from the path-based response
+    const pathData = data.value as any;
+    if (pathData.folder_id !== undefined) {
+      resolvedFolderId.value = pathData.folder_id;
+    }
   }
 
   const viewMode = useSignal<"list" | "grid">("list");
@@ -138,7 +147,7 @@ export default component$(() => {
     }
   });
 
-  const refresh = () => { location.href = `/drive${folderId ? `?folder=${folderId}` : ""}`; };
+  const refresh = () => { location.href = `/drive${currentPath ? `?Path=${encodeURIComponent(currentPath)}` : ""}`; };
 
   return (
     <div class="flex flex-col h-full">
@@ -229,14 +238,14 @@ export default component$(() => {
           onDragLeave$={() => document.getElementById("drop-hint")!.classList.add("hidden")}
           onDrop$={async (e: DragEvent) => {
             document.getElementById("drop-hint")!.classList.add("hidden");
-            for (const f of e.dataTransfer?.files || []) await uploadFile(f, folderId).catch(() => {});
+            for (const f of e.dataTransfer?.files || []) await uploadFile(f, resolvedFolderId.value).catch(() => {});
             refresh();
           }}
         >
           <div id="drop-hint" class="hidden border-2 border-dashed border-indigo-300 bg-indigo-50 rounded-xl p-4 text-center text-indigo-600 text-sm mb-3">📥 释放以上传文件</div>
           <div class="flex items-center gap-3">
             <input type="file" multiple class="text-sm" onChange$={async (e: any) => {
-              for (const f of e.target.files || []) await uploadFile(f, folderId).catch(() => {});
+              for (const f of e.target.files || []) await uploadFile(f, resolvedFolderId.value).catch(() => {});
               refresh();
             }} />
             <span class="text-xs text-slate-400">或拖拽文件到上方虚线区域</span>
@@ -246,23 +255,28 @@ export default component$(() => {
 
       {/* Breadcrumb */}
       <div class="flex items-center gap-1.5 px-6 py-2.5 text-sm border-b border-stora-border bg-white shrink-0 overflow-x-auto">
-        {folderId && (
+        {currentPath && (
           <button onClick$={() => {
-            const idx = (data.value?.path || []).findIndex(p => p.id === folderId);
-            const parent = idx > 0 ? data.value?.path[idx - 1] : null;
-            nav(parent ? `/drive?folder=${parent.id}` : "/drive");
-          }} class="flex items-center gap-1 px-2 py-1 rounded text-slate-500 hover:text-indigo-600 hover:bg-slate-100 transition-colors mr-1 shrink-0 touch-target">
-            <Icon name="chevronLeft" size={14} /> 返回
+            const segments = currentPath.split("/").filter(Boolean);
+            segments.pop();
+            const parentPath = segments.join("/");
+            nav(parentPath ? `/drive?Path=${encodeURIComponent(parentPath)}` : "/drive");
+          }} class="flex items-center gap-1 px-2 py-1 text-stora-muted-foreground hover:text-stora-foreground hover:bg-stora-muted mr-1 shrink-0 touch-target">
+            <span>←</span> 返回
           </button>
         )}
-        <a href="/drive" class="text-slate-500 hover:text-indigo-600 font-medium shrink-0">我的文件</a>
-        {data.value?.path?.slice(1).map(p => (
-          <span class="flex items-center gap-1.5 min-w-0" key={p.id}>
-            <Icon name="chevronRight" size={14} class="text-slate-300 shrink-0" />
-            <a href={`/drive?folder=${p.id}`} class="text-slate-500 hover:text-indigo-600 truncate">{p.name}</a>
-          </span>
-        ))}
-        {allItems.length > 0 && <><Icon name="chevronRight" size={14} class="text-slate-300 shrink-0" /><span class="text-slate-400 shrink-0">{allItems.length} 项</span></>}
+        <a href="/drive" class="text-stora-muted-foreground hover:text-stora-foreground font-medium shrink-0">我的文件</a>
+        {data.value?.path?.slice(1).map((p: string, i: number) => {
+          const segments = currentPath.split("/").filter(Boolean);
+          const linkPath = segments.slice(0, i + 1).join("/");
+          return (
+            <span class="flex items-center gap-1.5 min-w-0" key={linkPath}>
+              <span class="text-stora-nav-text shrink-0">/</span>
+              <a href={`/drive?Path=${encodeURIComponent(linkPath)}`} class="text-stora-muted-foreground hover:text-stora-foreground truncate">{p}</a>
+            </span>
+          );
+        })}
+        {allItems.length > 0 && <><span class="text-stora-nav-text shrink-0">/</span><span class="text-stora-nav-text shrink-0">{allItems.length} 项</span></>}
       </div>
 
       {/* New Folder Dialog */}
@@ -272,11 +286,11 @@ export default component$(() => {
             class="flex-1 max-w-xs px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             onKeyDown$={async (e: any) => {
               if (e.key === "Enter" && newFolderName.value) {
-                try { await createFolder(newFolderName.value, folderId); showNewFolder.value = false; refresh(); } catch {}
+                try { await createFolderByPath(newFolderName.value, currentPath); showNewFolder.value = false; refresh(); } catch {}
               }
             }} />
           <Button size="sm" onClick$={async () => {
-            if (newFolderName.value) { await createFolder(newFolderName.value, folderId).catch(() => {}); showNewFolder.value = false; refresh(); }
+            if (newFolderName.value) { await createFolderByPath(newFolderName.value, currentPath).catch(() => {}); showNewFolder.value = false; refresh(); }
           }}>创建</Button>
           <Button variant="ghost" size="sm" onClick$={() => showNewFolder.value = false}>取消</Button>
         </div>
@@ -302,7 +316,7 @@ export default component$(() => {
       {/* Filter tabs */}
       <div class="flex gap-1 px-6 py-2 border-b border-stora-border bg-white shrink-0 overflow-x-auto scrollbar-thin">
         {["all", "image", "video", "audio", "document", "archive"].map(ft => (
-          <button key={ft} onClick$={() => { const p = folderId ? `?folder=${folderId}${ft !== "all" ? `&type=${ft}` : ""}` : `${ft !== "all" ? `?type=${ft}` : ""}`; nav(`/drive${p}`); }}
+          <button key={ft} onClick$={() => { const p = currentPath ? `?Path=${encodeURIComponent(currentPath)}${ft !== "all" ? `&type=${ft}` : ""}` : `${ft !== "all" ? `?type=${ft}` : ""}`; nav(`/drive${p}`); }}
             class={`px-3 py-1.5 text-xs font-medium whitespace-nowrap touch-target ${(!loc.url.searchParams.get("type") && ft === "all") || loc.url.searchParams.get("type") === ft ? "bg-stora-primary text-white" : "text-stora-muted-foreground hover:text-stora-foreground hover:bg-stora-muted"}`}>
             {{ all: "全部", image: "🖼 图片", video: "🎬 视频", audio: "🎵 音频", document: "📄 文档", archive: "📦 压缩包", other: "📎 其他" }[ft] || ft}
           </button>
@@ -320,8 +334,8 @@ export default component$(() => {
             <p class="text-sm text-stora-muted-foreground mb-6">拖拽文件到此处，或点击上传按钮</p>
             <button onClick$={() => showUpload.value = true} class="px-6 py-3 bg-stora-primary text-white text-sm font-medium">上传文件</button>
           </div>
-        ) : viewMode.value === "list" ? <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} folderId={folderId}
-          onContextItem$={(item: any, e: any) => openCtx(item, e)} /> : <GridView items={allItems} selIds={selIds} nav={nav} folderId={folderId}
+        ) : viewMode.value === "list" ? <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} currentPath={currentPath}
+          onContextItem$={(item: any, e: any) => openCtx(item, e)} /> : <GridView items={allItems} selIds={selIds} nav={nav} currentPath={currentPath}
           onContextItem$={(item: any, e: any) => openCtx(item, e)} />}
       </div>
 
@@ -353,7 +367,7 @@ export default component$(() => {
               </>
             ) : (
               <>
-                <button onClick$={() => { nav(`/drive?folder=${ctxItem.value!.id}`); ctxItem.value = null; }}
+                <button onClick$={() => { nav(`/drive?Path=${encodeURIComponent(item.path || ctxItem.value!.name)}`); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📂 打开</button>
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">✏ 重命名</button>
@@ -398,7 +412,7 @@ export default component$(() => {
               </div>
             ) : (
               <div class="space-y-1">
-                <button onClick$={() => { nav(`/drive?folder=${ctxItem.value!.id}`); ctxItem.value = null; showActionSheet.value = false; }}
+                <button onClick$={() => { const p = (ctxItem.value as any)?.path || ctxItem.value!.name; nav(`/drive?Path=${encodeURIComponent(p)}`); ctxItem.value = null; showActionSheet.value = false; }}
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">📂 打开</button>
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; showActionSheet.value = false; }}
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">✏ 重命名</button>
@@ -546,7 +560,7 @@ export default component$(() => {
 
 // ─── List View ───
 
-export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; folderId?: number; onContextItem$?: any }>(({ items, selIds, renameId, renameVal, nav, folderId, onContextItem$ }) => {
+export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any }>(({ items, selIds, renameId, renameVal, nav, currentPath, onContextItem$ }) => {
   const sortBy = useSignal("");
   const sortOrder = useSignal("");
   const loc = useLocation();
@@ -591,7 +605,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
                 <input type="checkbox" checked={sel}
                   onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" />
               </td>
-              <td class="px-2 cursor-pointer" onClick$={() => nav(`/drive?folder=${item.id}`)}>
+              <td class="px-2 cursor-pointer" onClick$={() => nav(`/drive?Path=${encodeURIComponent(item.path || item.name)}`)}>
                 <div class="flex items-center gap-3">
                   <div class="w-7 h-7 flex items-center justify-center text-sm shrink-0">📁</div>
                   <span class="text-sm font-medium text-stora-foreground">{item.name}</span>
@@ -633,11 +647,11 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
 
 // ─── Grid View ───
 
-export const GridView = component$<{ items: any[]; selIds: any; nav: any; folderId?: number; onContextItem$?: any }>(({ items, selIds, nav, onContextItem$ }) => (
+export const GridView = component$<{ items: any[]; selIds: any; nav: any; currentPath?: string; onContextItem$?: any }>(({ items, selIds, nav, onContextItem$ }) => (
   <div class="card-grid p-6">
     {items.map((item: any) => {
       if (item.t === "f") return (
-        <div key={`f-${item.id}`} draggable onClick$={() => nav(`/drive?folder=${item.id}`)}
+        <div key={`f-${item.id}`} draggable onClick$={() => nav(`/drive?Path=${encodeURIComponent(item.path || item.name)}`)}
           onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
           onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}
           class="bg-stora-card border border-stora-border hover:border-stora-accent cursor-pointer p-3">
