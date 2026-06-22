@@ -72,6 +72,10 @@ export default component$(() => {
   const showMoveDialog = useSignal(false);
   const showShareDialog = useSignal(false);
   const shareResult = useSignal<{ code: string; url: string }[]>([]);
+  const sharePermission = useSignal<"read" | "download">("read");
+  const sharePassword = useSignal("");
+  const shareExpiry = useSignal<number | null>(null); // hours, null=永久
+  const shareCreating = useSignal(false);
   const moveTargetId = useSignal<number | undefined>(undefined);
   const moveTree = useSignal<any[]>([]);
   const moveTreeLoading = useSignal(false);
@@ -448,22 +452,54 @@ export default component$(() => {
       {showShareDialog.value && (
         <>
           <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => { showShareDialog.value = false; shareResult.value = []; }} />
-          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col p-5">
-            <h3 class="text-sm font-semibold text-slate-900 mb-3">批量分享</h3>
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col p-5 max-h-[85vh] overflow-auto">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">批量分享 ({selIds.value.length} 项)</h3>
             {shareResult.value.length === 0 ? (
               <>
-                <p class="text-xs text-slate-500 mb-4">将为 {selIds.value.length} 个文件创建分享链接</p>
+                {/* Permission */}
+                <label class="text-xs font-medium text-slate-700 mb-1">权限</label>
+                <div class="flex gap-2 mb-3">
+                  <button onClick$={() => sharePermission.value = "read"}
+                    class={`flex-1 touch-target px-3 py-2 text-xs font-medium rounded-lg transition-colors ${sharePermission.value === "read" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>仅查看</button>
+                  <button onClick$={() => sharePermission.value = "download"}
+                    class={`flex-1 touch-target px-3 py-2 text-xs font-medium rounded-lg transition-colors ${sharePermission.value === "download" ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>可下载</button>
+                </div>
+
+                {/* Expiry */}
+                <label class="text-xs font-medium text-slate-700 mb-1">有效期</label>
+                <div class="flex gap-2 mb-3 flex-wrap">
+                  {[
+                    { label: "1天", value: 24 },
+                    { label: "7天", value: 168 },
+                    { label: "30天", value: 720 },
+                    { label: "永久", value: null },
+                  ].map(opt => (
+                    <button key={opt.label} onClick$={() => shareExpiry.value = opt.value}
+                      class={`touch-target px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${shareExpiry.value === opt.value ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>{opt.label}</button>
+                  ))}
+                </div>
+
+                {/* Password */}
+                <label class="text-xs font-medium text-slate-700 mb-1">密码保护（可选）</label>
+                <input type="text" bind:value={sharePassword} placeholder="设置访问密码"
+                  class="w-full mb-4 px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+
                 <button onClick$={async () => {
+                  shareCreating.value = true;
                   const results: { code: string; url: string }[] = [];
+                  const params: any = { permission: sharePermission.value };
+                  if (sharePassword.value) params.password = sharePassword.value;
+                  if (shareExpiry.value) params.expires_in_hours = shareExpiry.value;
                   for (const id of selIds.value) {
                     try {
-                      const link = await createShare({ file_id: id, permission: 'read' });
+                      const link = await createShare({ ...params, file_id: id } as any);
                       results.push({ code: link.short_code, url: `${window.location.origin}/s/${link.short_code}` });
                     } catch {}
                   }
                   shareResult.value = results;
-                }} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors text-center">
-                  创建分享链接
+                  shareCreating.value = false;
+                }} disabled={shareCreating.value} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors text-center disabled:opacity-50">
+                  {shareCreating.value ? "创建中..." : "创建分享链接"}
                 </button>
                 <button onClick$={() => { showShareDialog.value = false; shareResult.value = []; }}
                   class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50 transition-colors text-center">取消</button>

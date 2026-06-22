@@ -1,18 +1,40 @@
 /**
- * Stora Share Receiving Page — public file access
+ * Stora Share Receiving Page — public file/folder access
  * Route: /s/[code]
  */
 import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useLocation } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
-import { Button, Input } from "~/components/ui/Button";
-import { api, createServerApi } from "~/lib/api";
+import { Button } from "~/components/ui/Button";
+import { createServerApi } from "~/lib/api";
+
+interface FolderItem {
+  id: number;
+  filename: string;
+  file_size: number;
+  file_type: string;
+}
+
+interface SubFolder {
+  id: number;
+  name: string;
+}
+
+interface ShareInfo {
+  id: number;
+  short_code: string;
+  permission: string;
+  password_protected: boolean;
+  is_folder?: boolean;
+}
 
 interface ShareAccess {
-  share_info: { short_code: string; permission: string; password_protected: boolean; download_count: number; max_downloads: number };
-  item: { id?: number; filename?: string; file_size?: number; file_type?: string; mime_type?: string; name?: string; thumbnail_url?: string };
+  share_info: ShareInfo;
+  item: { id?: number; filename?: string; file_size?: number; file_type?: string; mime_type?: string; name?: string; is_folder?: boolean };
   need_password?: boolean;
   protected?: boolean;
+  folders?: SubFolder[];
+  items?: FolderItem[];
 }
 
 export const useShareData = routeLoader$(async ({ params, request }) => {
@@ -28,6 +50,15 @@ function fmtSize(bytes: number | undefined): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + ["B", "KB", "MB", "GB", "TB"][i];
 }
+
+function fmtDate(s: string | undefined | null): string {
+  if (!s) return "";
+  return new Date(s).toLocaleString("zh-CN");
+}
+
+const typeIcon: Record<string, string> = {
+  image: "🖼️", video: "🎬", audio: "🎵", document: "📄", archive: "📦", other: "📎",
+};
 
 export default component$(() => {
   const data = useShareData();
@@ -52,6 +83,7 @@ export default component$(() => {
   const s = shareData.value!;
   const item = s.item || {};
   const isImage = item.file_type === "image";
+  const isFolder = s.share_info?.is_folder || item.is_folder;
 
   if (s.need_password) {
     return (
@@ -66,10 +98,11 @@ export default component$(() => {
           <Button class="w-full" onClick$={async () => {
             loading.value = true; error.value = "";
             try {
-              const res = await api.get<ShareAccess>(`/files/shares/access/${data.value.share_info.short_code}?password=${encodeURIComponent(password.value)}`);
-              if ((res as any).need_password) { error.value = "密码错误"; return; }
-              shareData.value = res;
-            } catch (e: any) { error.value = e.message || "验证失败"; }
+              const res = await (await fetch(`/api/v2/files/shares/access/${shareCode}?password=${encodeURIComponent(password.value)}`)).json();
+              const d = res.data || res;
+              if (d.need_password) { error.value = "密码错误"; return; }
+              shareData.value = d;
+            } catch (e: any) { error.value = "验证失败"; }
             finally { loading.value = false; }
           }} loading={loading.value}>确认</Button>
         </div>
@@ -77,16 +110,73 @@ export default component$(() => {
     );
   }
 
+  if (isFolder) {
+    // Folder view
+    const subFolders = s.folders || [];
+    const files = s.items || [];
+    return (
+      <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
+        <div class="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
+          <div class="p-6">
+            <div class="flex items-center gap-3 mb-4">
+              <div class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-2xl">📁</div>
+              <div>
+                <h1 class="text-lg font-semibold text-slate-900 truncate">{item.filename || "共享文件夹"}</h1>
+                <p class="text-xs text-slate-400">{subFolders.length} 个文件夹 · {files.length} 个文件</p>
+              </div>
+            </div>
+
+            {subFolders.length > 0 && (
+              <div class="mb-4">
+                <p class="text-xs font-medium text-slate-500 mb-2">文件夹</p>
+                <div class="space-y-1">
+                  {subFolders.map(f => (
+                    <div key={f.id} class="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg text-sm text-slate-700">
+                      <span>📁</span>
+                      <span class="truncate">{f.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {files.length > 0 && (
+              <div>
+                <p class="text-xs font-medium text-slate-500 mb-2">文件</p>
+                <div class="space-y-1">
+                  {files.map(f => (
+                    <div key={f.id} class="flex items-center gap-2 px-3 py-2 bg-slate-50 rounded-lg text-sm text-slate-700">
+                      <span>{typeIcon[f.file_type] || "📄"}</span>
+                      <span class="flex-1 truncate">{f.filename}</span>
+                      <span class="text-xs text-slate-400">{fmtSize(f.file_size)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div class="mt-6">
+              <Button class="w-full" variant="primary" onClick$={() => {
+                window.open(`/api/v2/share/${shareCode}/download`, "_blank");
+              }}>
+                <Icon name="download" size={16} /> 下载全部 (ZIP)
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Single file view
   return (
     <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
       <div class="w-full max-w-lg bg-white rounded-2xl shadow-xl overflow-hidden">
-        {/* Preview */}
         <div class="aspect-video bg-slate-100 flex items-center justify-center text-7xl">
           {isImage && item.thumbnail_url ? (
             <img src={item.thumbnail_url} alt="" class="w-full h-full object-cover" />
-          ) : item.file_type === "image" ? "🖼️" : item.file_type === "video" ? "🎬" : item.file_type === "audio" ? "🎵" : item.file_type === "document" ? "📄" : "📦"}
+          ) : typeIcon[item.file_type || ""] || "📄"}
         </div>
-        {/* Info */}
         <div class="p-6">
           <h1 class="text-lg font-semibold text-slate-900 truncate">{item.filename || item.name || "未命名文件"}</h1>
           <div class="flex items-center gap-4 mt-2 text-sm text-slate-500">
@@ -103,7 +193,6 @@ export default component$(() => {
                 <Icon name="download" size={16} /> 下载文件
               </Button>
             )}
-            <span class="text-xs text-slate-400">已下载 {s.share_info.download_count} 次</span>
           </div>
         </div>
       </div>

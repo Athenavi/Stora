@@ -1,9 +1,10 @@
 ﻿/**
- * Stora Share Management — with multi-select batch revoke
+ * Stora Share Management — with multi-select batch revoke, search, filter
  */
 import { component$, useSignal } from "@builder.io/qwik";
-import { routeLoader$ } from "@builder.io/qwik-city";
+import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi, revokeShare, type ShareLink } from "~/lib/api";
+import { Icon } from "~/components/ui/Icon";
 
 interface ShareListResponse {
   items: ShareLink[];
@@ -26,10 +27,35 @@ function permLabel(p: string): string {
   return p === "read" ? "仅查看" : p === "download" ? "可下载" : "可编辑";
 }
 
+function isExpired(s: ShareLink): boolean {
+  if (!s.is_active) return true;
+  if (s.expires_at && new Date(s.expires_at) < new Date()) return true;
+  return false;
+}
+
 export default component$(() => {
   const data = useShareList();
+  const nav = useNavigate();
   const shares = useSignal(data.value.items);
   const selIds = useSignal<number[]>([]);
+  const searchQuery = useSignal("");
+  const filterStatus = useSignal<"all" | "active" | "expired">("all");
+
+  const filteredShares = () => {
+    let list = shares.value;
+    // Search
+    if (searchQuery.value) {
+      const q = searchQuery.value.toLowerCase();
+      list = list.filter(s => s.short_code.toLowerCase().includes(q) || s.filename?.toLowerCase().includes(q));
+    }
+    // Status filter
+    if (filterStatus.value === "active") {
+      list = list.filter(s => !isExpired(s));
+    } else if (filterStatus.value === "expired") {
+      list = list.filter(s => isExpired(s));
+    }
+    return list;
+  };
 
   return (
     <div class="flex flex-col h-full">
@@ -39,6 +65,25 @@ export default component$(() => {
           <p class="text-sm text-slate-500 mt-0.5">管理所有分享链接</p>
         </div>
         <span class="text-sm text-slate-400 bg-slate-100 px-3 py-1 rounded-full shrink-0">{shares.value.length} 个链接</span>
+      </div>
+
+      {/* Search + Filter */}
+      <div class="flex items-center gap-2 px-4 sm:px-6 py-2 border-b border-slate-100 bg-white/80 shrink-0 flex-wrap">
+        <div class="relative flex-1 min-w-[120px] max-w-xs">
+          <Icon name="search" size={14} class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <input type="text" bind:value={searchQuery} placeholder="搜索文件名或链接..."
+            class="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white placeholder:text-slate-400" />
+        </div>
+        <div class="flex gap-1">
+          {(["all", "active", "expired"] as const).map(f => (
+            <button key={f} onClick$={() => filterStatus.value = f}
+              class={`touch-target px-2.5 py-1.5 text-xs font-medium rounded-lg transition-colors ${
+                filterStatus.value === f ? "bg-indigo-100 text-indigo-700" : "text-slate-500 hover:bg-slate-100"
+              }`}>
+              {{ all: "全部", active: "有效", expired: "已失效" }[f]}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Batch action bar */}
@@ -59,16 +104,21 @@ export default component$(() => {
       )}
 
       <div class={`flex-1 overflow-auto scrollbar-thin p-4 sm:p-6 ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
-        {shares.value.length === 0 ? (
+        {filteredShares().length === 0 ? (
           <div class="flex flex-col items-center justify-center h-full text-slate-400">
-            <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl mb-4">🔗</div>
-            <h3 class="text-lg font-medium text-slate-500 mb-1">暂无分享链接</h3>
-            <p class="text-sm">在文件列表中选择文件创建分享</p>
+            <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-3xl mb-4">
+              {searchQuery.value || filterStatus.value !== "all" ? "🔍" : "🔗"}
+            </div>
+            <h3 class="text-lg font-medium text-slate-500 mb-1">
+              {searchQuery.value ? "未找到匹配的分享链接" : filterStatus.value !== "all" ? "暂无该状态的链接" : "暂无分享链接"}
+            </h3>
+            <p class="text-sm">{searchQuery.value ? "尝试其他搜索词" : "在文件列表中选择文件创建分享"}</p>
           </div>
         ) : (
           <div class="space-y-3 animate-stagger">
-            {shares.value.map((s) => {
+            {filteredShares().map((s) => {
               const sel = selIds.value.includes(s.id);
+              const expired = isExpired(s);
               return (
                 <div key={s.id}
                   onClick$={() => { const i = selIds.value.indexOf(s.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(s.id); selIds.value = [...selIds.value]; }}
@@ -76,16 +126,20 @@ export default component$(() => {
                   <div class="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
                     <input type="checkbox" checked={sel} class="rounded border-slate-300 w-4 h-4 shrink-0"
                       onChange$={() => {/* handled by row click */}} />
-                    <div class="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 text-lg shrink-0">
-                      {s.password_protected ? "🔒" : "🔓"}
+                    <div class={`w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0 ${s.is_folder ? 'bg-amber-50 text-amber-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                      {s.is_folder ? "📁" : s.password_protected ? "🔒" : "🔓"}
                     </div>
                     <div class="flex-1 min-w-0">
                       <div class="flex items-center gap-2 flex-wrap">
-                        <span class="text-sm font-medium text-slate-700 truncate">分享链接 {s.short_code}</span>
-                        {!s.is_active && <span class="px-2 py-0.5 bg-slate-100 text-slate-500 text-xs rounded-full">已失效</span>}
+                        <span class="text-sm font-medium text-slate-700 truncate">{s.filename || `分享 ${s.short_code}`}</span>
+                        {s.is_folder && <span class="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-xs rounded-full">文件夹</span>}
+                        {expired && <span class="px-1.5 py-0.5 bg-slate-100 text-slate-500 text-xs rounded-full">已失效</span>}
+                        {!expired && s.expires_at && (new Date(s.expires_at).getTime() - Date.now() < 86400000) && (
+                          <span class="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-xs rounded-full">即将过期</span>
+                        )}
                       </div>
                       <div class="flex items-center gap-2 sm:gap-3 mt-1 text-xs text-slate-400 flex-wrap">
-                        <span>{permLabel(s.permission)}</span>
+                        <span>{s.is_folder ? "文件夹" : permLabel(s.permission)}</span>
                         <span>· 浏览 {s.view_count} 次</span>
                         <span>· 下载 {s.download_count} 次</span>
                         {s.expires_at && <span>· {fmtDate(s.expires_at)} 过期</span>}
