@@ -26,10 +26,7 @@ export default component$(() => {
   const nav = useNavigate();
   const loc = useLocation();
   const vaults = useVaults();
-  const vaultList = useSignal<VaultInfo[]>([]);
-  // Sync server data to client signal
-  // eslint-disable-next-line qwik/no-use-visible-task
-  useVisibleTask$(() => { vaultList.value = vaults.value || []; });
+  const vaultList = useSignal<VaultInfo[]>(vaults.value || []);
   const vaultToken = useSignal<string | null>(null);
   const unlockId = useSignal(0);
   const unlockPw = useSignal("");

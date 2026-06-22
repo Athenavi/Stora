@@ -25,16 +25,12 @@ const TAG_BG: Record<string, string> = {
 export default component$(() => {
   const tags = useTags();
   const nav = useNavigate();
-  const items = useSignal<Tag[]>([]);
+  const items = useSignal<Tag[]>(tags.value || []);
   const showCreate = useSignal(false);
   const editId = useSignal(0);
   const name = useSignal("");
   const color = useSignal(TAG_COLORS[0]);
   const loading = useSignal(false);
-
-  // Sync routeLoader data to writable signal
-  // eslint-disable-next-line qwik/no-use-visible-task
-  useVisibleTask$(() => { items.value = tags.value || []; });
 
   const refresh = async () => { try { items.value = await api.get<Tag[]>("/files/tags") || []; } catch {} };
 
