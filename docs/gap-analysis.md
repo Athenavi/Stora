@@ -13,9 +13,9 @@
 | **AI 字幕** | P2 | 语音识别 → SRT 字幕嵌入 |
 | **Webhook** | P2 | 文件变更事件通知外部系统 |
 | **BT 离线下载** | P2 | HTTP 下载已实现，BT 协议未支持 |
-| **配额预警** | P2 | storage_quotas 表存在，超限通知未对接 |
+| **配额预警** | ✅ 上传时检测 + 90% 通知 + 超限拒绝 | storage_quotas 表 + UploadFile 集成 | **已完成** |
 | **Admin UI 完善** | P1 | Go 模板 → 完整管理后台 |
-| **水印** | P3 | 预览时自动叠加查看者水印 |
+| **水印** | ✅ 通过 system_settings 配置 watermark_text / watermark_enabled | **已完成** |
 | **IP 白名单** | P3 | 访问 IP 限制 |
 | **OAuth 完善** | P2 | GitHub/Google 端点存在，需配置文档 |
 | **i18n** | 暂缓 | — |
