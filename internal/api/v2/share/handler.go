@@ -199,7 +199,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	err := h.db.QueryRow(
 		`INSERT INTO share_links (file_id, folder_id, user_id, short_code, permission, password, expires_at, max_downloads, is_active, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9) RETURNING id`,
-		fileID, nullIfZero(folderID), userID, shortCode, permission, hashedPw, expiresAt, maxDownloads, nowStr,
+		nullIfZero(fileID), nullIfZero(folderID), userID, shortCode, permission, hashedPw, expiresAt, maxDownloads, nowStr,
 	).Scan(&linkID)
 
 	if err != nil {

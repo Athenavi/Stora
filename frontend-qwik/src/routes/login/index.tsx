@@ -9,19 +9,27 @@ export default component$(() => {
   const nav = useNavigate();
   const loc = useLocation();
   const loginTab = useSignal<"password" | "code">("password");
+  const checkingAuth = useSignal(true);
 
-  // Handle OAuth token in URL
+  // Handle OAuth token in URL + redirect if already authenticated
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
     const token = loc.url.searchParams.get("token");
+    const next = loc.url.searchParams.get("next") || "/drive";
+
     if (token) {
       setToken(token);
-      nav("/drive");
+      nav(next);
+      return;
     }
-    // Redirect to /drive if already logged in
+
+    // Redirect to ?next or default page if already logged in
     if (isAuthenticated()) {
-      nav("/drive");
+      nav(next);
+      return;
     }
+
+    checkingAuth.value = false;
   });
 
   // Password login fields
@@ -40,7 +48,8 @@ export default component$(() => {
   const doPasswordLogin = $(async () => {
     if (!username.value || !password.value) { error.value = "请输入用户名和密码"; return; }
     error.value = ""; loading.value = true;
-    try { await login(username.value, password.value); nav("/drive"); }
+    const next = loc.url.searchParams.get("next") || "/drive";
+    try { await login(username.value, password.value); nav(next); }
     catch (e: any) { error.value = e.message || "登录失败"; }
     finally { loading.value = false; }
   });
@@ -63,15 +72,23 @@ export default component$(() => {
   const doCodeLogin = $(async () => {
     if (!code.value) { error.value = "请输入验证码"; return; }
     error.value = ""; loading.value = true;
+    const next = loc.url.searchParams.get("next") || "/drive";
     try {
       await loginWithCode(codeEmail.value, code.value);
-      nav("/drive");
+      nav(next);
     } catch (e: any) { error.value = e.message || "登录失败"; }
     finally { loading.value = false; }
   });
 
   return (
     <div class="min-h-screen flex bg-stora-background">
+      {/* Show loading while checking auth status */}
+      {checkingAuth.value ? (
+        <div class="flex-1 flex items-center justify-center">
+          <div class="text-stora-muted-foreground text-sm">正在检查登录状态...</div>
+        </div>
+      ) : (
+        <>
       {/* Left brand panel */}
       <div class="hidden lg:flex w-1/2 bg-stora-foreground p-16 flex-col justify-between">
         <div class="flex items-center gap-3">
@@ -193,6 +210,8 @@ export default component$(() => {
           </div>
         </div>
       </div>
+      </>
+      }
     </div>
   );
 });
