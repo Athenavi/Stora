@@ -1,8 +1,7 @@
 # Stora 数据模型定义
-# 声明式 schema — 类似 SQLAlchemy + Alembic 的工作流
+# 声明式 schema — 类似 Alembic 的工作流
 # 修改此文件后运行: stora-cli migrate generate && stora-cli migrate up
 ---
-version: 5
 models:
   # ── 用户与认证 ──────────────────────────────────
   User:

@@ -231,21 +231,31 @@ func initDatabase(vars map[string]string) error {
 	}
 	fmt.Println(styled("✅", colorGreen))
 
-	// Run embedded migrations
-	fmt.Print("  执行数据库迁移... ")
-	for _, m := range coreMigrations {
-		if _, err := db.Exec(m.SQL); err != nil {
-			return fmt.Errorf("迁移 v%d (%s) 失败: %w", m.Version, m.Description, err)
-		}
+	// Read models.yaml and generate + apply migration
+	fmt.Print("  生成迁移... ")
+	schema, err := ParseSchema("config/models.yaml")
+	if err != nil {
+		return fmt.Errorf("读取 models.yaml 失败: %w", err)
+	}
+	upSQL, _ := schema.GenerateFullMigration()
 
-		// Record in schema_version
-		now := time.Now().Format(time.RFC3339)
-		db.Exec(`INSERT INTO schema_version (version, description, applied_at, checksum)
-			VALUES ($1, $2, $3, $4) ON CONFLICT (version) DO NOTHING`,
-			m.Version, m.Description, now, "")
+	// Apply UPGRADE SQL
+	if _, err := db.Exec(upSQL); err != nil {
+		return fmt.Errorf("数据库建表失败: %w", err)
 	}
 	fmt.Println(styled("✅", colorGreen))
-	fmt.Printf("  已执行 %d 个迁移\n", len(coreMigrations))
+
+	// Record migration in schema_version
+	rev := "init_" + time.Now().Format("20060102_150405")
+	if _, err := db.Exec(
+		`INSERT INTO schema_version (revision, description, applied_at) VALUES ($1, $2, $3)
+		 ON CONFLICT (revision) DO NOTHING`,
+		rev, "initial schema from models.yaml", time.Now().Format(time.RFC3339),
+	); err != nil {
+		return fmt.Errorf("记录版本失败: %w", err)
+	}
+	writeRevisionINI("version.ini", rev)
+	fmt.Printf("  已创建 %d 个表\n", len(schema.Models))
 	return nil
 }
 
