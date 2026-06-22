@@ -145,6 +145,9 @@ func main() {
 	shareHandler := shareapi.NewHandler(db, store)
 	shareapi.StartShareCleanup(db)
 
+	// Initialize team handler
+	teamHandler := shareapi.NewTeamHandler(db)
+
 	// Initialize admin handler
 	adminHandler := adminapi.NewHandler(db)
 
@@ -291,6 +294,18 @@ func main() {
 			r.Get("/share/links", shareHandler.ListShareLinks)
 			r.Post("/share/links", shareHandler.CreateShareLink)
 			r.Delete("/share/links/{id}", shareHandler.DeleteShareLink)
+
+			// Teams
+			r.Get("/teams", teamHandler.ListTeams)
+			r.Post("/teams", teamHandler.CreateTeam)
+			r.Delete("/teams/{teamId}", teamHandler.DeleteTeam)
+			r.Get("/teams/{teamId}/members", teamHandler.ListMembers)
+			r.Post("/teams/{teamId}/members", teamHandler.AddMember)
+			r.Delete("/teams/{teamId}/members/{memberId}", teamHandler.RemoveMember)
+			r.Get("/teams/{teamId}/folders", teamHandler.ListTeamFolders)
+			r.Post("/teams/{teamId}/folders", teamHandler.AddTeamFolder)
+			r.Delete("/teams/{teamId}/folders/{folderId}", teamHandler.RemoveTeamFolder)
+			r.Get("/users/search", teamHandler.SearchUsers)
 
 			// Notifications
 			r.Get("/notifications", adminHandler.ListNotifications)
