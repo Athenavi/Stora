@@ -501,10 +501,13 @@ func EnsureCompat(db *sql.DB) {
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS token VARCHAR(64) DEFAULT ''`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS short_code VARCHAR(32) DEFAULT ''`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS permission VARCHAR(20) DEFAULT 'read'`,
+		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS password VARCHAR(128) DEFAULT ''`,
+		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS view_count INT DEFAULT 0`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS download_count INT DEFAULT 0`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS max_downloads INT DEFAULT 0`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
+		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
 	} {
 		db.Exec(m)
 	}
