@@ -138,6 +138,9 @@ func main() {
 	batchHandler := fileapi.NewBatchHandler(db, store)
 	trashHandler := fileapi.NewTrashHandler(db)
 
+	// Initialize offline download handler
+	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
+
 	// Initialize share handler
 	shareHandler := shareapi.NewHandler(db, store)
 
@@ -255,6 +258,10 @@ func main() {
 
 			// Versions
 			r.Get("/files/{id}/versions", versionHandler.ListVersions)
+
+			// Offline download
+			r.Post("/files/offline-download", offlineDownloadHandler.CreateDownloadTask)
+			r.Get("/files/offline-download", offlineDownloadHandler.ListDownloadTasks)
 
 			// Batch operations
 			r.Post("/files/batch/delete", batchHandler.BatchDelete)

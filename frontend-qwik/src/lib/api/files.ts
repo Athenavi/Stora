@@ -202,5 +202,16 @@ export function batchDownload(fileIds: number[], folderIds: number[] = []) {
     });
 }
 
+/** 离线下载（URL 转存） */
+export const createOfflineDownload = (url: string, filename?: string): Promise<{ task_id: number }> => {
+  const body: any = { url };
+  if (filename) body.filename = filename;
+  return api.post('/files/offline-download', body);
+};
+
+/** 列出离线下载任务 */
+export const listOfflineDownloads = (): Promise<any[]> =>
+  api.get('/files/offline-download');
+
 export const getDownloadToken = (fileId: number): Promise<{ token: string; expires_in: number }> =>
   api.get(`/files/download/token/${fileId}`);
