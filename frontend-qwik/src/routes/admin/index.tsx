@@ -5,7 +5,7 @@
 import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
-import { Button, Skeleton, Input, Badge } from "~/components/ui/Button";
+import { Button, Skeleton, Badge } from "~/components/ui/Button";
 import { api, createServerApi } from "~/lib/api";
 
 // ─── Types ───
@@ -172,11 +172,21 @@ function StatCard({ label, value, icon, color }: { label: string; value: string;
 function UsersTab() {
   const data = useUsers();
   const users = useSignal(data.value);
+  const searchQuery = useSignal("");
   const editId = useSignal(0);
   const editActive = useSignal(false);
   const editQuota = useSignal("");
   const saving = useSignal(false);
   const expandedId = useSignal(0);
+
+  const filteredUsers = () => {
+    if (!searchQuery.value) return users.value;
+    const q = searchQuery.value.toLowerCase();
+    return users.value.filter(u =>
+      (u.username && u.username.toLowerCase().includes(q)) ||
+      (u.email && u.email.toLowerCase().includes(q))
+    );
+  };
 
   const doToggleActive = async (id: number, active: boolean) => {
     saving.value = true;
@@ -201,8 +211,13 @@ function UsersTab() {
 
   return (
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      {users.value.length === 0 ? (
-        <div class="p-8 text-center text-slate-400 text-sm">暂无用户数据</div>
+      {/* Search */}
+      <div class="px-4 py-3 border-b border-slate-100">
+        <input type="text" bind:value={searchQuery} placeholder="搜索用户名或邮箱..."
+          class="w-full sm:w-64 px-3 py-2 text-sm rounded-lg border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:bg-white placeholder:text-slate-400" />
+      </div>
+      {filteredUsers().length === 0 ? (
+        <div class="p-8 text-center text-slate-400 text-sm">暂无匹配用户</div>
       ) : (
         <>
           {/* Desktop table */}
@@ -221,7 +236,7 @@ function UsersTab() {
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-50">
-                {users.value.map(u => (
+                {filteredUsers().map(u => (
                   <tr key={u.id} class="text-sm hover:bg-slate-50 transition-colors">
                     <td class="px-4 py-3 text-slate-500">{u.id}</td>
                     <td class="px-4 py-3">
@@ -268,7 +283,7 @@ function UsersTab() {
 
           {/* Mobile card list */}
           <div class="sm:hidden space-y-3 p-4">
-            {users.value.map(u => (
+            {filteredUsers().map(u => (
               <div key={u.id} class="border border-slate-200 rounded-xl overflow-hidden">
                 <div class="flex items-center justify-between px-4 py-3 bg-slate-50/50">
                   <div class="flex items-center gap-2">
@@ -439,10 +454,14 @@ function SettingsTab() {
           {message.value && <p class="text-xs text-green-600 mb-2">{message.value}</p>}
           <div class="flex flex-col sm:flex-row gap-3 items-stretch sm:items-end">
             <div class="flex-1">
-              <Input bind:value={key} placeholder="设置键 (如 site_name)" label="键" />
+              <label class="block text-sm font-medium text-slate-700 mb-1.5">键</label>
+              <input type="text" bind:value={key} placeholder="设置键 (如 site_name)"
+                class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
             </div>
             <div class="flex-1">
-              <Input bind:value={value} placeholder="设置值" label="值" />
+              <label class="block text-sm font-medium text-slate-700 mb-1.5">值</label>
+              <input type="text" bind:value={value} placeholder="设置值"
+                class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
             </div>
             <div class="sm:pt-6">
               <Button size="sm" onClick$={doAdd} loading={saving.value} class="w-full sm:w-auto">保存</Button>

@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, api, type FileItem, type Folder } from "~/lib/api";
+import { createServerApi, listFiles, getFolderChildren, createFolder, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, type FileItem, type Folder } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Skeleton, Input } from "~/components/ui/Button";
 
@@ -68,6 +68,13 @@ export default component$(() => {
   const ctxItem = useSignal<{ id: number; type: "file" | "folder"; name: string; fileType?: string } | null>(null);
   const ctxPos = useSignal({ x: 0, y: 0 });
   const showActionSheet = useSignal(false);
+  // Batch operation dialogs
+  const showMoveDialog = useSignal(false);
+  const showShareDialog = useSignal(false);
+  const shareResult = useSignal<{ code: string; url: string }[]>([]);
+  const moveTargetId = useSignal<number | undefined>(undefined);
+  const moveTree = useSignal<any[]>([]);
+  const moveTreeLoading = useSignal(false);
 
   const doRename = (item: { id: number; type: string; name: string }) => {
     renameId.value = item.id;
@@ -100,7 +107,7 @@ export default component$(() => {
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selIds.value.length > 0 && confirm(`确认删除 ${selIds.value.length} 项？`)) {
-          selIds.value.forEach(id => deleteFile(id).catch(() => {}));
+          api.post("/files/batch/delete", { file_ids: [...selIds.value] }).catch(() => {});
           selIds.value = [];
           refresh();
         }
@@ -112,6 +119,16 @@ export default component$(() => {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
+  });
+
+  // Load folder tree when move dialog opens
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(({ track }) => {
+    track(() => showMoveDialog.value);
+    if (showMoveDialog.value && moveTree.value.length === 0) {
+      moveTreeLoading.value = true;
+      api.get<any[]>("/files/folders/tree").then(d => { moveTree.value = d || []; }).catch(() => {}).finally(() => moveTreeLoading.value = false);
+    }
   });
 
   const refresh = () => { location.href = `/drive${folderId ? `?folder=${folderId}` : ""}`; };
@@ -174,11 +191,13 @@ export default component$(() => {
         <div class="bottom-action-bar lg:hidden">
           <span class="text-sm font-medium text-slate-700 shrink-0">{selIds.value.length} 项</span>
           <div class="flex-1" />
-          <button onClick$={async () => { const ids = [...selIds.value]; selIds.value = []; try { await moveFiles(ids, folderId); refresh(); } catch {} }}
+          <button onClick$={async () => { showMoveDialog.value = true; }}
             class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg">移动</button>
           <button onClick$={async () => { if (selIds.value.length > 0) batchDownload([...selIds.value]); }}
             class="touch-target px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg">下载</button>
-          <button onClick$={async () => { if (!confirm("确认删除？")) return; for (const id of selIds.value) await deleteFile(id).catch(() => {}); selIds.value = []; refresh(); }}
+          <button onClick$={async () => { showShareDialog.value = true; }}
+            class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg">分享</button>
+          <button onClick$={async () => { if (!confirm("确认删除？")) return; api.post("/files/batch/delete", { file_ids: [...selIds.value] }).catch(() => {}); selIds.value = []; refresh(); }}
             class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg">删除</button>
         </div>
       )}
@@ -188,13 +207,13 @@ export default component$(() => {
         <div class="hidden lg:flex items-center gap-2 px-6 py-2 bg-indigo-50/80 border-b border-indigo-100 shrink-0 animate-slide-down">
           <span class="text-sm font-medium text-indigo-700">{selIds.value.length} 项已选</span>
           <div class="flex-1" />
-          <button onClick$={async () => { const ids = [...selIds.value]; selIds.value = []; try { await moveFiles(ids, folderId); refresh(); } catch {} }}
+          <button onClick$={async () => { showMoveDialog.value = true; }}
             class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">移动</button>
           <button onClick$={async () => { if (selIds.value.length > 0) batchDownload([...selIds.value]); }}
             class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">下载</button>
-          <button onClick$={async () => { if (selIds.value.length > 0) nav(`/view?id=${selIds.value[0]}`); }}
+          <button onClick$={async () => { showShareDialog.value = true; }}
             class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">分享</button>
-          <button onClick$={async () => { if (!confirm("确认删除？")) return; for (const id of selIds.value) await deleteFile(id).catch(() => {}); selIds.value = []; refresh(); }}
+          <button onClick$={async () => { if (!confirm("确认删除？")) return; api.post("/files/batch/delete", { file_ids: [...selIds.value] }).catch(() => {}); selIds.value = []; refresh(); }}
             class="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 rounded-lg transition-colors">删除</button>
         </div>
       )}
@@ -382,6 +401,88 @@ export default component$(() => {
             )}
             <button onClick$={() => { ctxItem.value = null; showActionSheet.value = false; }}
               class="w-full mt-3 px-4 py-3 text-sm font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-xl touch-target">取消</button>
+          </div>
+        </>
+      )}
+
+      {/* Folder picker modal for batch move */}
+      {showMoveDialog.value && (
+        <>
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => showMoveDialog.value = false} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 sm:max-h-[70vh] bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 class="text-sm font-semibold text-slate-900">移动到文件夹</h3>
+              <button onClick$={() => showMoveDialog.value = false} class="touch-target p-1.5 rounded-lg hover:bg-slate-100 text-slate-400">
+                <Icon name="close" size={18} />
+              </button>
+            </div>
+            <div class="flex-1 overflow-auto p-4 max-h-[50vh]">
+              <button onClick$={async () => {
+                const ids = [...selIds.value]; selIds.value = [];
+                showMoveDialog.value = false;
+                try { await api.post('/files/batch/move', { file_ids: ids }); refresh(); } catch {}
+              }} class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 touch-target mb-1">
+                <Icon name="folder" size={16} class="text-amber-500" />
+                <span>根目录（我的文件）</span>
+              </button>
+              {moveTree.value.length > 0 && (
+                <div class="space-y-0.5">
+                  {moveTree.value.map((node: any) => (
+                    <button key={node.id} onClick$={async () => {
+                      const ids = [...selIds.value]; selIds.value = [];
+                      showMoveDialog.value = false;
+                      try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: node.id }); refresh(); } catch {}
+                    }} class="w-full text-left px-3 py-2.5 rounded-lg text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 touch-target">
+                      <Icon name="folder" size={16} class="text-amber-500" />
+                      <span class="truncate">{node.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Share dialog for batch share */}
+      {showShareDialog.value && (
+        <>
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => { showShareDialog.value = false; shareResult.value = []; }} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col p-5">
+            <h3 class="text-sm font-semibold text-slate-900 mb-3">批量分享</h3>
+            {shareResult.value.length === 0 ? (
+              <>
+                <p class="text-xs text-slate-500 mb-4">将为 {selIds.value.length} 个文件创建分享链接</p>
+                <button onClick$={async () => {
+                  const results: { code: string; url: string }[] = [];
+                  for (const id of selIds.value) {
+                    try {
+                      const link = await createShare({ file_id: id, permission: 'read' });
+                      results.push({ code: link.short_code, url: `${window.location.origin}/s/${link.short_code}` });
+                    } catch {}
+                  }
+                  shareResult.value = results;
+                }} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors text-center">
+                  创建分享链接
+                </button>
+                <button onClick$={() => { showShareDialog.value = false; shareResult.value = []; }}
+                  class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50 transition-colors text-center">取消</button>
+              </>
+            ) : (
+              <>
+                <p class="text-xs text-green-600 mb-3">已创建 {shareResult.value.length} 个分享链接</p>
+                <div class="max-h-48 overflow-auto space-y-2 mb-3">
+                  {shareResult.value.map((r, i) => (
+                    <div key={i} class="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
+                      <span class="text-xs text-slate-500 truncate flex-1">{r.url}</span>
+                      <button onClick$={() => navigator.clipboard.writeText(r.url)} class="touch-target text-xs text-indigo-600 hover:text-indigo-800 shrink-0">复制</button>
+                    </div>
+                  ))}
+                </div>
+                <button onClick$={() => { showShareDialog.value = false; shareResult.value = []; }}
+                  class="w-full touch-target px-4 py-3 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors text-center">完成</button>
+              </>
+            )}
           </div>
         </>
       )}

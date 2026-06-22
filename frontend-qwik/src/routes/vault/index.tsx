@@ -39,6 +39,7 @@ export default component$(() => {
   const newPw2 = useSignal("");
   const createErr = useSignal("");
   const loading = useSignal(false);
+  const vaultSelIds = useSignal<number[]>([]);
 
   // Check URL for existing vault token (from unlock flow)
   // eslint-disable-next-line qwik/no-use-visible-task
@@ -137,17 +138,17 @@ export default component$(() => {
   if (unlockId.value > 0 && !vaultToken.value) {
     const vault = vaults.value.find(v => v.id === unlockId.value);
     return (
-      <div class="flex flex-col items-center justify-center h-full gap-6 p-8 text-center">
+      <div class="flex flex-col items-center justify-center h-full gap-5 p-6 text-center max-w-sm mx-auto">
         <div class="w-20 h-20 rounded-2xl bg-indigo-50 flex items-center justify-center text-4xl">🔒</div>
         <h2 class="text-xl font-semibold text-slate-900">{vault?.name || "私密空间"}</h2>
         <p class="text-sm text-slate-500">请输入密码解锁</p>
-        {unlockErr.value && <p class="text-sm text-red-600">{unlockErr.value}</p>}
+        {unlockErr.value && <div class="w-full px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 text-center">{unlockErr.value}</div>}
         <input type="password" bind:value={unlockPw}
           onKeyDown$={(e: any) => { if (e.key === "Enter") doUnlock(); }}
-          class="w-full max-w-xs sm:w-72 px-4 py-3 rounded-xl border border-slate-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          class="w-full px-4 py-3 rounded-xl border border-slate-300 text-sm text-center focus:outline-none focus:ring-2 focus:ring-indigo-500"
           placeholder="输入私密空间密码" />
-        <div class="flex gap-3">
-          <Button onClick$={doUnlock}>解锁</Button>
+        <div class="flex gap-3 w-full">
+          <Button onClick$={doUnlock} class="flex-1">解锁</Button>
           <Button variant="ghost" onClick$={() => { unlockId.value = 0; nav("/vault"); }}>返回</Button>
         </div>
       </div>
@@ -168,7 +169,21 @@ export default component$(() => {
             <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full shrink-0">🔒 已解锁</span>
           </div>
           <div class="flex gap-2 shrink-0">
-            <Button variant="primary" size="sm" onClick$={doUpload}><Icon name="upload" size={16} /> 上传</Button>
+            {vaultSelIds.value.length > 0 ? (
+              <>
+                <button onClick$={async () => {
+                  if (!confirm(`确认删除 ${vaultSelIds.value.length} 项？`)) return;
+                  for (const id of vaultSelIds.value) {
+                    try { await fetch(`/api/v2/vaults/${unlockId.value}/items/${id}`, { method: "DELETE", headers: { "X-Vault-Token": vaultToken.value! } }); } catch {}
+                  }
+                  items.value = items.value.filter(i => !vaultSelIds.value.includes(i.id));
+                  vaultSelIds.value = [];
+                }} class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">删除 ({vaultSelIds.value.length})</button>
+                <button onClick$={() => vaultSelIds.value = []} class="touch-target px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">取消</button>
+              </>
+            ) : (
+              <Button variant="primary" size="sm" onClick$={doUpload}><Icon name="upload" size={16} /> 上传</Button>
+            )}
             <Button variant="ghost" size="sm" onClick$={doLock}>锁定</Button>
           </div>
         </div>
@@ -181,17 +196,23 @@ export default component$(() => {
             </div>
           ) : (
             <div class="space-y-2">
-              {items.value.map(item => (
-                <div key={item.id} class="flex items-center gap-3 sm:gap-4 px-4 py-3 bg-white rounded-xl border border-slate-200 hover:shadow-sm transition-all">
-                  <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-lg shrink-0">📄</div>
-                  <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-slate-700 truncate">{item.filename}</p>
-                    <p class="text-xs text-slate-400">{fmtSize(item.file_size)} · {item.mime_type}</p>
+              {items.value.map(item => {
+                const sel = vaultSelIds.value.includes(item.id);
+                return (
+                  <div key={item.id} onClick$={() => { const i = vaultSelIds.value.indexOf(item.id); if (i >= 0) vaultSelIds.value.splice(i, 1); else vaultSelIds.value.push(item.id); vaultSelIds.value = [...vaultSelIds.value]; }}
+                    class={`flex items-center gap-3 sm:gap-4 px-4 py-3 bg-white rounded-xl border transition-all cursor-pointer ${sel ? 'border-indigo-400 shadow-sm' : 'border-slate-200 hover:shadow-sm'}`}>
+                    <input type="checkbox" checked={sel} class="rounded border-slate-300 w-4 h-4 shrink-0"
+                      onChange$={() => { /* handled by parent click */ }} />
+                    <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-lg shrink-0">📄</div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-slate-700 truncate">{item.filename}</p>
+                      <p class="text-xs text-slate-400">{fmtSize(item.file_size)} · {item.mime_type}</p>
+                    </div>
+                    <button onClick$={(e: any) => { e.stopPropagation(); doDownload(item.id); }} class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">下载</button>
+                    <button onClick$={(e: any) => { e.stopPropagation(); doDeleteItem(item.id); }} class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">删除</button>
                   </div>
-                  <button onClick$={() => doDownload(item.id)} class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors">下载</button>
-                  <button onClick$={() => doDeleteItem(item.id)} class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">删除</button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

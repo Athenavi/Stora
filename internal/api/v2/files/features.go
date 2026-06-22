@@ -1,6 +1,7 @@
 package files
 
 import (
+	"archive/zip"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -447,11 +449,12 @@ func (h *VersionHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 // ---------- Batch Operations ----------
 
 type BatchHandler struct {
-	db *sql.DB
+	db      *sql.DB
+	storage storage.Driver
 }
 
-func NewBatchHandler(db *sql.DB) *BatchHandler {
-	return &BatchHandler{db: db}
+func NewBatchHandler(db *sql.DB, store storage.Driver) *BatchHandler {
+	return &BatchHandler{db: db, storage: store}
 }
 
 func (h *BatchHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
@@ -470,6 +473,68 @@ func (h *BatchHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 			now, fid, userID)
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"deleted": len(req.FileIDs)})
+}
+
+func (h *BatchHandler) BatchDownload(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	var req struct {
+		FileIDs []int64 `json:"file_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
+		http.Error(w, `{"error":"file_ids required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Query file metadata
+	type fileInfo struct {
+		FilePath string
+		Filename string
+		MimeType string
+	}
+	var files []fileInfo
+	for _, fid := range req.FileIDs {
+		var fi fileInfo
+		err := h.db.QueryRow(
+			`SELECT file_path, COALESCE(original_filename, filename), COALESCE(mime_type, 'application/octet-stream')
+			 FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
+			fid, userID,
+		).Scan(&fi.FilePath, &fi.Filename, &fi.MimeType)
+		if err == nil {
+			files = append(files, fi)
+		}
+	}
+
+	if len(files) == 0 {
+		http.Error(w, `{"error":"no files found"}`, http.StatusNotFound)
+		return
+	}
+
+	// Stream ZIP response
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="stora-batch-%d.zip"`, len(files)))
+	w.WriteHeader(http.StatusOK)
+
+	zw := zip.NewWriter(w)
+	for _, f := range files {
+		reader, err := h.storage.Retrieve(f.FilePath)
+		if err != nil {
+			continue
+		}
+
+		hdr := &zip.FileHeader{
+			Name:   f.Filename,
+			Method: zip.Deflate,
+		}
+		writer, err := zw.CreateHeader(hdr)
+		if err != nil {
+			reader.Close()
+			continue
+		}
+
+		io.Copy(writer, reader)
+		reader.Close()
+	}
+	zw.Close()
 }
 
 func (h *BatchHandler) BatchMove(w http.ResponseWriter, r *http.Request) {
@@ -577,6 +642,33 @@ func (h *TrashHandler) DestroyFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "destroyed"})
+}
+
+// BatchDestroy permanently deletes multiple trash items.
+func (h *TrashHandler) BatchDestroy(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+
+	var req struct {
+		FileIDs []int64 `json:"file_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
+		http.Error(w, `{"error":"file_ids required"}`, http.StatusBadRequest)
+		return
+	}
+
+	destroyed := 0
+	for _, fid := range req.FileIDs {
+		res, err := h.db.Exec(
+			`DELETE FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL`,
+			fid, userID,
+		)
+		if err == nil {
+			if n, _ := res.RowsAffected(); n > 0 {
+				destroyed++
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"destroyed": destroyed})
 }
 
 // BatchRestore restores multiple trash items at once.

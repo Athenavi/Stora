@@ -65,7 +65,7 @@ export default component$(() => {
                 if (!confirm("永久删除选中的文件？")) return;
                 loading.value = true;
                 try {
-                  for (const id of selIds.value) await api.delete(`/files/trash/${id}/destroy`);
+                  await api.post("/files/trash/batch-destroy", { file_ids: selIds.value });
                   items.value = items.value.filter(x => !selIds.value.includes(x.id));
                   selIds.value = [];
                 } catch {}
@@ -205,7 +205,7 @@ export default component$(() => {
             if (!confirm("永久删除选中的文件？")) return;
             loading.value = true;
             try {
-              for (const id of selIds.value) await api.delete(`/files/trash/${id}/destroy`);
+              await api.post("/files/trash/batch-destroy", { file_ids: selIds.value });
               items.value = items.value.filter(x => !selIds.value.includes(x.id));
               selIds.value = [];
             } catch {}

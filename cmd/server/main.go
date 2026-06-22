@@ -115,7 +115,7 @@ func main() {
 	vaultHandler := fileapi.NewVaultHandler(db)
 	transcodeHandler := fileapi.NewTranscodeHandler(db)
 	versionHandler := fileapi.NewVersionHandler(db)
-	batchHandler := fileapi.NewBatchHandler(db)
+	batchHandler := fileapi.NewBatchHandler(db, store)
 	trashHandler := fileapi.NewTrashHandler(db)
 
 	// Initialize share handler
@@ -229,11 +229,13 @@ func main() {
 			// Batch operations
 			r.Post("/files/batch/delete", batchHandler.BatchDelete)
 			r.Post("/files/batch/move", batchHandler.BatchMove)
+			r.Post("/files/download/batch", batchHandler.BatchDownload)
 
 			// Trash — frontend calls /files/trash/* paths
 			r.Get("/files/trash", trashHandler.ListTrash)
 			r.Post("/files/trash/{id}/restore", trashHandler.RestoreFile)
 			r.Post("/files/trash/{id}/destroy", trashHandler.DestroyFile)
+			r.Post("/files/trash/batch-destroy", trashHandler.BatchDestroy)
 			r.Post("/files/trash/batch-restore", trashHandler.BatchRestore)
 			r.Post("/files/trash/clear", trashHandler.ClearTrash)
 			// Legacy paths
