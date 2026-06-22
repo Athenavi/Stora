@@ -48,7 +48,7 @@ func (d *LocalDriver) StoreHash(reader io.Reader) (hash, relPath string, err err
 	}
 	h := sha256.Sum256(data)
 	hash = fmt.Sprintf("%x", h)
-	relPath = fmt.Sprintf("objects/%s/%s", hash[:2], hash[2:])
+	relPath = fmt.Sprintf("%s/%s", hash[:2], hash[2:])
 	fullPath := filepath.Join(d.ObjectsPath, relPath)
 
 	// Check if already exists
