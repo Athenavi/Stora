@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -137,10 +138,10 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hash password if provided
-	var hashedPw *string
+	var hashedPw sql.NullString
 	if password != nil && *password != "" {
 		v := hashPassword(*password)
-		hashedPw = &v
+		hashedPw = sql.NullString{String: v, Valid: true}
 	}
 
 	// Ensure permission column exists in share_links
@@ -154,7 +155,8 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	).Scan(&linkID)
 
 	if err != nil {
-		http.Error(w, `{"error":"create failed: `+err.Error()+`"}`, http.StatusInternalServerError)
+		log.Printf("[share] CreateShareLink insert failed: %v (file_id=%d, user_id=%d)", err, fileID, userID)
+		utils.WriteError(w, http.StatusInternalServerError, "create failed")
 		return
 	}
 
@@ -162,7 +164,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		"id":                 linkID,
 		"short_code":         shortCode,
 		"permission":         permission,
-		"password_protected": hashedPw != nil,
+		"password_protected": hashedPw.Valid,
 		"url":                "/s/" + shortCode,
 	})
 }
