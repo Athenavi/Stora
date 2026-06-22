@@ -249,9 +249,14 @@ func main() {
 					utils.WriteError(w, http.StatusNotFound, "user not found")
 					return
 				}
-				utils.WriteJSON(w, http.StatusOK, map[string]int64{
-					"total_storage": total,
-					"used_storage":  used,
+				var usagePercent float64
+				if total > 0 {
+					usagePercent = float64(used) / float64(total) * 100
+				}
+				utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+					"max_storage":    total,
+					"used_storage":   used,
+					"usage_percent":  usagePercent,
 				})
 			})
 
