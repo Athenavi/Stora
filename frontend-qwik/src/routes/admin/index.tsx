@@ -89,6 +89,10 @@ function fmtDate(s: string | null | undefined): string {
 
 export default component$(() => {
   const activeTab = useSignal("overview");
+  const stats = useStats();
+  const users = useUsers();
+  const logs = useLogs();
+  const settings = useSettings();
 
   return (
     <div class="flex flex-col h-full">
@@ -110,10 +114,10 @@ export default component$(() => {
       </div>
 
       <div class="flex-1 overflow-auto p-4 sm:p-6">
-        {activeTab.value === "overview" && <OverviewTab />}
-        {activeTab.value === "users" && <UsersTab />}
-        {activeTab.value === "audit" && <AuditTab />}
-        {activeTab.value === "settings" && <SettingsTab />}
+        {activeTab.value === "overview" && <OverviewTab stats={stats.value} />}
+        {activeTab.value === "users" && <UsersTab users={users.value} />}
+        {activeTab.value === "audit" && <AuditTab logs={logs.value} />}
+        {activeTab.value === "settings" && <SettingsTab settings={settings.value} />}
       </div>
     </div>
   );
@@ -121,9 +125,8 @@ export default component$(() => {
 
 // ─── Overview Tab ───
 
-function OverviewTab() {
-  const stats = useStats();
-  const s = stats.value;
+function OverviewTab({ stats }: { stats: DashboardStats | null }) {
+  const s = stats;
 
   if (!s) {
     return <div class="flex items-center justify-center h-40 text-slate-400 text-sm">加载统计数据中...</div>;
@@ -169,9 +172,9 @@ function StatCard({ label, value, icon, color }: { label: string; value: string;
 
 // ─── Users Tab ───
 
-function UsersTab() {
-  const data = useUsers();
-  const users = useSignal(data.value);
+function UsersTab({ users: initialUsers }: { users: AdminUser[] }) {
+  const data = initialUsers;
+  const users = useSignal(data);
   const searchQuery = useSignal("");
   const editId = useSignal(0);
   const editActive = useSignal(false);
@@ -330,9 +333,8 @@ function UsersTab() {
 
 // ─── Audit Tab ───
 
-function AuditTab() {
-  const data = useLogs();
-  const logs = useSignal(data.value.items);
+function AuditTab({ logs: initialLogs }: { logs: { items: AuditLog[]; total: number } }) {
+  const logs = useSignal(initialLogs.items);
 
   const actions: Record<string, string> = {
     file_upload: "上传文件",
@@ -411,9 +413,9 @@ function AuditTab() {
 
 // ─── Settings Tab ───
 
-function SettingsTab() {
-  const data = useSettings();
-  const settings = useSignal(Object.entries(data.value || {}).map(([key, value]) => ({ key, value })));
+function SettingsTab({ settings: initialSettings }: { settings: Record<string, string> }) {
+  const data = initialSettings;
+  const settings = useSignal(Object.entries(data || {}).map(([key, value]) => ({ key, value })));
   const key = useSignal("");
   const value = useSignal("");
   const saving = useSignal(false);
