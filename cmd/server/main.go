@@ -233,6 +233,11 @@ func main() {
 			r.Get("/files/preview/{id}/{filename}", fileHandler.PreviewFile)
 			r.Get("/files/search", fileHandler.Search)
 
+			// File comments
+			r.Get("/files/{id}/comments", fileHandler.ListComments)
+			r.Post("/files/{id}/comments", fileHandler.AddComment)
+			r.Delete("/files/comments/{commentId}", fileHandler.DeleteComment)
+
 			// Folders
 			r.Get("/files/folders/tree", fileHandler.ListFolders)
 			r.Get("/files/folders/by-path", fileHandler.GetFolderChildrenByPath)

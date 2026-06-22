@@ -494,6 +494,81 @@ func (h *Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
 }
 
+// ---------- File Comments ----------
+
+func (h *Handler) ListComments(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	rows, err := h.db.Query(
+		`SELECT c.id, c.content, c.user_id, COALESCE(u.username, ''), c.created_at
+		 FROM file_comments c LEFT JOIN users u ON c.user_id = u.id
+		 WHERE c.file_id = $1 AND c.file_id IN (SELECT id FROM file_items WHERE user_id = $2)
+		 ORDER BY c.created_at ASC`,
+		fileID, userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	defer rows.Close()
+	type Comment struct {
+		ID        int64  `json:"id"`
+		Content   string `json:"content"`
+		UserID    int64  `json:"user_id"`
+		Username  string `json:"username"`
+		CreatedAt string `json:"created_at"`
+	}
+	var comments = make([]Comment, 0)
+	for rows.Next() {
+		var c Comment
+		if err := rows.Scan(&c.ID, &c.Content, &c.UserID, &c.Username, &c.CreatedAt); err == nil {
+			comments = append(comments, c)
+		}
+	}
+	writeJSON(w, http.StatusOK, comments)
+}
+
+func (h *Handler) AddComment(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	var req struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Content == "" {
+		writeError(w, http.StatusBadRequest, "content required")
+		return
+	}
+	now := time.Now().Format(time.RFC3339)
+	var commentID int64
+	err := h.db.QueryRow(
+		`INSERT INTO file_comments (file_id, user_id, content, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $4) RETURNING id`,
+		fileID, userID, req.Content, now,
+	).Scan(&commentID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "add comment failed")
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]int64{"id": commentID})
+}
+
+func (h *Handler) DeleteComment(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	commentID, _ := strconv.ParseInt(chi.URLParam(r, "commentId"), 10, 64)
+	result, err := h.db.Exec(
+		`DELETE FROM file_comments WHERE id = $1 AND user_id = $2`, commentID, userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	if n, _ := result.RowsAffected(); n == 0 {
+		writeError(w, http.StatusNotFound, "comment not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
 // ---------- Folder operations ----------
 
 // ListFolders returns the folder tree.

@@ -402,3 +402,15 @@ models:
       folder_id: { type: bigint, foreign_key: "folders(id)", on_delete: cascade }
       permission: { type: varchar, length: 20, default: "'read'" }
       created_at: { type: timestamp, default: "now()" }
+
+  # ── 文件评论 ────────────────────────────────────
+  FileComment:
+    table: file_comments
+    description: 文件评论/批注
+    columns:
+      id:        { type: bigint, primary_key: true, autoincrement: true }
+      file_id:   { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
+      user_id:   { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      content:   { type: text }
+      created_at: { type: timestamp, default: "now()" }
+      updated_at: { type: timestamp, default: "now()" }
