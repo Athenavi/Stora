@@ -26,6 +26,10 @@ export default component$(() => {
   const nav = useNavigate();
   const loc = useLocation();
   const vaults = useVaults();
+  const vaultList = useSignal<VaultInfo[]>([]);
+  // Sync server data to client signal
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(() => { vaultList.value = vaultList.value || []; });
   const vaultToken = useSignal<string | null>(null);
   const unlockId = useSignal(0);
   const unlockPw = useSignal("");
@@ -61,13 +65,13 @@ export default component$(() => {
     if (!newName.value || !newPw.value) { createErr.value = "请填写名称和密码"; return; }
     if (newPw.value !== newPw2.value) { createErr.value = "两次密码不一致"; return; }
     createErr.value = ""; loading.value = true; const fd = new FormData(); fd.append("name", newName.value); fd.append("password", newPw.value);
-    try { await api.post("/vaults", fd); showCreate.value = false; newName.value = ""; newPw.value = ""; newPw2.value = ""; const data = await api.get<VaultInfo[]>("/vaults"); vaults.value = data || []; } catch (e: any) { createErr.value = e.message || "创建失败"; }
+    try { await api.post("/vaults", fd); showCreate.value = false; newName.value = ""; newPw.value = ""; newPw2.value = ""; const data = await api.get<VaultInfo[]>("/vaults"); vaultList.value = data || []; } catch (e: any) { createErr.value = e.message || "创建失败"; }
     loading.value = false;
   };
 
   const doDeleteVault = async (id: number) => {
     if (!confirm("确认删除此私密空间？所有加密文件将永久丢失！")) return;
-    try { await api.delete(`/vaults/${id}`); vaults.value = vaults.value.filter(v => v.id !== id); } catch {}
+    try { await api.delete(`/vaults/${id}`); vaultList.value = vaultList.value.filter(v => v.id !== id); } catch {}
   };
 
   const doUpload = async () => {
@@ -96,7 +100,7 @@ export default component$(() => {
 
   // Locked vault unlock screen — per spec centered layout
   if (unlockId.value > 0 && !vaultToken.value) {
-    const vault = vaults.value.find(v => v.id === unlockId.value);
+    const vault = vaultList.value.find(v => v.id === unlockId.value);
     return (
       <div class="flex flex-col items-center justify-center h-full gap-6 p-10 text-center max-w-sm mx-auto">
         {/* Lock icon 80x80 circle per spec */}
@@ -123,7 +127,7 @@ export default component$(() => {
 
   // Unlocked vault file view
   if (unlockId.value > 0 && vaultToken.value) {
-    const vault = vaults.value.find(v => v.id === unlockId.value);
+    const vault = vaultList.value.find(v => v.id === unlockId.value);
     return (
       <div class="flex flex-col h-full">
         <div class="flex items-center justify-between px-6 py-4 border-b border-stora-border bg-stora-card">
@@ -211,7 +215,7 @@ export default component$(() => {
       )}
 
       <div class="flex-1 overflow-auto p-6">
-        {vaults.value.length === 0 ? (
+        {vaultList.value.length === 0 ? (
           <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground">
             <div class="w-20 h-20 bg-stora-muted flex items-center justify-center text-4xl mb-5">🔒</div>
             <h3 class="text-lg font-semibold text-stora-foreground mb-1">暂无私密空间</h3>
@@ -220,7 +224,7 @@ export default component$(() => {
           </div>
         ) : (
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {vaults.value.map(v => (
+            {vaultList.value.map(v => (
               <div key={v.id} class="bg-stora-card border border-stora-border hover:border-stora-vault cursor-pointer p-5"
                 onClick$={() => { unlockId.value = v.id; unlockPw.value = ""; unlockErr.value = ""; }}>
                 <div class="flex items-center gap-3 mb-3">
