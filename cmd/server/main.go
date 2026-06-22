@@ -76,6 +76,29 @@ func main() {
 			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
+		`CREATE TABLE IF NOT EXISTS vaults (
+			id BIGSERIAL PRIMARY KEY,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			password_hash VARCHAR(128) DEFAULT '',
+			description TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_vaults_user_id ON vaults(user_id)`,
+		`CREATE TABLE IF NOT EXISTS vault_items (
+			id BIGSERIAL PRIMARY KEY,
+			vault_id BIGINT NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			name VARCHAR(255) NOT NULL,
+			filename VARCHAR(512) DEFAULT '',
+			file_size BIGINT DEFAULT 0,
+			mime_type VARCHAR(128) DEFAULT '',
+			content_type VARCHAR(64) DEFAULT 'file',
+			content TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {

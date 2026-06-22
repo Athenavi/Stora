@@ -172,7 +172,7 @@ func (h *VaultHandler) CreateVault(w http.ResponseWriter, r *http.Request) {
 	).Scan(&vaultID)
 
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "create failed")
+		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create failed: %v", err))
 		return
 	}
 
