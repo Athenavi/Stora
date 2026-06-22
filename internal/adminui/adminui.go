@@ -16,6 +16,8 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/Athenavi/Stora/pkg/config"
@@ -43,6 +45,7 @@ func NewHandler(db *sql.DB, cfg *config.Config) (*Handler, error) {
 // DashboardData is the data structure for the dashboard template.
 type DashboardData struct {
 	Error       string
+	Version     string
 	Health      HealthStatus
 	Stats       SystemStats
 	Config      ConfigSummary
@@ -82,6 +85,7 @@ type MigrationRecord struct {
 // Dashboard renders the main admin dashboard.
 func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 	data := DashboardData{
+		Version: "dev",
 		Config: ConfigSummary{
 			SiteName:      h.cfg.SiteName,
 			ServerHost:    h.cfg.ServerHost,
@@ -90,6 +94,11 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 			Debug:         h.cfg.Debug,
 			JWTExpiration: h.cfg.JWTExpiration,
 		},
+	}
+
+	// Try reading version info
+	if v, err := readVersion("version.txt"); err == nil {
+		data.Version = v
 	}
 
 	// Health check
@@ -124,6 +133,24 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		log.Printf("[AdminUI] Template render error: %v", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 	}
+}
+
+// readVersion reads the version string from version.txt
+func readVersion(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "version") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				return strings.TrimSpace(parts[1]), nil
+			}
+		}
+	}
+	return "", fmt.Errorf("version not found")
 }
 
 // MigratePage triggers pending migrations and shows result.
