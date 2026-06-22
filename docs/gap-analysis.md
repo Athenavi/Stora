@@ -60,19 +60,11 @@
 - 维护模式切换 UI（2h）
 - 审计日志查看（2h）
 
-### 8. IP 白名单（P3，4h）
-**目标**：限制只有指定 IP 可访问管理后台
-**方案**：中间件 + 配置项
-- 中间件从 `system_settings` 读取白名单（2h）
-- 配置 `admin_ip_whitelist` 设置项（1h）
-- 文档（1h）
+### 8. IP 白名单（P3）
+**状态：✅ 已完成** — `internal/middleware/ipwhitelist.go` 实现，通过 `system_settings.admin_ip_whitelist` 配置逗号分隔 IP 列表。
 
-### 9. OAuth 完善（P2，4h）
-**目标**：GitHub/Google 第三方登录配置文档 + 前端按钮修复
-**方案**：
-- 编写 OAuth 配置指南（2h）
-- 前端登录页 OAuth 按钮链接修正（1h）
-- 回调端点验证（1h）
+### 9. OAuth 完善（P2）
+**状态：✅ 已完成** — 配置文档 `docs/oauth-setup.md` 已编写，含 GitHub/Google 配置步骤及故障排除。
 
 ### 10. 图片编辑（P1）
 **状态**：**已完成** — `ImageEditor.tsx` + `PUT /files/{id}/content` 已实现
