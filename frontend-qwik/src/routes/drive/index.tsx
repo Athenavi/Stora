@@ -21,12 +21,19 @@ export const useFileList = routeLoader$(async ({ url, request }) => {
   }
   if (search) {
     const d = await api.get(`/files/search?q=${encodeURIComponent(search)}&page=1&page_size=50`).catch(() => null);
-    return d ? { folders: [], files: d.items || [], path: [{ id: 0, name: `搜索: ${search}` }] } : null;
+    if (!d) return null;
+    const folders = (d.items || []).filter((x: any) => x.is_folder || x.file_type === "folder");
+    const fileItems = (d.items || []).filter((x: any) => !x.is_folder && x.file_type !== "folder");
+    return { folders, files: fileItems, path: [{ id: 0, name: `搜索: ${search}` }] };
   }
   const typeParam = fileType ? `&file_type=${fileType}` : "";
   const sortParam = `&sort_by=${sortBy}&sort_order=${sortOrder}`;
   const files = await api.get(`/files?page=1&page_size=50${typeParam}${sortParam}`).catch(() => null);
-  return files ? { folders: [], files: files.items, path: [{ id: 0, name: "我的文件" }] } : null;
+  if (!files) return null;
+  // Separate folders from files when the API returns them mixed
+  const folders = (files.items || []).filter((x: any) => x.is_folder || x.file_type === "folder");
+  const fileItems = (files.items || []).filter((x: any) => !x.is_folder && x.file_type !== "folder");
+  return { folders, files: fileItems, path: [{ id: 0, name: "我的文件" }] };
 });
 
 function fmtSize(b: number): string {
@@ -616,7 +623,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
               </div>
             </td>
             <td class="px-2 text-sm text-stora-muted-foreground">{fmtSize(item.file_size)}</td>
-            <td class="px-2 text-sm text-stora-muted-foreground">{item.file_type}</td>
+            <td class="px-2 text-sm text-stora-muted-foreground">{item.file_type || "未知"}</td>
             <td class="px-2 text-sm text-stora-muted-foreground">{item.created_at?.split("T")[0] || "—"}</td>
             <td class="px-2 text-stora-muted-foreground text-base font-semibold">⋯</td>
           </tr>
