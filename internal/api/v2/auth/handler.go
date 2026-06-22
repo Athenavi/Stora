@@ -2,6 +2,7 @@ package authapi
 
 import (
 	"database/sql"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -99,10 +100,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	var user models.User
 	err := h.db.QueryRow(
-		`SELECT id, username, email, password, is_superuser, is_active, profile_picture
+		`SELECT id, username, email, password, is_superuser, is_active, profile_picture, last_login_ip
 		 FROM users WHERE (username = $1 OR email = $1) AND is_active = true`,
 		username,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.IsSuperuser, &user.IsActive, &user.ProfilePicture)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.IsSuperuser, &user.IsActive, &user.ProfilePicture, &user.LastLoginIP)
 
 	if err == sql.ErrNoRows {
 		utils.WriteError(w, http.StatusUnauthorized, "invalid credentials")
