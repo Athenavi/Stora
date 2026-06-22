@@ -387,6 +387,7 @@ func main() {
 		r.Use(middleware.RequireAdmin)
 		if adminUIHandler != nil {
 			r.Get("/admin/ui", adminUIHandler.Dashboard)
+			r.Get("/admin/ui/", adminUIHandler.Dashboard)
 			r.Get("/admin/ui/migrate", adminUIHandler.MigratePage)
 		}
 	})
