@@ -299,6 +299,24 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	fileSize := header.Size
 
+	// Storage quota check
+	var totalStorage, usedStorage int64
+	h.db.QueryRow(`SELECT total_storage, used_storage FROM users WHERE id = $1`, userID).Scan(&totalStorage, &usedStorage)
+	if totalStorage > 0 && usedStorage+fileSize > totalStorage {
+		utils.WriteError(w, http.StatusInsufficientStorage, "storage quota exceeded")
+		return
+	}
+	// Warn at 90%
+	if totalStorage > 0 && usedStorage+fileSize > int64(float64(totalStorage)*0.9) {
+		h.db.Exec(`INSERT INTO notifications (user_id, type, title, body, created_at)
+			VALUES ($1, 'quota', '存储空间预警', $2, $3)
+			ON CONFLICT DO NOTHING`,
+			userID,
+			fmt.Sprintf("您的存储空间使用已超过 90%%（%d MB / %d MB）。请及时清理或升级。",
+				(usedStorage+fileSize)/(1024*1024), totalStorage/(1024*1024)),
+			time.Now().Format(time.RFC3339))
+	}
+
 	// Dedup: check file_fingerprints table
 	now := time.Now().Format(time.RFC3339)
 	var existingID int64
