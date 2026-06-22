@@ -494,6 +494,59 @@ func (h *Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
 }
 
+// UpdateFileContent replaces file content (used by ImageEditor save).
+// PUT /files/{id}/content (multipart: content)
+func (h *Handler) UpdateFileContent(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	if err := r.ParseMultipartForm(100 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "file too large")
+		return
+	}
+	content, header, err := r.FormFile("content")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "content required")
+		return
+	}
+	defer content.Close()
+
+	// Store new version
+	fileHash, storagePath, err := h.storage.StoreHash(content)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "storage failed")
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+
+	// Save old version
+	var oldPath string
+	h.db.QueryRow(`SELECT file_path FROM file_items WHERE id = $1 AND user_id = $2`, fileID, userID).Scan(&oldPath)
+	if oldPath != "" {
+		h.db.Exec(`INSERT INTO file_versions (file_id, version_num, file_path, file_size, created_by, created_at)
+			SELECT $1, COALESCE((SELECT MAX(version_num) FROM file_versions WHERE file_id = $1), 0) + 1,
+			       file_path, file_size, $2, $3 FROM file_items WHERE id = $1`,
+			fileID, userID, now)
+	}
+
+	// Update file item
+	newFilename := header.Filename
+	mimeType := header.Header.Get("Content-Type")
+	fileType := detectFileType(mimeType, newFilename)
+	_, err = h.db.Exec(
+		`UPDATE file_items SET file_path = $1, file_hash = $2, file_size = $3,
+		 mime_type = $4, file_type = $5, original_filename = $6, updated_at = $7
+		 WHERE id = $8 AND user_id = $9`,
+		storagePath, fileHash, header.Size, mimeType, fileType, newFilename, now, fileID, userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "saved"})
+}
+
 // ---------- File Comments ----------
 
 func (h *Handler) ListComments(w http.ResponseWriter, r *http.Request) {

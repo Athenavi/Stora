@@ -224,6 +224,7 @@ func main() {
 			r.Post("/files/upload/{uploadId}/complete", uploadHandler.CompleteUpload)
 			r.Delete("/files/upload/{uploadId}", uploadHandler.CancelUpload)
 			r.Patch("/files/{id}", fileHandler.UpdateFile)
+			r.Put("/files/{id}/content", fileHandler.UpdateFileContent)
 			r.Delete("/files/{id}", fileHandler.DeleteFile)
 			r.Put("/files/{id}/rename", fileHandler.RenameFile)
 			r.Put("/files/{id}/favorite", fileHandler.ToggleFavorite)
