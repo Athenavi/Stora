@@ -1,7 +1,7 @@
 /**
  * Stora Vault — flat design centered unlock + file list
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
 import { api, createServerApi } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";

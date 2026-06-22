@@ -283,23 +283,9 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	filename := header.Filename
 	mimeType := header.Header.Get("Content-Type")
 	fileType := detectFileType(mimeType, filename)
-
-	// Apply upload speed limit if configured
-	uploadSrc := io.Reader(file)
-	if h.limiter != nil {
-		uploadSrc = h.limiter.WrapUploadReader(userID, file)
-	}
-
-	// Compute SHA256 hash and store via content-addressable path (objects/{hash[:2]}/{hash[2:]})
-	fileHash, storagePath, err := h.storage.StoreHash(uploadSrc)
-	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, "storage failed")
-		return
-	}
-
 	fileSize := header.Size
 
-	// Storage quota check
+	// Storage quota check — BEFORE writing to disk
 	var totalStorage, usedStorage int64
 	h.db.QueryRow(`SELECT total_storage, used_storage FROM users WHERE id = $1`, userID).Scan(&totalStorage, &usedStorage)
 	if totalStorage > 0 && usedStorage+fileSize > totalStorage {
@@ -315,6 +301,19 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			fmt.Sprintf("您的存储空间使用已超过 90%%（%d MB / %d MB）。请及时清理或升级。",
 				(usedStorage+fileSize)/(1024*1024), totalStorage/(1024*1024)),
 			time.Now().Format(time.RFC3339))
+	}
+
+	// Apply upload speed limit if configured
+	uploadSrc := io.Reader(file)
+	if h.limiter != nil {
+		uploadSrc = h.limiter.WrapUploadReader(userID, file)
+	}
+
+	// Compute SHA256 hash and store via content-addressable path (objects/{hash[:2]}/{hash[2:]})
+	fileHash, storagePath, err := h.storage.StoreHash(uploadSrc)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "storage failed")
+		return
 	}
 
 	// Dedup: check file_fingerprints table
