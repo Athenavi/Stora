@@ -1,6 +1,7 @@
 package share
 
 import (
+	"archive/zip"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
@@ -40,15 +41,25 @@ func hashPassword(pw string) string {
 	return hex.EncodeToString(h[:])
 }
 
+// nullIfZero returns nil for 0, allowing DB NULL for optional FK columns.
+func nullIfZero(v int64) interface{} {
+	if v == 0 {
+		return nil
+	}
+	return v
+}
+
 // ─── Shared types ───
 
 type ShareLinkJSON struct {
 	ID                int64   `json:"id"`
 	ShortCode         string  `json:"short_code"`
 	FileID            int64   `json:"file_id"`
+	FolderID          *int64  `json:"folder_id,omitempty"`
 	Filename          string  `json:"filename"`
 	Permission        string  `json:"permission"`
 	IsActive          bool    `json:"is_active"`
+	IsFolder          bool    `json:"is_folder"`
 	PasswordProtected bool    `json:"password_protected"`
 	ViewCount         int     `json:"view_count"`
 	DownloadCount     int     `json:"download_count"`
@@ -64,6 +75,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 
 	// Accept both JSON and FormData
 	var fileID int64
+	var folderID int64
 	var permission string
 	var password *string
 	var expiresInHours int
@@ -78,6 +90,11 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		if fid := r.FormValue("file_id"); fid != "" {
 			if v, err := strconv.ParseInt(fid, 10, 64); err == nil {
 				fileID = v
+			}
+		}
+		if fid := r.FormValue("folder_id"); fid != "" {
+			if v, err := strconv.ParseInt(fid, 10, 64); err == nil {
+				folderID = v
 			}
 		}
 		permission = r.FormValue("permission")
@@ -97,6 +114,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	} else {
 		var req struct {
 			FileID         int64   `json:"file_id"`
+			FolderID       int64   `json:"folder_id"`
 			Permission     string  `json:"permission"`
 			Password       *string `json:"password"`
 			ExpiresInHours int     `json:"expires_in_hours"`
@@ -107,14 +125,19 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		fileID = req.FileID
+		folderID = req.FolderID
 		permission = req.Permission
 		password = req.Password
 		expiresInHours = req.ExpiresInHours
 		maxDownloads = req.MaxDownloads
 	}
 
-	if fileID == 0 {
-		http.Error(w, `{"error":"file_id required"}`, http.StatusBadRequest)
+	if fileID == 0 && folderID == 0 {
+		http.Error(w, `{"error":"file_id or folder_id required"}`, http.StatusBadRequest)
+		return
+	}
+	if fileID != 0 && folderID != 0 {
+		http.Error(w, `{"error":"provide either file_id or folder_id, not both"}`, http.StatusBadRequest)
 		return
 	}
 	if permission == "" {
@@ -124,6 +147,23 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	if !allowedPerms[permission] {
 		http.Error(w, `{"error":"invalid permission"}`, http.StatusBadRequest)
 		return
+	}
+
+	// Verify ownership
+	if folderID > 0 {
+		var ownerID int64
+		err := h.db.QueryRow(`SELECT user_id FROM folders WHERE id = $1`, folderID).Scan(&ownerID)
+		if err != nil || ownerID != userID {
+			http.Error(w, `{"error":"folder not found"}`, http.StatusNotFound)
+			return
+		}
+	} else if fileID > 0 {
+		var ownerID int64
+		err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND deleted_at IS NULL`, fileID).Scan(&ownerID)
+		if err != nil || ownerID != userID {
+			http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
+			return
+		}
 	}
 
 	shortCode := generateCode()
@@ -144,20 +184,28 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		hashedPw = sql.NullString{String: v, Valid: true}
 	}
 
-	// Ensure permission column exists in share_links
 	EnsureCompat(h.db)
 
 	var linkID int64
+	isFolder := folderID > 0
+
 	err := h.db.QueryRow(
-		`INSERT INTO share_links (file_id, user_id, short_code, permission, password, expires_at, max_downloads, is_active, created_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, true, $8) RETURNING id`,
-		fileID, userID, shortCode, permission, hashedPw, expiresAt, maxDownloads, nowStr,
+		`INSERT INTO share_links (file_id, folder_id, user_id, short_code, permission, password, expires_at, max_downloads, is_active, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9) RETURNING id`,
+		fileID, nullIfZero(folderID), userID, shortCode, permission, hashedPw, expiresAt, maxDownloads, nowStr,
 	).Scan(&linkID)
 
 	if err != nil {
-		log.Printf("[share] CreateShareLink insert failed: %v (file_id=%d, user_id=%d)", err, fileID, userID)
+		log.Printf("[share] CreateShareLink insert failed: %v (file_id=%d, folder_id=%d, user_id=%d)", err, fileID, folderID, userID)
 		utils.WriteError(w, http.StatusInternalServerError, "create failed")
 		return
+	}
+
+	itemName := ""
+	if isFolder {
+		h.db.QueryRow(`SELECT name FROM folders WHERE id = $1`, folderID).Scan(&itemName)
+	} else {
+		h.db.QueryRow(`SELECT COALESCE(filename, '') FROM file_items WHERE id = $1`, fileID).Scan(&itemName)
 	}
 
 	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{
@@ -165,6 +213,8 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		"short_code":         shortCode,
 		"permission":         permission,
 		"password_protected": hashedPw.Valid,
+		"is_folder":          isFolder,
+		"filename":           itemName,
 		"url":                "/s/" + shortCode,
 	})
 }
@@ -217,7 +267,75 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	// Increment view count
 	h.db.Exec(`UPDATE share_links SET view_count = view_count + 1 WHERE id = $1`, linkID)
 
-	// Return share info + file details
+	// Determine if this is a file or folder share
+	var isFolder bool
+	var folderID int64
+	h.db.QueryRow(`SELECT folder_id IS NOT NULL, COALESCE(folder_id, 0) FROM share_links WHERE id = $1`, linkID).Scan(&isFolder, &folderID)
+
+	if isFolder {
+		// Return folder info + file listing
+		var folderName string
+		h.db.QueryRow(`SELECT name FROM folders WHERE id = $1`, folderID).Scan(&folderName)
+
+		type FolderFileItem struct {
+			ID       int64  `json:"id"`
+			Filename string `json:"filename"`
+			FileSize int64  `json:"file_size"`
+			FileType string `json:"file_type"`
+		}
+		items := make([]FolderFileItem, 0)
+
+		// Get child files
+		frows, err := h.db.Query(
+			`SELECT id, COALESCE(filename, ''), COALESCE(file_size, 0), COALESCE(file_type, 'other')
+			 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL ORDER BY filename`,
+			folderID,
+		)
+		if err == nil {
+			defer frows.Close()
+			for frows.Next() {
+				var fi FolderFileItem
+				frows.Scan(&fi.ID, &fi.Filename, &fi.FileSize, &fi.FileType)
+				items = append(items, fi)
+			}
+		}
+
+		// Get child folders
+		type SubFolder struct {
+			ID   int64  `json:"id"`
+			Name string `json:"name"`
+		}
+		subFolders := make([]SubFolder, 0)
+		drows, err := h.db.Query(`SELECT id, name FROM folders WHERE parent_id = $1 ORDER BY name`, folderID)
+		if err == nil {
+			defer drows.Close()
+			for drows.Next() {
+				var sf SubFolder
+				drows.Scan(&sf.ID, &sf.Name)
+				subFolders = append(subFolders, sf)
+			}
+		}
+
+		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"share_info": map[string]interface{}{
+				"id":                 linkID,
+				"short_code":         code,
+				"permission":         "read",
+				"password_protected": hashedPw != nil && *hashedPw != "",
+				"is_folder":          true,
+			},
+			"item": map[string]interface{}{
+				"id":       folderID,
+				"filename": folderName,
+				"is_folder": true,
+			},
+			"folders": subFolders,
+			"items":   items,
+		})
+		return
+	}
+
+	// Return share info + single file details
 	var filename, mimeType string
 	var fileSize int64
 	h.db.QueryRow(
@@ -244,18 +362,22 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // ShareFileDownload streams a shared file for download (public, no auth required).
+// For folder shares, streams a ZIP of all files in the folder.
 func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 
-	var fileID int64
+	var fileID, folderID int64
 	var hashedPw *string
+	var isFolder bool
 	err := h.db.QueryRow(
-		`SELECT s.file_id, s.password FROM share_links s
+		`SELECT COALESCE(s.file_id, 0), COALESCE(s.folder_id, 0), s.password,
+		        CASE WHEN s.folder_id IS NOT NULL THEN true ELSE false END
+		 FROM share_links s
 		 WHERE (s.short_code = $1 OR s.token = $1) AND s.is_active = true
 		 AND (s.expires_at IS NULL OR s.expires_at > $2)
 		 AND (s.max_downloads IS NULL OR s.max_downloads = 0 OR s.download_count < s.max_downloads)`,
 		code, time.Now().Format(time.RFC3339),
-	).Scan(&fileID, &hashedPw)
+	).Scan(&fileID, &folderID, &hashedPw, &isFolder)
 
 	if err != nil {
 		http.Error(w, `{"error":"link invalid or expired"}`, http.StatusNotFound)
@@ -275,6 +397,58 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Increment download count
+	h.db.Exec(`UPDATE share_links SET download_count = download_count + 1 WHERE (short_code = $1 OR token = $1)`, code)
+
+	if isFolder {
+		// Query all files in the folder (one level, non-recursive for simplicity)
+		type fileRef struct {
+			FilePath string
+			Filename string
+		}
+		rows, err := h.db.Query(
+			`SELECT file_path, COALESCE(original_filename, filename) FROM file_items
+			 WHERE folder_id = $1 AND deleted_at IS NULL`, folderID,
+		)
+		if err != nil || rows == nil {
+			http.Error(w, `{"error":"query failed"}`, http.StatusInternalServerError)
+			return
+		}
+		var files []fileRef
+		for rows.Next() {
+			var fr fileRef
+			rows.Scan(&fr.FilePath, &fr.Filename)
+			files = append(files, fr)
+		}
+		rows.Close()
+
+		// Stream ZIP
+		var folderName string
+		h.db.QueryRow(`SELECT name FROM folders WHERE id = $1`, folderID).Scan(&folderName)
+
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, folderName))
+		w.WriteHeader(http.StatusOK)
+
+		zw := zip.NewWriter(w)
+		for _, f := range files {
+			reader, rErr := h.storage.Retrieve(f.FilePath)
+			if rErr != nil {
+				continue
+			}
+			hdr := &zip.FileHeader{Name: f.Filename, Method: zip.Deflate}
+			writer, wErr := zw.CreateHeader(hdr)
+			if wErr != nil {
+				reader.Close()
+				continue
+			}
+			io.Copy(writer, reader)
+			reader.Close()
+		}
+		zw.Close()
+		return
+	}
+
 	// Get file details
 	var filePath, mimeType, filename string
 	err = h.db.QueryRow(
@@ -285,9 +459,6 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"file not found"}`, http.StatusNotFound)
 		return
 	}
-
-	// Increment download count
-	h.db.Exec(`UPDATE share_links SET download_count = download_count + 1 WHERE (short_code = $1 OR token = $1)`, code)
 
 	// Stream the file
 	reader, err := h.storage.Retrieve(filePath)
@@ -371,12 +542,16 @@ func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(`SELECT COUNT(*) FROM share_links WHERE user_id = $1`, userID).Scan(&total)
 
 	rows, err := h.db.Query(
-		`SELECT s.id, COALESCE(s.short_code, s.token), s.file_id, COALESCE(f.filename, ''),
+		`SELECT s.id, COALESCE(s.short_code, s.token), COALESCE(s.file_id, 0), COALESCE(s.folder_id, 0),
+		        CASE WHEN s.file_id IS NOT NULL THEN COALESCE(f.filename, '') ELSE COALESCE(d.name, '') END,
 		        COALESCE(s.permission, 'read'), s.is_active,
 		        CASE WHEN s.password IS NOT NULL AND s.password != '' THEN true ELSE false END,
 		        s.view_count, s.download_count, COALESCE(s.max_downloads, 0),
-		        s.expires_at, s.created_at
-		 FROM share_links s LEFT JOIN file_items f ON s.file_id = f.id
+		        s.expires_at, s.created_at,
+		        CASE WHEN s.folder_id IS NOT NULL THEN true ELSE false END
+		 FROM share_links s
+		 LEFT JOIN file_items f ON s.file_id = f.id
+		 LEFT JOIN folders d ON s.folder_id = d.id
 		 WHERE s.user_id = $1 ORDER BY s.created_at DESC LIMIT $2 OFFSET $3`,
 		userID, pageSize, offset,
 	)
@@ -389,10 +564,14 @@ func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 	items := make([]ShareLinkJSON, 0)
 	for rows.Next() {
 		var item ShareLinkJSON
-		rows.Scan(&item.ID, &item.ShortCode, &item.FileID, &item.Filename,
-			&item.Permission, &item.IsActive, &item.PasswordProtected,
+		var folderID int64
+		rows.Scan(&item.ID, &item.ShortCode, &item.FileID, &folderID,
+			&item.Filename, &item.Permission, &item.IsActive, &item.PasswordProtected,
 			&item.ViewCount, &item.DownloadCount, &item.MaxDownloads,
-			&item.ExpiresAt, &item.CreatedAt)
+			&item.ExpiresAt, &item.CreatedAt, &item.IsFolder)
+		if folderID > 0 {
+			item.FolderID = &folderID
+		}
 		items = append(items, item)
 	}
 
@@ -498,6 +677,7 @@ func (h *Handler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 // EnsureCompat runs migration to add missing columns.
 func EnsureCompat(db *sql.DB) {
 	for _, m := range []string{
+		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS folder_id BIGINT REFERENCES folders(id) ON DELETE SET NULL`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS token VARCHAR(64) DEFAULT ''`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS short_code VARCHAR(32) DEFAULT ''`,
 		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS permission VARCHAR(20) DEFAULT 'read'`,
