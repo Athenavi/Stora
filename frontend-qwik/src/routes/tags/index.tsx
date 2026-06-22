@@ -1,7 +1,7 @@
 /**
  * Stora Tags — flat design tag cloud + file list
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { api, createServerApi } from "~/lib/api";
 
