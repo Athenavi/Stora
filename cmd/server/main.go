@@ -66,6 +66,16 @@ func main() {
 	migrations := []string{
 		`ALTER TABLE file_items ADD COLUMN IF NOT EXISTS description TEXT`,
 		`ALTER TABLE upload_tasks ADD COLUMN IF NOT EXISTS upload_id VARCHAR(255)`,
+		`CREATE TABLE IF NOT EXISTS transcription_tasks (
+			id BIGSERIAL PRIMARY KEY,
+			file_id BIGINT NOT NULL REFERENCES file_items(id) ON DELETE CASCADE,
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			status VARCHAR(20) NOT NULL DEFAULT 'pending',
+			content TEXT,
+			error_msg TEXT,
+			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+		)`,
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
@@ -135,6 +145,7 @@ func main() {
 	uploadHandler := fileapi.NewUploadHandler(db, store, cfg.TempFolder)
 	vaultHandler := fileapi.NewVaultHandler(db)
 	transcodeHandler := fileapi.NewTranscodeHandler(db, store)
+	transcribeHandler := fileapi.NewTranscribeHandler(db)
 	versionHandler := fileapi.NewVersionHandler(db)
 	batchHandler := fileapi.NewBatchHandler(db, store)
 	trashHandler := fileapi.NewTrashHandler(db)
@@ -271,7 +282,13 @@ func main() {
 			r.Delete("/vaults/{vaultId}/items/{itemId}", vaultHandler.DeleteVaultItem)
 
 			// Transcoding
-			r.Post("/files/{id}/transcode", transcodeHandler.StartTranscode)
+			r.Post("/files/transcode/{id}", transcodeHandler.StartTranscode)
+			r.Get("/files/transcode/{id}/tasks", transcodeHandler.ListTranscodeTasks)
+
+			// Transcription (AI subtitles)
+			r.Post("/files/transcribe/{id}", transcribeHandler.StartTranscription)
+			r.Get("/files/transcribe/{id}/status", transcribeHandler.GetTranscriptionStatus)
+			r.Get("/files/transcribe/{id}/subtitle", transcribeHandler.GetSubtitleFile)
 
 			// Versions
 			r.Get("/files/{id}/versions", versionHandler.ListVersions)
@@ -406,6 +423,7 @@ func main() {
 
 	// WOPI routes (public — Collabora Online calls server-to-server)
 	r.Route("/api/v2/wopi", func(r chi.Router) {
+		r.Get("/access/{fileId}", wopiHandler.GetWopiAccess)
 		r.Get("/files/{fileId}", wopiHandler.CheckFileInfo)
 		r.Get("/files/{fileId}/contents", wopiHandler.GetFile)
 		r.Post("/files/{fileId}/contents", wopiHandler.PutFile)

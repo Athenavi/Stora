@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -119,4 +120,39 @@ func (h *Handler) PutFile(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "saved"})
+}
+
+// GetWopiAccess returns the Collabora Online editor URL for a file.
+// GET /api/v2/wopi/access/{fileId}
+func (h *Handler) GetWopiAccess(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "fileId"), 10, 64)
+	if fileID == 0 {
+		http.Error(w, `{"error":"invalid file id"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Build Collabora WOPI URL
+	// Collabora expects: http://<collabora>/cool/wopi/files/<fileId>?access_token=<token>
+	// We return the URL for the frontend to open in a new tab.
+	// Ponytail: WOPI proof-of-concept — uses a simple token; upgrade to JWT for production.
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	host := r.Host
+	wopiSrc := fmt.Sprintf("%s://%s/api/v2/wopi/files/%d", scheme, host, fileID)
+
+	// Default Collabora URL; users can override via env
+	collaboraURL := "http://localhost:9980"
+	if env := os.Getenv("COLLABORA_URL"); env != "" {
+		collaboraURL = env
+	}
+
+	editorURL := fmt.Sprintf("%s/cool/wopi/files/%d?access_token=stora_wopi_token&WOPISrc=%s",
+		collaboraURL, fileID, wopiSrc)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"editor_url": editorURL,
+	})
 }

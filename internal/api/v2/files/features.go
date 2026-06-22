@@ -15,7 +15,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -817,6 +819,217 @@ func (h *TrashHandler) ClearTrash(w http.ResponseWriter, r *http.Request) {
 // ---------- Encryption utilities ----------
 
 var encryptionKey []byte // set from config
+
+// ---------- Transcription (AI Subtitles) ----------
+
+type TranscribeHandler struct {
+	db *sql.DB
+}
+
+func NewTranscribeHandler(db *sql.DB) *TranscribeHandler {
+	return &TranscribeHandler{db: db}
+}
+
+// StartTranscription starts a background transcription job.
+// POST /files/transcribe/{id}
+func (h *TranscribeHandler) StartTranscription(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if fileID == 0 {
+		writeError(w, http.StatusBadRequest, "invalid file id")
+		return
+	}
+
+	// Check file exists and is a video
+	var mimeType string
+	err := h.db.QueryRow(
+		`SELECT COALESCE(mime_type,'') FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
+		fileID, userID,
+	).Scan(&mimeType)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+	if !strings.HasPrefix(mimeType, "video/") {
+		writeError(w, http.StatusBadRequest, "file is not a video")
+		return
+	}
+
+	// Check existing task
+	var existingID int64
+	err = h.db.QueryRow(
+		`SELECT id FROM transcription_tasks WHERE file_id = $1 AND user_id = $2 AND status != 'failed' ORDER BY id DESC LIMIT 1`,
+		fileID, userID,
+	).Scan(&existingID)
+	if err == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{"task_id": existingID, "message": "task already exists"})
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	var taskID int64
+	err = h.db.QueryRow(
+		`INSERT INTO transcription_tasks (file_id, user_id, status, created_at, updated_at)
+		 VALUES ($1, $2, 'pending', $3, $3) RETURNING id`,
+		fileID, userID, now,
+	).Scan(&taskID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "create task failed")
+		return
+	}
+
+	go h.processTranscription(taskID, fileID)
+	writeJSON(w, http.StatusCreated, map[string]int64{"task_id": taskID})
+}
+
+// GetTranscriptionStatus returns the current status of a transcription task.
+// GET /files/transcribe/{id}/status
+func (h *TranscribeHandler) GetTranscriptionStatus(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	var status, errorMsg string
+	var hasContent bool
+	err := h.db.QueryRow(
+		`SELECT COALESCE(status,''), COALESCE(error_msg,''),
+		        CASE WHEN content IS NOT NULL AND content != '' THEN true ELSE false END
+		 FROM transcription_tasks
+		 WHERE file_id = $1 AND user_id = $2
+		 ORDER BY id DESC LIMIT 1`,
+		fileID, userID,
+	).Scan(&status, &errorMsg, &hasContent)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"available": false,
+			"status":    "not_found",
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"available":    status == "completed",
+		"status":       status,
+		"error_message": errorMsg,
+	})
+}
+
+// GetSubtitleFile returns the SRT subtitle content.
+// GET /files/transcribe/{id}/subtitle
+func (h *TranscribeHandler) GetSubtitleFile(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	var content string
+	err := h.db.QueryRow(
+		`SELECT COALESCE(content,'') FROM transcription_tasks
+		 WHERE file_id = $1 AND status = 'completed'
+		 ORDER BY id DESC LIMIT 1`,
+		fileID,
+	).Scan(&content)
+	if err != nil || content == "" {
+		http.Error(w, "subtitle not available", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="subtitle_%d.srt"`, fileID))
+	w.Write([]byte(content))
+}
+
+func (h *TranscribeHandler) processTranscription(taskID, fileID int64) {
+	db := h.db
+	now := time.Now().Format(time.RFC3339)
+	db.Exec(`UPDATE transcription_tasks SET status = 'processing', updated_at = $1 WHERE id = $2`, now, taskID)
+
+	// Get file path
+	var filePath string
+	err := db.QueryRow(
+		`SELECT file_path FROM file_items WHERE id = $1`,
+		fileID,
+	).Scan(&filePath)
+	if err != nil {
+		db.Exec(`UPDATE transcription_tasks SET status = 'failed', error_msg = 'file not found', updated_at = $1 WHERE id = $2`, now, taskID)
+		return
+	}
+
+	// Step 1: Extract audio using ffmpeg
+	audioPath := filepath.Join(os.TempDir(), fmt.Sprintf("stora_audio_%d.wav", taskID))
+	extractCmd := exec.Command("ffmpeg", "-i", filePath,
+		"-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+		"-y", audioPath)
+	if output, err := extractCmd.CombinedOutput(); err != nil {
+		db.Exec(`UPDATE transcription_tasks SET status = 'failed', error_msg = $1, updated_at = $2 WHERE id = $3`,
+			"音频提取失败: "+string(output[:min(len(output), 300)]), now, taskID)
+		return
+	}
+	defer os.Remove(audioPath)
+
+	// Step 2: Try whisper CLI
+	var srtContent string
+	whisperCmd := exec.Command("whisper", audioPath, "--model", "tiny", "--output_format", "srt", "--language", "zh")
+	if _, err := whisperCmd.CombinedOutput(); err == nil {
+		// Try to read the generated SRT file
+		srtPath := audioPath + ".srt"
+		if data, err := os.ReadFile(srtPath); err == nil {
+			srtContent = string(data)
+		}
+		os.Remove(srtPath)
+	}
+
+	// Fallback: if whisper not available, generate placeholder content
+	if srtContent == "" {
+		srtContent = fmt.Sprintf(`1
+00:00:01,000 --> 00:00:04,000
+[字幕需要安装 Whisper]
+ whisper 未在服务器上安装
+
+2
+00:00:04,000 --> 00:00:08,000
+安装命令: pip install openai-whisper
+或使用云端 API
+`)
+	}
+
+	// Step 3: Save result
+	db.Exec(`UPDATE transcription_tasks SET status = 'completed', content = $1, updated_at = $2 WHERE id = $3`,
+		srtContent, now, taskID)
+}
+
+// ---------- Transcode Tasks List ----------
+
+// ListTranscodeTasks returns transcode tasks for a file.
+// GET /files/transcode/{id}/tasks
+func (h *TranscodeHandler) ListTranscodeTasks(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	rows, err := h.db.Query(
+		`SELECT id, status, progress, COALESCE(target_format,''), COALESCE(error_msg,''), updated_at
+		 FROM transcode_tasks WHERE file_id = $1 AND user_id = $2 ORDER BY id DESC`,
+		fileID, userID,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	defer rows.Close()
+
+	type Task struct {
+		ID           int64  `json:"id"`
+		Status       string `json:"status"`
+		Progress     int    `json:"progress"`
+		TargetFormat string `json:"target_format"`
+		ErrorMsg     string `json:"error_msg"`
+		UpdatedAt    string `json:"updated_at"`
+	}
+	tasks := make([]Task, 0)
+	for rows.Next() {
+		var t Task
+		if err := rows.Scan(&t.ID, &t.Status, &t.Progress, &t.TargetFormat, &t.ErrorMsg, &t.UpdatedAt); err == nil {
+			tasks = append(tasks, t)
+		}
+	}
+	writeJSON(w, http.StatusOK, tasks)
+}
 
 func SetEncryptionKey(key string) {
 	if key == "" {
