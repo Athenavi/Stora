@@ -658,7 +658,7 @@ func (h *Handler) GetFolderChildren(w http.ResponseWriter, r *http.Request) {
 		CreatedAt *string `json:"created_at"`
 		UpdatedAt *string `json:"updated_at"`
 	}
-	var files []FileItem
+	var files = make([]FileItem, 0)
 	frows2, err := h.db.Query(
 		`SELECT id, filename, file_size, mime_type, file_type, is_favorite, thumbnail_url, folder_id, created_at, updated_at
 		 FROM file_items WHERE user_id = $1 AND folder_id = $2 AND deleted_at IS NULL
@@ -1175,7 +1175,7 @@ func (h *Handler) GetFolderChildrenByPath(w http.ResponseWriter, r *http.Request
 		Name string `json:"name"`
 		Path string `json:"path"`
 	}
-	var folders []FolderItem
+	var folders = make([]FolderItem, 0)
 
 	if folderID == 0 {
 		// Root level
@@ -1210,7 +1210,7 @@ func (h *Handler) GetFolderChildrenByPath(w http.ResponseWriter, r *http.Request
 		CreatedAt *string `json:"created_at"`
 		UpdatedAt *string `json:"updated_at"`
 	}
-	var files []FileItem
+	var files = make([]FileItem, 0)
 	if folderID == 0 {
 		rows, err := h.db.Query(
 			`SELECT id, filename, file_size, mime_type, file_type, is_favorite, thumbnail_url, folder_id, created_at, updated_at

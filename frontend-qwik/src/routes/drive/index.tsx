@@ -19,7 +19,7 @@ export const useFileList = routeLoader$(async ({ url, request }) => {
     const d = await api.get<PathChildrenResponse>(`/files/folders/by-path?path=${encodeURIComponent(folderPath.replace(/^\//, ''))}`).catch(() => null);
     if (!d) return { folders: [], files: [], path: ["我的文件"] };
     // Map folders to include full path for navigation
-    const mappedFolders = d.folders.map(f => ({ ...f, id: f.id, name: f.name, path: f.path }));
+    const mappedFolders = (d.folders || []).map(f => ({ ...f, id: f.id, name: f.name, path: f.path }));
     return { folders: mappedFolders, files: d.files, path: d.path };
   }
   if (search) {
