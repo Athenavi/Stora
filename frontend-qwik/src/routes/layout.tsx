@@ -4,6 +4,7 @@
 import { component$, useSignal, useVisibleTask$, Slot, $ } from "@builder.io/qwik";
 import { useLocation, Link } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
+import FolderTree from "~/components/ui/FolderTree";
 import TransferQueue from "~/components/ui/TransferQueue";
 import { api, isAuthenticated } from "~/lib/api";
 import { ToastContainer } from "~/components/ui/index";
@@ -161,6 +162,8 @@ export default component$(() => {
               </Link>
             );
           })}
+          {/* Folder tree — shown only on drive page */}
+          {isDrive && <FolderTree />}
         </nav>
 
         {/* Storage area — 75px, #1E293B card, padding 12px, margin 24px */}

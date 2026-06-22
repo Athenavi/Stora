@@ -29,11 +29,7 @@ export const useFileList = routeLoader$(async ({ url, request }) => {
   const typeParam = fileType ? `&file_type=${fileType}` : "";
   const sortParam = `&sort_by=${sortBy}&sort_order=${sortOrder}`;
   const files = await api.get(`/files?page=1&page_size=50${typeParam}${sortParam}`).catch(() => null);
-  if (!files) return null;
-  // Separate folders from files when the API returns them mixed
-  const folders = (files.items || []).filter((x: any) => x.is_folder || x.file_type === "folder");
-  const fileItems = (files.items || []).filter((x: any) => !x.is_folder && x.file_type !== "folder");
-  return { folders, files: fileItems, path: [{ id: 0, name: "我的文件" }] };
+  return files ? { folders: [], files: files.items, path: [{ id: 0, name: "我的文件" }] } : null;
 });
 
 function fmtSize(b: number): string {
