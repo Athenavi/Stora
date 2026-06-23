@@ -658,7 +658,8 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
             <td class="px-2 cursor-pointer" onClick$={() => onPreview$ ? onPreview$(item) : nav(`/view?id=${item.id}`)}>
               <div class="flex items-center gap-3">
                 <div class={`w-7 h-7 flex items-center justify-center text-sm shrink-0`}>{tc.icon}</div>
-                <span class="text-sm font-medium text-stora-foreground truncate max-w-xs">{item.filename}</span>
+                <span class="text-sm font-medium text-stora-foreground truncate max-w-[200px]">{item.filename}</span>
+                {item.is_favorite && <span class="text-amber-500 text-xs shrink-0" title="已收藏">⭐</span>}
               </div>
             </td>
             <td class="px-2 text-sm text-stora-muted-foreground">{fmtSize(item.file_size)}</td>
@@ -707,6 +708,7 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; curren
           </div>
           <p class="text-xs font-medium text-stora-foreground truncate text-center">{item.filename}</p>
           <p class="text-xs text-stora-muted-foreground text-center mt-0.5">{fmtSize(item.file_size)}</p>
+          {item.is_favorite && <div class="absolute top-1 right-1 text-xs" title="已收藏">⭐</div>}
           {sel && <div class="absolute top-2 right-2 w-5 h-5 bg-stora-primary flex items-center justify-center"><span class="text-white text-xs">✓</span></div>}
         </div>
       );

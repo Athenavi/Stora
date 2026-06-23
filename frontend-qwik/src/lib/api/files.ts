@@ -173,6 +173,23 @@ export const completeUpload = (
 ): Promise<{ file: FileItem }> =>
   api.post('/files/upload/complete', { upload_id: uploadId, folder_id: folderId });
 
+// ─── Tags ───
+
+export const listFileTags = (fileId: number): Promise<{ id: number; name: string; color: string | null }[]> =>
+  api.get(`/files/${fileId}/tags`);
+
+export const assignFileTags = (fileId: number, tagIds: number[]): Promise<void> =>
+  api.post(`/files/${fileId}/tags`, { tag_ids: tagIds });
+
+export const removeFileTag = (fileId: number, tagId: number): Promise<void> =>
+  api.delete(`/files/${fileId}/tags/${tagId}`);
+
+export const listUserTags = (): Promise<{ id: number; name: string; color: string | null; file_count: number }[]> =>
+  api.get('/files/tags');
+
+export const createTag = (name: string, color?: string): Promise<{ id: number }> =>
+  api.post('/files/tags', { name, color });
+
 // ─── Download ───
 
 /** 批量下载：将选中文件打包为 ZIP */
