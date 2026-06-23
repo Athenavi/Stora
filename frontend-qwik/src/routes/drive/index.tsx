@@ -19,24 +19,24 @@ export const useFileList = routeLoader$(async ({ url, request }) => {
 
   if (folderPath !== "") {
     const d = await api.get<PathChildrenResponse>(`/files/folders/by-path?path=${encodeURIComponent(folderPath.replace(/^\//, ''))}`).catch(() => null);
-    if (!d) return { folders: [], files: [], path: ["我的文件"] };
+    if (!d) return { folders: [], files: [], path: ["我的文件"], folder_id: null };
     // Map folders to include full path for navigation
     const mappedFolders = (d.folders || []).map(f => ({ ...f, id: f.id, name: f.name, path: f.path }));
-    return { folders: mappedFolders, files: d.files, path: d.path };
+    return { folders: mappedFolders, files: d.files, path: d.path, folder_id: d.folder_id };
   }
   if (search) {
     const d = await api.get(`/files/search?q=${encodeURIComponent(search)}&page=1&page_size=50`).catch(() => null);
     if (!d) return null;
     const folders = (d.items || []).filter((x: any) => x.is_folder || x.file_type === "folder");
     const fileItems = (d.items || []).filter((x: any) => !x.is_folder && x.file_type !== "folder");
-    return { folders, files: fileItems, path: [`搜索: ${search}`] };
+    return { folders, files: fileItems, path: [`搜索: ${search}`], folder_id: null };
   }
   const typeParam = fileType ? `&file_type=${fileType}` : "";
   const sortParam = `&sort_by=${sortBy}&sort_order=${sortOrder}`;
   const catParam = url.searchParams.get("category") ? `&category=${encodeURIComponent(url.searchParams.get("category")!)}` : "";
   const tagParam = url.searchParams.get("tag_id") ? `&tag_id=${url.searchParams.get("tag_id")}` : "";
   const files = await api.get(`/files?page=1&page_size=50${typeParam}${sortParam}${catParam}${tagParam}`).catch(() => null);
-  return files ? { folders: [], files: files.items, path: ["我的文件"] } : null;
+  return files ? { folders: [], files: files.items, path: ["我的文件"], folder_id: null } : null;
 });
 
 function fmtSize(b: number): string {
