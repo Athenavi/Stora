@@ -450,13 +450,13 @@ export default component$(() => {
                 {clipboard.value && (
                   <button onClick$={async () => {
                     const ids = [...clipboard.value.fileIds];
-                    clipboard.value = null;
+                    saveClipboard(null);
                     ctxItem.value = null;
                     try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.fileIds.length} 项</button>
                 )}
                 {clipboard.value && (
-                  <button onClick$={() => { clipboard.value = null; ctxItem.value = null; }}
+                  <button onClick$={() => { saveClipboard(null); ctxItem.value = null; }}
                     class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-muted-foreground hover:bg-stora-muted touch-target">✕ 取消粘贴</button>
                 )}
               </>
@@ -469,7 +469,7 @@ export default component$(() => {
                 <button onClick$={async () => {
                   const id = ctxItem.value!.id;
                   ctxItem.value = null;
-                  clipboard.value = { fileIds: [id], action: "copy" };
+                  saveClipboard({ fileIds: [id], action: "copy" });
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制文件</button>
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
@@ -508,7 +508,7 @@ export default component$(() => {
                 {clipboard.value && (
                   <button onClick$={async () => {
                     const ids = [...clipboard.value.fileIds];
-                    clipboard.value = null;
+                    saveClipboard(null);
                     ctxItem.value = null;
                     try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.fileIds.length} 项</button>
@@ -522,7 +522,7 @@ export default component$(() => {
               <>
                 <button onClick$={() => { nav(`/drive?Path=${encodeURIComponent((ctxItem.value as any)?.path || ctxItem.value!.name)}`); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📂 打开</button>
-                <button onClick$={() => { clipboard.value = { fileIds: [ctxItem.value!.id], action: "cut" }; ctxItem.value = null; }}
+                <button onClick$={() => { saveClipboard({ fileIds: [ctxItem.value!.id], action: "cut" }); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制文件夹</button>
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
