@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, listUserTags, listVaults, copyFileToVault, createOfflineDownload, listOfflineDownloads, retryOfflineDownload, type PathChildrenResponse, type FileItem } from "~/lib/api";
+import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, copyFiles, uploadFile, batchDownload, createShare, api, listUserTags, listVaults, copyFileToVault, createOfflineDownload, listOfflineDownloads, retryOfflineDownload, type PathChildrenResponse, type FileItem } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Input } from "~/components/ui/Button";
 import PreviewPanel from "~/components/drive/PreviewPanel";
@@ -459,9 +459,14 @@ export default component$(() => {
                     const cb = await getClipboard();
                     if (!cb) return;
                     const ids = [...cb.fileIds];
-                    setClipboard(null);
+                    const action = cb.action;
+                    if (action !== "copy") setClipboard(null);
                     ctxItem.value = null;
-                    try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch { alert("粘贴失败"); }
+                    try {
+                      if (action === "copy") { await copyFiles(ids, resolvedFolderId.value || null); }
+                      else { await moveFiles(ids, resolvedFolderId.value || null); }
+                      refresh();
+                    } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴</button>
                 )}
                 {clipboard.value && (
@@ -519,9 +524,14 @@ export default component$(() => {
                     const cb = await getClipboard();
                     if (!cb) return;
                     const ids = [...cb.fileIds];
-                    setClipboard(null);
+                    const action = cb.action;
+                    if (action !== "copy") setClipboard(null);
                     ctxItem.value = null;
-                    try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch { alert("粘贴失败"); }
+                    try {
+                      if (action === "copy") { await copyFiles(ids, resolvedFolderId.value || null); }
+                      else { await moveFiles(ids, resolvedFolderId.value || null); }
+                      refresh();
+                    } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴</button>
                 )}
                 <button onClick$={async () => {
@@ -555,9 +565,14 @@ export default component$(() => {
                     if (!cb) return;
                     const ids = [...cb.fileIds];
                     const folderId = ctxItem.value!.id;
-                    setClipboard(null);
+                    const action = cb.action;
+                    if (action !== "copy") setClipboard(null);
                     ctxItem.value = null;
-                    try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: folderId }); refresh(); } catch { alert("粘贴失败"); }
+                    try {
+                      if (action === "copy") { await copyFiles(ids, folderId); }
+                      else { await moveFiles(ids, folderId); }
+                      refresh();
+                    } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴到此文件夹</button>
                 )}
               </>

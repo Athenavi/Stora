@@ -665,6 +665,144 @@ func (h *BatchHandler) BatchMove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"moved": len(req.FileIDs)})
 }
 
+// BatchCopy copies files to another folder.
+// ponytail: processes in a single DB transaction; no physical file copy needed
+// because content-addressed storage lets multiple file_items share the same blob.
+// Known ceiling: very large batches (1000+) hold the tx open; upgrade path is a
+// single bulk INSERT INTO ... SELECT FROM unnest(...) when the loop becomes a bottleneck.
+func (h *BatchHandler) BatchCopy(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	var req struct {
+		FileIDs  []int64 `json:"file_ids"`
+		FolderID *int64  `json:"folder_id"`
+		TargetID *int64  `json:"target_folder_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "file_ids required")
+		return
+	}
+	if len(req.FileIDs) > 500 {
+		writeError(w, http.StatusBadRequest, "batch copy limit: 500 files")
+		return
+	}
+	dest := req.FolderID
+	if dest == nil {
+		dest = req.TargetID
+	}
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+	defer tx.Rollback()
+
+	// Pre-flight: verify quota and collect source file metadata
+	var totalStorage, usedStorage int64
+	err = tx.QueryRow(`SELECT COALESCE(total_storage,0), COALESCE(used_storage,0) FROM users WHERE id = $1`, userID).Scan(&totalStorage, &usedStorage)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	type srcFile struct {
+		filename, origFilename, filePath, mimeType, fileType, storageDriver, fileHash string
+		fileSize    int64
+		isEncrypted bool
+		description, fileURL, thumbnailURL, category string
+		duration, width, height, sortOrder int64
+	}
+	var srcFiles []srcFile
+	var totalNeeded int64
+	for _, fileID := range req.FileIDs {
+		var sf srcFile
+		err := tx.QueryRow(
+			`SELECT COALESCE(filename,''), COALESCE(original_filename,''), COALESCE(file_path,''),
+			        COALESCE(file_size,0), COALESCE(mime_type,''), COALESCE(file_type,'other'),
+			        COALESCE(storage_driver,'local'), COALESCE(file_hash,''),
+			        COALESCE(is_encrypted,false), COALESCE(description,''), COALESCE(file_url,''),
+			        COALESCE(duration,0), COALESCE(thumbnail_url,''), COALESCE(width,0), COALESCE(height,0),
+			        COALESCE(category,''), COALESCE(sort_order,0)
+			 FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL AND is_folder = false`,
+			fileID, userID,
+		).Scan(&sf.filename, &sf.origFilename, &sf.filePath, &sf.fileSize, &sf.mimeType, &sf.fileType,
+			&sf.storageDriver, &sf.fileHash, &sf.isEncrypted, &sf.description, &sf.fileURL,
+			&sf.duration, &sf.thumbnailURL, &sf.width, &sf.height, &sf.category, &sf.sortOrder)
+		if err != nil {
+			log.Printf("[BatchCopy] source file %d not found or is a folder (skipped)", fileID)
+			continue
+		}
+		totalNeeded += sf.fileSize
+		srcFiles = append(srcFiles, sf)
+	}
+
+	if len(srcFiles) == 0 {
+		writeError(w, http.StatusNotFound, "no valid files to copy")
+		return
+	}
+	if totalStorage > 0 && usedStorage+totalNeeded > totalStorage {
+		writeError(w, http.StatusInsufficientStorage, "insufficient storage quota")
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	copied := 0
+
+	for _, sf := range srcFiles {
+		// Apply "(copy)" suffix to avoid filename collision in the target folder
+		copyName := sf.filename
+		ext := ""
+		if dot := strings.LastIndex(copyName, "."); dot >= 0 {
+			ext = copyName[dot:]
+			copyName = copyName[:dot]
+		}
+		copyName = copyName + " (copy)" + ext
+
+		var newID int64
+		err := tx.QueryRow(
+			`INSERT INTO file_items
+				(user_id, folder_id, filename, original_filename, file_path, file_size,
+				 mime_type, file_type, storage_driver, file_hash, is_folder, is_encrypted,
+				 is_favorite, description, file_url, duration, thumbnail_url, width, height,
+				 category, sort_order, download_count, created_at, updated_at)
+			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,$11,false,$12,$13,$14,$15,$16,$17,$18,$19,0,$20,$20)
+			 RETURNING id`,
+			userID, dest, copyName, sf.origFilename, sf.filePath, sf.fileSize,
+			sf.mimeType, sf.fileType, sf.storageDriver, sf.fileHash, sf.isEncrypted,
+			sf.description, sf.fileURL, sf.duration, sf.thumbnailURL, sf.width, sf.height,
+			sf.category, sf.sortOrder, now,
+		).Scan(&newID)
+		if err != nil {
+			log.Printf("[BatchCopy] INSERT failed for %q: %v", sf.filename, err)
+			continue
+		}
+
+		if sf.fileHash != "" {
+			if _, err := tx.Exec(`UPDATE file_fingerprints SET reference_count = reference_count + 1, updated_at = $1 WHERE hash = $2`, now, sf.fileHash); err != nil {
+				log.Printf("[BatchCopy] fingerprint update failed for hash %s: %v", sf.fileHash, err)
+			}
+		}
+		copied++
+	}
+
+	if copied > 0 {
+		_, err = tx.Exec(`UPDATE users SET used_storage = used_storage + $1 WHERE id = $2`, totalNeeded, userID)
+		if err != nil {
+			log.Printf("[BatchCopy] quota update failed: %v", err)
+			tx.Rollback()
+			writeError(w, http.StatusInternalServerError, "quota update failed")
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("[BatchCopy] commit failed: %v", err)
+		writeError(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]int{"copied": copied})
+}
+
 // BatchAssignTags replaces all tags on multiple files with the given tag set
 func (h *BatchHandler) BatchAssignTags(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())

@@ -131,10 +131,13 @@ export const getFolderChildrenByPath = (path: string): Promise<PathChildrenRespo
 export const createFolderByPath = (name: string, parentPath: string): Promise<{ id: number; name: string; path: string }> =>
   api.post('/files/folders/by-path', { name, parent_path: parentPath.replace(/^\//, '') });
 
-// ─── Move ───
+// ─── Move / Copy ───
 
 export const moveFiles = (fileIds: number[], targetFolderId?: number | null): Promise<void> =>
   api.post('/files/batch/move', { file_ids: fileIds, target_folder_id: targetFolderId });
+
+export const copyFiles = (fileIds: number[], targetFolderId?: number | null): Promise<{ copied: number }> =>
+  api.post('/files/batch/copy', { file_ids: fileIds, target_folder_id: targetFolderId });
 
 // ─── Upload ───
 
