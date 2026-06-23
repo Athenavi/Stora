@@ -62,54 +62,6 @@ func main() {
 		defer database.CloseRedis()
 	}
 
-	// Auto-migrate: add missing columns that Go code references
-	migrations := []string{
-		`ALTER TABLE file_items ADD COLUMN IF NOT EXISTS description TEXT`,
-		`ALTER TABLE upload_tasks ADD COLUMN IF NOT EXISTS upload_id VARCHAR(255)`,
-		`CREATE TABLE IF NOT EXISTS transcription_tasks (
-			id BIGSERIAL PRIMARY KEY,
-			file_id BIGINT NOT NULL REFERENCES file_items(id) ON DELETE CASCADE,
-			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			status VARCHAR(20) NOT NULL DEFAULT 'pending',
-			content TEXT,
-			error_msg TEXT,
-			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-		)`,
-		`CREATE TABLE IF NOT EXISTS vaults (
-			id BIGSERIAL PRIMARY KEY,
-			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			name VARCHAR(255) NOT NULL,
-			password_hash VARCHAR(128) DEFAULT '',
-			description TEXT,
-			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_vaults_user_id ON vaults(user_id)`,
-		`CREATE TABLE IF NOT EXISTS vault_items (
-			id BIGSERIAL PRIMARY KEY,
-			vault_id BIGINT NOT NULL REFERENCES vaults(id) ON DELETE CASCADE,
-			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			name VARCHAR(255) NOT NULL,
-			filename VARCHAR(512) DEFAULT '',
-			file_size BIGINT DEFAULT 0,
-			mime_type VARCHAR(128) DEFAULT '',
-			content_type VARCHAR(64) DEFAULT 'file',
-			content TEXT,
-			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-		)`,
-		`ALTER TABLE file_items ADD COLUMN IF NOT EXISTS category VARCHAR(255) NULL`,
-		`CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_uniq_name ON folders (user_id, COALESCE(parent_id, 0), name)`,
-	}
-	for _, m := range migrations {
-		if _, err := db.Exec(m); err != nil {
-			log.Printf("[Server] Migration warning (%s): %v", m[:60], err)
-		} else {
-			log.Printf("[Server] Migration OK: %s", m[:60])
-		}
-	}
-
 	// Create router
 	r := chi.NewRouter()
 
@@ -177,7 +129,6 @@ func main() {
 
 	// Initialize offline download handler
 	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
-	fileapi.EnsureDownloadTable(db)
 
 	// Initialize webhook handler
 	webhookHandler := fileapi.NewWebhookHandler(db)

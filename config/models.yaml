@@ -44,50 +44,14 @@ models:
       created_at: { type: timestamp, default: "now()" }
       expires_at: { type: timestamp, nullable: true }
 
-  LoginAttempt:
-    table: login_attempts
-    description: 登录尝试记录（用于暴力破解防护）
-    columns:
-      id:         { type: bigint, primary_key: true, autoincrement: true }
-      username:   { type: varchar, length: 150, nullable: true }
-      ip_address: { type: varchar, length: 45, nullable: true }
-      success:    { type: boolean, default: "false" }
-      created_at: { type: timestamp, default: "now()" }
-    indexes:
-      - { columns: [ip_address, created_at] }
-      - { columns: [username, created_at] }
-
-  TokenBlacklist:
-    table: token_blacklist
-    description: JWT 黑名单
-    columns:
-      id:             { type: bigint, primary_key: true, autoincrement: true }
-      token:          { type: text, nullable: true }
-      blacklisted_at: { type: timestamp, default: "now()" }
-      expires_at:     { type: timestamp, nullable: true }
-
   # ── 文件管理 ────────────────────────────────────
-  Folder:
-    table: folders
-    description: 文件夹
-    columns:
-      id:         { type: bigint, primary_key: true, autoincrement: true }
-      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      parent_id:  { type: bigint, foreign_key: "folders(id)", on_delete: cascade, nullable: true }
-      name:       { type: varchar, length: 255 }
-      sort_order: { type: integer, default: "0" }
-      created_at: { type: timestamp, default: "now()" }
-      updated_at: { type: timestamp, default: "now()" }
-    indexes:
-      - { columns: [user_id, parent_id] }
-
   FileItem:
     table: file_items
-    description: 文件条目
+    description: 文件条目（万物皆文件 — is_folder=true 表示目录）
     columns:
       id:                { type: bigint, primary_key: true, autoincrement: true }
       user_id:           { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      folder_id:         { type: bigint, foreign_key: "folders(id)", on_delete: "set null", nullable: true }
+      folder_id:         { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", nullable: true }
       filename:          { type: varchar, length: 255, nullable: true }
       original_filename: { type: varchar, length: 255, nullable: true }
       file_path:         { type: text, nullable: true }
@@ -107,6 +71,7 @@ models:
       height:            { type: integer, nullable: true }
       duration:          { type: integer, nullable: true }
       description:       { type: text, nullable: true }
+      category:          { type: varchar, length: 255, nullable: true }
       download_count:    { type: integer, default: "0" }
       sort_order:        { type: integer, default: "0" }
       created_at:        { type: timestamp, default: "now()" }
@@ -114,7 +79,7 @@ models:
       deleted_at:        { type: timestamp, nullable: true }
     indexes:
       - { columns: [user_id, deleted_at] }
-      - { columns: [user_id, folder_id, deleted_at] }
+      - { columns: [user_id, folder_id, deleted_at, is_folder] }
       - { columns: [user_id, file_type, deleted_at] }
       - { columns: [user_id, created_at, deleted_at], order: desc }
       - { columns: [user_id, is_favorite, deleted_at], where: "is_favorite = true" }
@@ -172,7 +137,7 @@ models:
     columns:
       id:              { type: bigint, primary_key: true, autoincrement: true }
       file_id:         { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", nullable: true }
-      folder_id:       { type: bigint, foreign_key: "folders(id)", on_delete: "set null", nullable: true }
+      folder_id:       { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", nullable: true }
       user_id:         { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       token:           { type: varchar, length: 64, default: "''" }
       short_code:      { type: varchar, length: 32, default: "''" }
@@ -187,6 +152,18 @@ models:
     indexes:
       - { columns: [short_code], where: "short_code != ''" }
       - { columns: [user_id, created_at], order: desc }
+
+  ShareLinkItem:
+    table: share_link_items
+    description: 批量分享的文件关联
+    columns:
+      id:            { type: bigint, primary_key: true, autoincrement: true }
+      share_link_id: { type: bigint, foreign_key: "share_links(id)", on_delete: cascade }
+      file_id:       { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
+      created_at:    { type: timestamp, default: "now()" }
+    indexes:
+      - { columns: [share_link_id] }
+      - { columns: [file_id] }
 
   FileShare:
     table: file_shares
@@ -268,6 +245,23 @@ models:
       chunk_path:  { type: text, nullable: true }
       created_at:  { type: timestamp, default: "now()" }
 
+  # ── 离线下载 ───────────────────────────────────
+  DownloadTask:
+    table: download_tasks
+    description: 离线下载任务
+    columns:
+      id:             { type: bigint, primary_key: true, autoincrement: true }
+      user_id:        { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      url:            { type: text }
+      filename:       { type: varchar, length: 255, nullable: true }
+      status:         { type: varchar, length: 20, default: "'pending'" }
+      progress:       { type: integer, default: "0" }
+      retry_count:    { type: integer, default: "0" }
+      manual_retries: { type: integer, default: "0" }
+      folder_id:      { type: bigint, nullable: true }
+      created_at:     { type: timestamp, default: "now()" }
+      updated_at:     { type: timestamp, default: "now()" }
+
   # ── 权限与审计 ──────────────────────────────────
   Role:
     table: roles
@@ -280,33 +274,6 @@ models:
       is_system:   { type: boolean, default: "false" }
       created_at:  { type: timestamp, default: "now()" }
       updated_at:  { type: timestamp, default: "now()" }
-
-  Capability:
-    table: capabilities
-    description: 权限能力定义
-    columns:
-      id:          { type: bigint, primary_key: true, autoincrement: true }
-      codename:    { type: varchar, length: 100, unique: true }
-      name:        { type: varchar, length: 200, nullable: true }
-      description: { type: text, nullable: true }
-      module:      { type: varchar, length: 100, nullable: true }
-      created_at:  { type: timestamp, default: "now()" }
-
-  RoleCapability:
-    table: role_capabilities
-    description: 角色-权限关联
-    columns:
-      id:            { type: bigint, primary_key: true, autoincrement: true }
-      role_id:       { type: bigint, foreign_key: "roles(id)", on_delete: cascade }
-      capability_id: { type: bigint, foreign_key: "capabilities(id)", on_delete: cascade }
-
-  UserRole:
-    table: user_roles
-    description: 用户-角色关联
-    columns:
-      id:      { type: bigint, primary_key: true, autoincrement: true }
-      user_id: { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      role_id: { type: bigint, foreign_key: "roles(id)", on_delete: cascade }
 
   AuditLog:
     table: audit_logs
@@ -359,18 +326,6 @@ models:
       created_at:  { type: timestamp, default: "now()" }
       updated_at:  { type: timestamp, default: "now()" }
 
-  # ── 数据维护 ────────────────────────────────────
-  StorageQuota:
-    table: storage_quotas
-    description: 存储配额
-    columns:
-      id:          { type: bigint, primary_key: true, autoincrement: true }
-      user_id:     { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      total_bytes: { type: bigint, default: "0" }
-      used_bytes:  { type: bigint, default: "0" }
-      created_at:  { type: timestamp, default: "now()" }
-      updated_at:  { type: timestamp, default: "now()" }
-
   # ── 团队协作 ────────────────────────────────────
   Team:
     table: teams
@@ -399,7 +354,7 @@ models:
     columns:
       id:        { type: bigint, primary_key: true, autoincrement: true }
       team_id:   { type: bigint, foreign_key: "teams(id)", on_delete: cascade }
-      folder_id: { type: bigint, foreign_key: "folders(id)", on_delete: cascade }
+      folder_id: { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
       permission: { type: varchar, length: 20, default: "'read'" }
       created_at: { type: timestamp, default: "now()" }
 
@@ -412,6 +367,21 @@ models:
       file_id:   { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
       user_id:   { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       content:   { type: text }
+      created_at: { type: timestamp, default: "now()" }
+      updated_at: { type: timestamp, default: "now()" }
+
+  # ── 转写任务 ────────────────────────────────────
+  TranscriptionTask:
+    table: transcription_tasks
+    description: 音视频转写任务
+    columns:
+      id:         { type: bigint, primary_key: true, autoincrement: true }
+      user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
+      file_id:    { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
+      status:     { type: varchar, length: 20, default: "'pending'" }
+      progress:   { type: integer, default: "0" }
+      result_url: { type: text, nullable: true }
+      error_msg:  { type: text, nullable: true }
       created_at: { type: timestamp, default: "now()" }
       updated_at: { type: timestamp, default: "now()" }
 

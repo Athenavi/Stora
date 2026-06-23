@@ -158,9 +158,6 @@ func (h *VaultHandler) CreateVault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ensure columns exist
-	EnsureVaultCompat(h.db)
-
 	pwHash, err := hashPassword(password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "password hash failed")
@@ -392,21 +389,6 @@ func (h *VaultHandler) DeleteVaultItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
-// EnsureVaultCompat adds missing columns for the vault implementation.
-func EnsureVaultCompat(db *sql.DB) {
-	for _, m := range []string{
-		`ALTER TABLE vaults ADD COLUMN IF NOT EXISTS password_hash VARCHAR(128) DEFAULT ''`,
-		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS filename VARCHAR(512) DEFAULT ''`,
-		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS file_size BIGINT DEFAULT 0`,
-		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS mime_type VARCHAR(128) DEFAULT ''`,
-		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS content_type VARCHAR(64) DEFAULT 'file'`,
-		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS file_path TEXT`,
-	} {
-		db.Exec(m)
-	}
-}
-
-// ---------- Transcoding ----------
 
 type TranscodeHandler struct {
 	db      *sql.DB

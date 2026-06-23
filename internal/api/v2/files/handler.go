@@ -1033,12 +1033,6 @@ func (h *Handler) GetFolderChildren(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ListTags(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
-	// Ensure file_tag_assignments table exists
-	h.db.Exec(`CREATE TABLE IF NOT EXISTS file_tag_assignments (
-		id SERIAL PRIMARY KEY, file_id INTEGER NOT NULL, tag_id INTEGER NOT NULL,
-		UNIQUE(file_id, tag_id)
-	)`)
-
 	rows, err := h.db.Query(
 		`SELECT t.id, t.name, t.color,
 		        COALESCE((SELECT COUNT(*) FROM file_tag_assignments a WHERE a.tag_id = t.id), 0) AS file_count

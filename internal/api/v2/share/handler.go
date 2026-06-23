@@ -239,7 +239,6 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		passwordVal = v
 	}
 
-	EnsureCompat(h.db)
 
 	var linkID int64
 	isFolder := folderID > 0
@@ -695,7 +694,6 @@ func (h *Handler) AccessShareLink(w http.ResponseWriter, r *http.Request) {
 // ListShareLinks lists the user's share links (paginated).
 func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
-	EnsureCompat(h.db)
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	pageSize, _ := strconv.Atoi(r.URL.Query().Get("page_size"))
 
@@ -1254,23 +1252,4 @@ func (h *Handler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, `{"success":true,"data":{"id":%d,"short_code":"%s","file_id":%d,"password_protected":%t}}`,
 		item.ID, item.ShortCode, item.FileID, item.PasswordProtected)
-}
-
-// EnsureCompat runs migration to add missing columns.
-func EnsureCompat(db *sql.DB) {
-	for _, m := range []string{
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS folder_id BIGINT REFERENCES folders(id) ON DELETE SET NULL`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS token VARCHAR(64) DEFAULT ''`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS short_code VARCHAR(32) DEFAULT ''`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS permission VARCHAR(20) DEFAULT 'read'`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS password VARCHAR(128) DEFAULT ''`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS view_count INT DEFAULT 0`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS download_count INT DEFAULT 0`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS max_downloads INT DEFAULT 0`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP`,
-		`ALTER TABLE share_links ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP`,
-	} {
-		db.Exec(m)
-	}
 }

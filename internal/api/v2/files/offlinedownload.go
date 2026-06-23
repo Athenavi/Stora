@@ -397,31 +397,3 @@ func (h *OfflineDownloadHandler) storeDownloadedFiles(taskID, userID int64, dir,
 	h.db.Exec(`UPDATE download_tasks SET status = 'completed', progress = 100, updated_at = $1 WHERE id = $2`, now, taskID)
 	log.Printf("[BT] completed task %d", taskID)
 }
-
-// EnsureDownloadTable creates the download_tasks table if it doesn't exist
-func EnsureDownloadTable(db *sql.DB) {
-	for _, m := range []string{
-		`CREATE TABLE IF NOT EXISTS download_tasks (
-			id BIGSERIAL PRIMARY KEY,
-			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			url TEXT NOT NULL,
-			filename VARCHAR(255) DEFAULT '',
-			file_id BIGINT DEFAULT 0,
-			status VARCHAR(20) NOT NULL DEFAULT 'pending',
-			progress INT NOT NULL DEFAULT 0,
-			retry_count INT NOT NULL DEFAULT 0,
-			manual_retries INT NOT NULL DEFAULT 0,
-			folder_id BIGINT DEFAULT 0,
-			error_msg TEXT,
-			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-		)`,
-		`ALTER TABLE download_tasks ADD COLUMN IF NOT EXISTS retry_count INT NOT NULL DEFAULT 0`,
-		`ALTER TABLE download_tasks ADD COLUMN IF NOT EXISTS manual_retries INT NOT NULL DEFAULT 0`,
-		`ALTER TABLE download_tasks ADD COLUMN IF NOT EXISTS folder_id BIGINT DEFAULT 0`,
-	} {
-		if _, err := db.Exec(m); err != nil {
-			log.Printf("[DB] Download table migration warning: %v", err)
-		}
-	}
-}
