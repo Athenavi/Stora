@@ -273,20 +273,28 @@ export default component$(() => {
     );
   }
 
-  // Data for root level
-  const rootFolders: FolderEntry[] = (isFolder || isBatch) ? (s.folders || []) : [];
-  const rootItems: any[] = (isFolder || isBatch) ? (s.items || []) : (s.items && s.items.length > 0 ? s.items : (s.item?.id ? [s.item] : []));
-  const rootTotal = s.total || rootItems.length;
-  const hasMoreRoot = rootItems.length < rootTotal;
-  const isMixed = isFolder || isBatch;
+  // Data for root level — unified items with folder_id/is_folder
+  const rootFiles: FolderItem[] = !isFolder && !isBatch ? (s.items && s.items.length > 0 ? s.items : (s.item?.id ? [{ id: s.item.id, filename: s.item.filename || s.item.name || "", file_size: s.item.file_size || 0, file_type: s.item.file_type || "other" }] : [])) : [];
+  const allFlatItems: any[] = ((isFolder || isBatch) && s.items) || [];
+  const rootTotal = s.total || (allFlatItems.length || rootFiles.length);
+
+  // Build tree from unified flat items
+  const treeChildrenOf = new Map<string | number, any[]>();
+  for (const item of allFlatItems) {
+    const pid = item.folder_id ?? "__root__";
+    if (!treeChildrenOf.has(pid)) treeChildrenOf.set(pid, []);
+    treeChildrenOf.get(pid)!.push(item);
+  }
+  const treeRoots = treeChildrenOf.get("__root__") || [];
 
   // Header
   const headerIcon = isBatch ? "📦" : isFolder ? "📁" : "📄";
   const headerName = isBatch ? "分享的文件" : isFolder ? (item.filename || "共享文件夹") : (item.filename || "未命名文件");
 
-  // Determine which files are available for selection (root files + expanded folder files)
+  // Determine which files are available for selection
   const allSelectable = new Set<number>();
-  for (const f of rootItems) { if (!f.is_folder) allSelectable.add(f.id); }
+  for (const f of allFlatItems) { if (!f.is_folder) allSelectable.add(f.id); }
+  for (const f of rootFiles) { if (!f.is_folder) allSelectable.add(f.id); }
   for (const [, content] of folderContents.value) {
     for (const f of content.items) { allSelectable.add(f.id); }
   }
@@ -303,82 +311,74 @@ export default component$(() => {
           </div>
         </div>
 
-        {/* Folder list (root level) */}
-        {rootFolders.length > 0 && (
-          <div class="mb-3">
-            <p class="text-xs font-medium text-stora-muted-foreground mb-1">文件夹</p>
-            <div class="divide-y divide-stora-border border border-stora-border">
-              {rootFolders.map(f => {
-                const isExp = expandedFolders.value.has(f.id);
-                const content = folderContents.value.get(f.id);
-                return (
-                  <div key={f.id}>
-                    {/* Folder row */}
-                    <button onClick$={() => toggleExpand(f.id)}
-                      class="w-full flex items-center gap-2 px-3 py-2 text-sm text-stora-foreground hover:bg-stora-muted text-left">
-                      <span>{isExp ? "📂" : "📁"}</span>
-                      <span class="truncate flex-1">{f.name}</span>
-                      <span class="text-xs text-stora-muted-foreground">{f.file_count} 文件{f.child_folder_count > 0 ? ` · ${f.child_folder_count} 子文件夹` : ""}</span>
-                    </button>
-                    {/* Expanded content */}
-                    {isExp && (
-                      <div class="border-t border-stora-border bg-stora-muted/20">
-                        {content?.loading && (
-                          <div class="px-6 py-3 text-xs text-stora-muted-foreground">加载中...</div>
-                        )}
-                        {content && !content.loading && (
-                          <>
-                            {/* Sub-folders */}
-                            {content.folders.map((sf: FolderEntry) => (
-                              <div key={sf.id} class="flex items-center gap-2 px-6 py-2 text-sm text-stora-foreground">
-                                <span>📁</span>
-                                <span class="truncate flex-1">{sf.name}</span>
-                                <span class="text-xs text-stora-muted-foreground">{sf.file_count} 项</span>
-                              </div>
-                            ))}
-                            {/* Files (limited to display limit, then show more) */}
-                            {(content.items.slice(0, displayLimit.value.get(f.id) || content.items.length) as any[]).map((fi: any) => (
-                              <div key={fi.id} onClick$={() => toggleFile(fi.id)}
-                                class={`flex items-center gap-2 px-6 py-2 text-sm cursor-pointer hover:bg-stora-muted ${selFileIds.value.has(fi.id) ? "bg-stora-primary/5" : ""}`}>
-                                <input type="checkbox" checked={selFileIds.value.has(fi.id)}
-                                  onClick$={(e: any) => e.stopPropagation()}
-                                  onChange$={() => toggleFile(fi.id)} class="border-stora-border shrink-0" />
-                                <span>{typeIcon[fi.file_type] || "📄"}</span>
-                                <span class="flex-1 truncate">{fi.filename}</span>
-                                <span class="text-xs text-stora-nav-text shrink-0">{fmtSize(fi.file_size)}</span>
-                              </div>
-                            ))}
-                            {/* Show more / load more */}
-                            {(displayLimit.value.get(f.id) || 3) < content.total && (
-                              <button onClick$={() => showMore(f.id, content.total)}
-                                class="w-full text-left px-6 py-2 text-xs text-stora-primary hover:bg-stora-muted/40">
-                                显示全部 {content.total} 项（已显示 {(displayLimit.value.get(f.id) || 3)} 项）→
-                              </button>
-                            )}
-                            {content.items.length < content.total && (displayLimit.value.get(f.id) || 3) >= content.items.length && (
-                              <button onClick$={() => loadMore(f.id)}
-                                class="w-full text-left px-6 py-2 text-xs text-stora-primary hover:bg-stora-muted/40">
-                                加载更多（已显示 {content.items.length}，共 {content.total}）→
-                              </button>
-                            )}
-                          </>
-                        )}
-                        {!content && (
-                          <div class="px-6 py-3 text-xs text-stora-muted-foreground">点击加载</div>
-                        )}
-                      </div>
+                {/* Tree: unified flat items with folder_id/is_folder (folder+batch shares) */}
+        {(isFolder || isBatch) && treeRoots.length > 0 ? (
+          <div class="divide-y divide-stora-border border border-stora-border mb-4 max-h-[500px] overflow-y-auto">
+            {treeRoots.map(root => {
+              const isF = root.is_folder;
+              const rid = root.id;
+              const isExp = expandedFolders.value.has(rid);
+              const kids = treeChildrenOf.get(rid) || [];
+              const cached = folderContents.value.get(rid);
+              return (
+                <div key={rid}>
+                  {/* Root row */}
+                  <div onClick$={() => isF ? toggleExpand(rid) : toggleFile(rid)}
+                    class={"flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-stora-muted " + (selFileIds.value.has(rid) ? "bg-stora-primary/5" : "")}>
+                    {isF ? <span class="w-4 shrink-0">{isExp ? "📂" : "📁"}</span> : (
+                      <><input type="checkbox" checked={selFileIds.value.has(rid)}
+                        onClick$={(e) => e.stopPropagation()}
+                        onChange$={() => toggleFile(rid)} class="border-stora-border shrink-0" />
+                      <span>{typeIcon[root.file_type] || "📄"}</span></>
                     )}
+                    <span class="flex-1 truncate">{root.filename}</span>
+                    {!isF && <span class="text-xs text-stora-nav-text shrink-0">{fmtSize(root.file_size)}</span>}
+                    {isF && <span class="text-xs text-stora-muted-foreground">{root.file_count || kids.length} 项</span>}
                   </div>
-                );
-              })}
-            </div>
+                  {/* Expanded folder content (from preloaded or lazy-fetched data) */}
+                  {isF && isExp && cached && cached.items && (
+                    <div class="border-t border-stora-border bg-stora-muted/20">
+                      {cached.items.slice(0, displayLimit.value.get(rid) || cached.items.length).map((ci: any) => (
+                        <div key={ci.id} onClick$={() => toggleFile(ci.id)}
+                          class={"flex items-center gap-2 px-6 py-2 text-sm cursor-pointer hover:bg-stora-muted " + (selFileIds.value.has(ci.id) ? "bg-stora-primary/5" : "")}>
+                          <input type="checkbox" checked={selFileIds.value.has(ci.id)}
+                            onClick$={(e) => e.stopPropagation()}
+                            onChange$={() => toggleFile(ci.id)} class="border-stora-border shrink-0" />
+                          {ci.is_folder ? <span>📁</span> : <span>{typeIcon[ci.file_type] || "📄"}</span>}
+                          <span class="flex-1 truncate">{ci.filename}</span>
+                          {!ci.is_folder && <span class="text-xs text-stora-nav-text shrink-0">{fmtSize(ci.file_size)}</span>}
+                        </div>
+                      ))}
+                      {(displayLimit.value.get(rid) || 3) < cached.total && (
+                        <button onClick$={() => showMore(rid, cached.total)}
+                          class="w-full text-left px-6 py-2 text-xs text-stora-primary hover:bg-stora-muted/40">
+                          显示全部 {cached.total} 项（已显示 {(displayLimit.value.get(rid) || 3)} 项）→
+                        </button>
+                      )}
+                      {cached.items.length < cached.total && (displayLimit.value.get(rid) || 3) >= cached.items.length && (
+                        <button onClick$={() => loadMore(rid)}
+                          class="w-full text-left px-6 py-2 text-xs text-stora-primary hover:bg-stora-muted/40">
+                          加载更多（已显示 {cached.items.length}，共 {cached.total}）→
+                        </button>
+                      )}
+                      {!cached && <div class="px-6 py-3 text-xs text-stora-muted-foreground">点击加载</div>}
+                    </div>
+                  )}
+                  {isF && isExp && !cached && (
+                    <div class="px-6 py-3 text-xs text-stora-muted-foreground border-t border-stora-border bg-stora-muted/20">加载中...</div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        )}
+        ) : (isFolder || isBatch) && allFlatItems.length === 0 ? (
+          <div class="py-8 text-center text-sm text-stora-muted-foreground">{isFolder ? "此文件夹为空" : "暂无文件"}</div>
+        ) : null}
 
-        {/* Root-level file list */}
-        {rootItems.length > 0 ? (
+        {/* File list for non-folder/batch (single file or flat list) */}
+        {!isFolder && !isBatch && rootFiles.length > 0 ? (
           <div>
-            {rootItems.length > 1 && (
+            {rootFiles.length > 1 && (
               <div class="flex items-center gap-2 px-1 py-1.5 border-b border-stora-border mb-1">
                 <input type="checkbox"
                   checked={[...allSelectable].every(id => selFileIds.value.has(id)) && [...allSelectable].length > 0}
@@ -391,16 +391,16 @@ export default component$(() => {
                   }}
                   class="border-stora-border" />
                 <span class="text-xs text-stora-muted-foreground">
-                  {selFileIds.value.size === 0 ? "全选" : `已选 ${selFileIds.value.size} 项`}
+                  {selFileIds.value.size === 0 ? "全选" : "已选 " + selFileIds.value.size + " 项"}
                 </span>
               </div>
             )}
             <div class="divide-y divide-stora-border border border-stora-border mb-4 max-h-[500px] overflow-y-auto">
-              {rootItems.map((f: any) => (
+              {rootFiles.map((f: any) => (
                 <div key={f.id} onClick$={() => toggleFile(f.id)}
-                  class={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-stora-muted ${selFileIds.value.has(f.id) ? "bg-stora-primary/5" : ""}`}>
+                  class={"flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-stora-muted " + (selFileIds.value.has(f.id) ? "bg-stora-primary/5" : "")}>
                   <input type="checkbox" checked={selFileIds.value.has(f.id)}
-                    onClick$={(e: any) => e.stopPropagation()}
+                    onClick$={(e) => e.stopPropagation()}
                     onChange$={() => toggleFile(f.id)} class="border-stora-border shrink-0" />
                   <span>{typeIcon[f.file_type] || "📄"}</span>
                   <span class="flex-1 truncate">{f.filename}</span>
@@ -408,32 +408,10 @@ export default component$(() => {
                 </div>
               ))}
             </div>
-            {hasMoreRoot && (
-              <button onClick$={async () => {
-                const nextPage = (s.page || 1) + 1;
-                try {
-                  const res = await fetch(`/api/v2/files/shares/access/${shareCode}?page=${nextPage}&per_page=${PER_PAGE}`);
-                  const json = await res.json();
-                  const d = json.data || json;
-                  if (d.items) {
-                    shareData.value = {
-                      ...shareData.value!,
-                      items: [...(s.items || []), ...d.items],
-                      total: d.total || 0,
-                      page: nextPage,
-                    };
-                  }
-                } catch {}
-              }} class="w-full py-3 text-xs font-medium text-stora-primary hover:bg-stora-muted text-center border border-stora-border">
-                加载更多文件（已显示 {rootItems.length}，共 {rootTotal}）
-              </button>
-            )}
           </div>
-        ) : rootFolders.length === 0 ? (
+        ) : !isFolder && !isBatch ? (
           <div class="py-8 text-center text-sm text-stora-muted-foreground">暂无文件</div>
-        ) : null}
-
-        {/* Actions */}
+        ) : null}{/* Actions */}
         {saveDone.value ? (
           <p class="text-sm text-green-600 text-center py-3">✅ 已转存到 {targetFolderName.value}</p>
         ) : (

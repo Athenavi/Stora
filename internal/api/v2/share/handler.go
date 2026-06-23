@@ -347,7 +347,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(`SELECT COUNT(*) FROM share_link_items WHERE share_link_id = $1`, linkID).Scan(&batchCount)
 
 	if isFolder {
-		// Return folder info with paginated file listing + sub-folder list
+		// Return folder info — unified flat items[] with folder_id/is_folder for tree building
 		var folderName string
 		h.db.QueryRow(`SELECT filename FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&folderName)
 
@@ -362,115 +362,76 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 		}
 		offset := (page - 1) * perPage
 
-		// Get total count of direct files (for pagination)
-		var total int
-		h.db.QueryRow(`SELECT COUNT(*) FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false`, folderID).Scan(&total)
+		// Total direct children count
+		var totalDirect int
+		h.db.QueryRow(`SELECT COUNT(*) FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL`, folderID).Scan(&totalDirect)
 
-		// Fetch direct files (paginated)
-		type FileItemJSON struct {
-			ID       int64  `json:"id"`
-			Filename string `json:"filename"`
-			FileSize int64  `json:"file_size"`
-			FileType string `json:"file_type"`
+		// Fetch ALL direct children (files + folders) as one unified flat list
+		type UnifiedItem struct {
+			ID               int64  `json:"id"`
+			Filename         string `json:"filename"`
+			FileSize         int64  `json:"file_size"`
+			FileType         string `json:"file_type"`
+			IsFolder         bool   `json:"is_folder"`
+			FolderID         *int64 `json:"folder_id"`
+			FileCount        int    `json:"file_count,omitempty"`
+			ChildFolderCount int    `json:"child_folder_count,omitempty"`
 		}
-		files := make([]FileItemJSON, 0)
-		frows, err := h.db.Query(
-			`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other')
-			 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false
-			 ORDER BY filename LIMIT $2 OFFSET $3`,
+		items := make([]UnifiedItem, 0)
+		urows, err := h.db.Query(
+			`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other'), is_folder, folder_id
+			 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL
+			 ORDER BY is_folder DESC, filename LIMIT $2 OFFSET $3`,
 			folderID, perPage, offset,
 		)
 		if err == nil {
-			defer frows.Close()
-			for frows.Next() {
-				var fi FileItemJSON
-				frows.Scan(&fi.ID, &fi.Filename, &fi.FileSize, &fi.FileType)
-				files = append(files, fi)
+			defer urows.Close()
+			for urows.Next() {
+				var ui UnifiedItem
+				urows.Scan(&ui.ID, &ui.Filename, &ui.FileSize, &ui.FileType, &ui.IsFolder, &ui.FolderID)
+				if ui.IsFolder {
+					h.db.QueryRow(
+						`SELECT (SELECT COUNT(*) FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false),
+						        (SELECT COUNT(*) FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = true)`,
+						ui.ID,
+					).Scan(&ui.FileCount, &ui.ChildFolderCount)
+				}
+				items = append(items, ui)
 			}
 		}
 
-		// Fetch direct sub-folders with file count
-		type FolderJSON struct {
-			ID               int64  `json:"id"`
-			Name             string `json:"name"`
-			FileCount        int    `json:"file_count"`
-			ChildFolderCount int    `json:"child_folder_count"`
-		}
-		folders := make([]FolderJSON, 0)
-		drows, err := h.db.Query(
-			`SELECT f.id, f.filename,
-			        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = false),
-			        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = true)
-			 FROM file_items f WHERE f.folder_id = $1 AND f.is_folder = true AND f.deleted_at IS NULL
-			 ORDER BY f.filename`,
-			folderID,
-		)
-		if err == nil {
-			defer drows.Close()
-			for drows.Next() {
-				var fj FolderJSON
-				drows.Scan(&fj.ID, &fj.Name, &fj.FileCount, &fj.ChildFolderCount)
-				folders = append(folders, fj)
-			}
-		}
-
-		// Pre-load first 3 folders (their files + sub-folders) for instant expand
+		// Pre-load first 3 folders with their contents (for instant expand)
 		type PreloadedFolder struct {
-			ID               int64           `json:"id"`
-			Name             string          `json:"name"`
-			FileCount        int             `json:"file_count"`
-			ChildFolderCount int             `json:"child_folder_count"`
-			Items            []FileItemJSON  `json:"items"`
-			Folders           []FolderJSON   `json:"folders"`
+			ID               int64         `json:"id"`
+			Name             string        `json:"name"`
+			FileCount        int           `json:"file_count"`
+			ChildFolderCount int           `json:"child_folder_count"`
+			Items            []UnifiedItem `json:"items"`
 		}
 		preloaded := make([]PreloadedFolder, 0, 3)
-		for i, fj := range folders {
-			if i >= 3 {
-				break
+		for _, ui := range items {
+			if !ui.IsFolder || len(preloaded) >= 3 {
+				continue
 			}
 			pf := PreloadedFolder{
-				ID:               fj.ID,
-				Name:             fj.Name,
-				FileCount:        fj.FileCount,
-				ChildFolderCount: fj.ChildFolderCount,
-			}
-			// Fetch this folder's files (up to 50)
-			innerLimit := 50
-			if fj.FileCount < innerLimit {
-				innerLimit = fj.FileCount
+				ID:               ui.ID,
+				Name:             ui.Filename,
+				FileCount:        ui.FileCount,
+				ChildFolderCount: ui.ChildFolderCount,
 			}
 			irows, ierr := h.db.Query(
-				`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other')
-				 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false
-				 ORDER BY filename LIMIT $2`,
-				fj.ID, innerLimit,
+				`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other'), is_folder, folder_id
+				 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL
+				 ORDER BY is_folder DESC, filename LIMIT 50`,
+				ui.ID,
 			)
 			if ierr == nil {
 				for irows.Next() {
-					var fi FileItemJSON
-					irows.Scan(&fi.ID, &fi.Filename, &fi.FileSize, &fi.FileType)
-					pf.Items = append(pf.Items, fi)
+					var ii UnifiedItem
+					irows.Scan(&ii.ID, &ii.Filename, &ii.FileSize, &ii.FileType, &ii.IsFolder, &ii.FolderID)
+					pf.Items = append(pf.Items, ii)
 				}
 				irows.Close()
-			}
-			// Fetch this folder's sub-folders
-			if fj.ChildFolderCount > 0 {
-				drows2, derr := h.db.Query(
-					`SELECT f.id, f.filename,
-					        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = false),
-					        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = true)
-					 FROM file_items f WHERE f.folder_id = $1 AND f.is_folder = true AND f.deleted_at IS NULL
-					 ORDER BY f.filename LIMIT 50`,
-					fj.ID,
-				)
-				if derr == nil {
-					for drows2.Next() {
-						var fj2 FolderJSON
-						drows2.Scan(&fj2.ID, &fj2.Name, &fj2.FileCount, &fj2.ChildFolderCount)
-						pf.Folders = append(pf.Folders, fj2)
-					}
-					drows2.Close()
-				}
 			}
 			preloaded = append(preloaded, pf)
 		}
@@ -483,19 +444,18 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 				"password_protected": hashedPw != nil && *hashedPw != "",
 				"is_folder":          true,
 				"is_batch":           false,
-				"file_count":         total,
+				"file_count":         totalDirect,
 			},
 			"item": map[string]interface{}{
 				"id":        folderID,
 				"filename":  folderName,
 				"is_folder": true,
 			},
-			"folders":          folders,
-			"items":            files,
+			"items":            items,
 			"preloaded_folders": preloaded,
-			"total":            total,
+			"total":            totalDirect,
 			"page":             page,
-			"per_page": perPage,
+			"per_page":         perPage,
 		})
 		return
 	}
