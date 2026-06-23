@@ -357,7 +357,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 		// Get child files
 		frows, err := h.db.Query(
 			`SELECT id, COALESCE(filename, ''), COALESCE(file_size, 0), COALESCE(file_type, 'other')
-			 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL ORDER BY filename`,
+			 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false ORDER BY filename`,
 			folderID,
 		)
 		if err == nil {
@@ -521,7 +521,7 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 		}
 		rows, err := h.db.Query(
 			`SELECT file_path, COALESCE(original_filename, filename) FROM file_items
-			 WHERE folder_id = $1 AND deleted_at IS NULL`, folderID,
+			 WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false`, folderID,
 		)
 		if err != nil || rows == nil {
 			writeError(w, http.StatusInternalServerError, "query failed")
@@ -1153,7 +1153,7 @@ func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
 	files := make([]fileItemJSON, 0)
 	frows, err := h.db.Query(
 		`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other')
-		 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL ORDER BY filename`,
+		 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false ORDER BY filename`,
 		folderID,
 	)
 	if err == nil {
