@@ -99,6 +99,7 @@ func main() {
 			created_at TIMESTAMP NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
+		`ALTER TABLE file_items ADD COLUMN IF NOT EXISTS category VARCHAR(255) NULL`,
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
@@ -301,6 +302,9 @@ func main() {
 			r.Post("/files/tags", fileHandler.CreateTag)
 			r.Patch("/files/tags/{id}", fileHandler.UpdateTag)
 			r.Delete("/files/tags/{id}", fileHandler.DeleteTag)
+			r.Get("/files/{id}/tags", fileHandler.ListFileTags)
+			r.Post("/files/{id}/tags", fileHandler.AssignFileTags)
+			r.Delete("/files/{id}/tags/{tagId}", fileHandler.RemoveFileTag)
 
 			// Vault
 			r.Get("/vaults", vaultHandler.ListVaults)

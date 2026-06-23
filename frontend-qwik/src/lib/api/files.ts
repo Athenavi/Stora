@@ -25,6 +25,9 @@ export interface FileItem {
   duration?: number;
   created_at?: string;
   updated_at?: string;
+  category?: string;
+  sort_order?: number;
+  is_encrypted?: boolean;
 }
 
 export interface Folder {
@@ -96,6 +99,9 @@ export const updateFile = (id: number, data: {
   filename?: string;
   description?: string;
   is_favorite?: boolean;
+  file_type?: string;
+  category?: string;
+  sort_order?: number;
 }): Promise<FileItem> =>
   api.patch(`/files/${id}`, data);
 

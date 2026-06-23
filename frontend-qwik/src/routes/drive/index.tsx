@@ -96,6 +96,7 @@ export default component$(() => {
   const previewFile = useSignal<FileItem | null>(null);
   const clipboard = useSignal<{ id: number; name: string; type: string } | null>(null);
   const showProperties = useSignal<FileItem | null>(null);
+  const groupBy = useSignal<string | null>(null);
 
   const onPreview = $((item: any) => { previewFile.value = item; });
 
@@ -189,6 +190,13 @@ export default component$(() => {
         </div>
 
         <div class="flex-1" />
+
+        {/* Group by toggle */}
+        <button onClick$={() => groupBy.value = groupBy.value === "category" ? null : "category"}
+          class={`touch-target h-10 px-3 text-sm font-medium border transition-colors ${groupBy.value ? "bg-stora-primary text-white border-stora-primary" : "text-stora-muted-foreground border-stora-border hover:bg-stora-muted"}`}
+          title={groupBy.value ? "取消分组" : "按分类分组"}>
+          {groupBy.value ? "📂 已分组" : "📂 分组"}
+        </button>
 
         {/* Upload button — primary blue */}
         <button onClick$={() => showUpload.value = !showUpload.value}
@@ -333,7 +341,8 @@ export default component$(() => {
           </div>
         ) : (viewMode.value === "list") ? (
           <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} currentPath={currentPath}
-            onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)} />
+            onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)}
+            groupBy={groupBy.value} />
         ) : (
           <GridView items={allItems} selIds={selIds} nav={nav} currentPath={currentPath}
             onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)} />
@@ -587,7 +596,7 @@ export default component$(() => {
 
 // ─── List View ───
 
-export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any }>(({ items, selIds, renameId, renameVal, nav, currentPath, onContextItem$, onPreview$ }) => {
+export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any; groupBy?: string | null }>(({ items, selIds, renameId, renameVal, nav, currentPath, onContextItem$, onPreview$, groupBy }) => {
   const sortBy = useSignal("");
   const sortOrder = useSignal("");
   const loc = useLocation();
@@ -606,6 +615,20 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
     return `/drive?${params.toString()}`;
   });
 
+  // Group items by category when groupBy is set
+  const groups: { label: string; items: any[] }[] = [];
+  if (groupBy === "category") {
+    const map = new Map<string, any[]>();
+    for (const it of items) {
+      const cat = (it.t === "f" ? "" : (it.category || "")) || "(未分类)";
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(it);
+    }
+    for (const [label, grpItems] of map) {
+      groups.push({ label, items: grpItems });
+    }
+  }
+
   return (
   <div class="overflow-x-auto">
   <table class="w-full">
@@ -621,61 +644,67 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
       </tr>
     </thead>
     <tbody class="divide-y divide-stora-muted">
-      {items.map((item: any) => {
-        if (item.t === "f") {
+      {(groupBy === "category" ? groups : [{ label: "", items }]).map((grp) => (
+        <>{grp.label ? (
+          <tr class="bg-stora-muted/60 text-xs font-semibold text-stora-muted-foreground select-none">
+            <td colspan="6" class="px-4 py-1.5">{grp.label} · {grp.items.length} 项</td>
+          </tr>
+        ) : null}
+        {grp.items.map((item: any) => {
+          if (item.t === "f") {
+            const sel = selIds.value.includes(item.id);
+            return (
+              <tr key={`f-${item.id}`} draggable class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}
+                onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
+                preventdefault:contextmenu
+                onContextMenu$={(e: any) => { onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}>
+                <td class="px-4" onClick$={(e: any) => e.stopPropagation()}>
+                  <input type="checkbox" checked={sel}
+                    onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" />
+                </td>
+                <td class="px-2 cursor-pointer" onClick$={() => nav(`/drive?Path=${encodeURIComponent(item.path || item.name)}`)}>
+                  <div class="flex items-center gap-3">
+                    <div class="w-7 h-7 flex items-center justify-center text-sm shrink-0">📁</div>
+                    <span class="text-sm font-medium text-stora-foreground">{item.name}</span>
+                  </div>
+                </td>
+                <td class="px-2 text-sm text-stora-muted-foreground">—</td>
+                <td class="px-2"><span class="text-xs text-stora-muted-foreground">文件夹</span></td>
+                <td class="px-2 text-sm text-stora-muted-foreground">{item.created_at?.split("T")[0] || "—"}</td>
+                <td class="px-2 text-stora-muted-foreground text-base font-semibold cursor-pointer select-none hover:text-stora-foreground" onClick$={(e: any) => { e.stopPropagation(); onContextItem$?.({ id: item.id, type: "folder", name: item.name }, e); }}>⋯</td>
+              </tr>
+            );
+          }
           const sel = selIds.value.includes(item.id);
+          const tc = typeMeta[item.file_type] || typeMeta.other;
           return (
-            <tr key={`f-${item.id}`} draggable class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}
+            <tr key={item.id} draggable class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}
               onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
               preventdefault:contextmenu
-              onContextMenu$={(e: any) => { onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}>
-              <td class="px-4" onClick$={(e: any) => e.stopPropagation()}>
-                <input type="checkbox" checked={sel}
-                  onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" />
-              </td>
-              <td class="px-2 cursor-pointer" onClick$={() => nav(`/drive?Path=${encodeURIComponent(item.path || item.name)}`)}>
+              onContextMenu$={(e: any) => { onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>
+              <td class="px-4"><input type="checkbox" checked={sel}
+                onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" /></td>
+              <td class="px-2 cursor-pointer" onClick$={() => onPreview$ ? onPreview$(item) : nav(`/view?id=${item.id}`)}>
                 <div class="flex items-center gap-3">
-                  <div class="w-7 h-7 flex items-center justify-center text-sm shrink-0">📁</div>
-                  <span class="text-sm font-medium text-stora-foreground">{item.name}</span>
+                  <div class={`w-7 h-7 flex items-center justify-center text-sm shrink-0`}>{tc.icon}</div>
+                  <span class="text-sm font-medium text-stora-foreground truncate max-w-[200px]">{item.filename}</span>
+                  {item.is_favorite && <span class="text-amber-500 text-xs shrink-0" title="已收藏">⭐</span>}
                 </div>
               </td>
-              <td class="px-2 text-sm text-stora-muted-foreground">—</td>
-              <td class="px-2"><span class="text-xs text-stora-muted-foreground">文件夹</span></td>
+              <td class="px-2 text-sm text-stora-muted-foreground">{fmtSize(item.file_size)}</td>
+              <td class="px-2 text-sm text-stora-muted-foreground">{item.file_type || "未知"}</td>
               <td class="px-2 text-sm text-stora-muted-foreground">{item.created_at?.split("T")[0] || "—"}</td>
-              <td class="px-2 text-stora-muted-foreground text-base font-semibold cursor-pointer select-none hover:text-stora-foreground" onClick$={(e: any) => { e.stopPropagation(); onContextItem$?.({ id: item.id, type: "folder", name: item.name }, e); }}>⋯</td>
+              <td class="px-2 text-stora-muted-foreground text-base font-semibold cursor-pointer select-none hover:text-stora-foreground" onClick$={(e: any) => { e.stopPropagation(); onContextItem$?.({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>⋯</td>
             </tr>
           );
-        }
-        const sel = selIds.value.includes(item.id);
-        const tc = typeMeta[item.file_type] || typeMeta.other;
-        return (
-          <tr key={item.id} draggable class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}
-            onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-            preventdefault:contextmenu
-            onContextMenu$={(e: any) => { onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>
-            <td class="px-4"><input type="checkbox" checked={sel}
-              onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" /></td>
-            <td class="px-2 cursor-pointer" onClick$={() => onPreview$ ? onPreview$(item) : nav(`/view?id=${item.id}`)}>
-              <div class="flex items-center gap-3">
-                <div class={`w-7 h-7 flex items-center justify-center text-sm shrink-0`}>{tc.icon}</div>
-                <span class="text-sm font-medium text-stora-foreground truncate max-w-[200px]">{item.filename}</span>
-                {item.is_favorite && <span class="text-amber-500 text-xs shrink-0" title="已收藏">⭐</span>}
-              </div>
-            </td>
-            <td class="px-2 text-sm text-stora-muted-foreground">{fmtSize(item.file_size)}</td>
-            <td class="px-2 text-sm text-stora-muted-foreground">{item.file_type || "未知"}</td>
-            <td class="px-2 text-sm text-stora-muted-foreground">{item.created_at?.split("T")[0] || "—"}</td>
-            <td class="px-2 text-stora-muted-foreground text-base font-semibold cursor-pointer select-none hover:text-stora-foreground" onClick$={(e: any) => { e.stopPropagation(); onContextItem$?.({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>⋯</td>
-          </tr>
-        );
-      })}
+        })}
+        </>
+      ))}
     </tbody>
   </table>
   </div>
   );
 });
-
-// ─── Grid View ───
 
 export const GridView = component$<{ items: any[]; selIds: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any }>(({ items, selIds, nav, onContextItem$, onPreview$ }) => (
   <div class="card-grid p-6">

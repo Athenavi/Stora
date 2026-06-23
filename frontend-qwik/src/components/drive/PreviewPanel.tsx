@@ -179,18 +179,27 @@ export default component$<{ file: FileItem | null; onClose$: () => void }>(({ fi
           )}
         </div>
 
-        {/* Category */}
+        {/* Category — user-defined text */}
         <div>
           <span class="text-xs font-semibold text-stora-muted-foreground uppercase tracking-wider block mb-1.5">分类</span>
-          <select value={d.file_type}
-            onChange$={(e: any) => setFileType(e.target.value)}
-            class="w-full text-sm px-3 py-1.5 border border-stora-border rounded bg-white text-stora-foreground">
-            {FILE_TYPES.map(ft => (
-              <option key={ft} value={ft}>
-                {{image:"🖼 图片",video:"🎬 视频",audio:"🎵 音频",document:"📄 文档",text:"📝 文本",archive:"📦 压缩包",other:"📎 其他"}[ft] || ft}
-              </option>
-            ))}
-          </select>
+          <div class="flex gap-2">
+            <input type="text" value={d.category || ""}
+              placeholder="输入分类名称..."
+              class="flex-1 text-sm px-3 py-1.5 border border-stora-border rounded bg-white text-stora-foreground focus:outline-none focus:ring-1 focus:ring-stora-primary"
+              onKeyDown$={async (e: any) => {
+                if (e.key === "Enter") {
+                  try { await api.patch(`/files/${d.id}`, { category: e.target.value || null }); if (detail.value) detail.value = { ...detail.value, category: e.target.value || undefined }; } catch {}
+                }
+              }}
+              onBlur$={async (e: any) => {
+                try { await api.patch(`/files/${d.id}`, { category: e.target.value || null }); if (detail.value) detail.value = { ...detail.value, category: e.target.value || undefined }; } catch {}
+              }} />
+            {d.category && (
+              <button onClick$={async () => {
+                try { await api.patch(`/files/${d.id}`, { category: null }); if (detail.value) detail.value = { ...detail.value, category: undefined }; } catch {}
+              }} class="px-2 text-xs text-stora-muted-foreground hover:text-red-500 border border-stora-border rounded">清除</button>
+            )}
+          </div>
         </div>
 
         {/* Attributes */}
@@ -205,6 +214,8 @@ export default component$<{ file: FileItem | null; onClose$: () => void }>(({ fi
           ) : null}
           <AttrRow label="下载次数" value={String(d.download_count ?? 0)} />
           <AttrRow label="加密" value={d.is_encrypted ? "是 🔒" : "否"} />
+          {d.category && <AttrRow label="分类" value={d.category} />}
+          <AttrRow label="排序" value={String(d.sort_order ?? 0)} />
           <AttrRow label="创建时间" value={fmtDate(d.created_at!)} />
           <AttrRow label="更新时间" value={fmtDate(d.updated_at!)} />
           {d.file_hash && <div class="col-span-2"><AttrRow label="文件哈希" value={d.file_hash.substring(0, 16) + "..."} /></div>}

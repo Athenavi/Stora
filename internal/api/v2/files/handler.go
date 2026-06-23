@@ -141,7 +141,7 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	if sortOrder == "" {
 		sortOrder = "desc"
 	}
-	allowedSorts := map[string]bool{"created_at": true, "filename": true, "file_size": true, "updated_at": true}
+	allowedSorts := map[string]bool{"created_at": true, "filename": true, "file_size": true, "updated_at": true, "sort_order": true}
 	if !allowedSorts[sortBy] {
 		sortBy = "created_at"
 	}
@@ -159,7 +159,8 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	// Query
 	query := fmt.Sprintf(
 		`SELECT id, filename, original_filename, file_size, mime_type, file_type, is_folder, is_favorite,
-		        thumbnail_url, width, height, duration, folder_id, created_at, updated_at
+		        thumbnail_url, width, height, duration, folder_id, category, sort_order,
+		        description, file_hash, is_encrypted, download_count, created_at, updated_at
 		 FROM file_items WHERE %s ORDER BY is_folder DESC, %s %s LIMIT $%d OFFSET $%d`,
 		whereClause, sortBy, sortOrder, argIdx, argIdx+1)
 	args = append(args, perPage, offset)
@@ -477,6 +478,9 @@ func (h *Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 		Filename    *string `json:"filename"`
 		Description *string `json:"description"`
 		IsFavorite  *bool   `json:"is_favorite"`
+		FileType    *string `json:"file_type"`
+		Category    *string `json:"category"`
+		SortOrder   *int64  `json:"sort_order"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid body")
@@ -500,6 +504,21 @@ func (h *Handler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 	if req.IsFavorite != nil {
 		sets = append(sets, fmt.Sprintf("is_favorite = $%d", argIdx))
 		args = append(args, *req.IsFavorite)
+		argIdx++
+	}
+	if req.FileType != nil {
+		sets = append(sets, fmt.Sprintf("file_type = $%d", argIdx))
+		args = append(args, *req.FileType)
+		argIdx++
+	}
+	if req.Category != nil {
+		sets = append(sets, fmt.Sprintf("category = $%d", argIdx))
+		args = append(args, *req.Category)
+		argIdx++
+	}
+	if req.SortOrder != nil {
+		sets = append(sets, fmt.Sprintf("sort_order = $%d", argIdx))
+		args = append(args, *req.SortOrder)
 		argIdx++
 	}
 	if len(sets) == 0 {
@@ -955,6 +974,109 @@ func (h *Handler) DeleteTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+// ListFileTags lists tags assigned to a file
+func (h *Handler) ListFileTags(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	rows, err := h.db.Query(
+		`SELECT t.id, t.name, t.color FROM file_tags t
+		 JOIN file_tag_assignments a ON a.tag_id = t.id
+		 WHERE a.file_id = $1 AND t.user_id = $2 ORDER BY t.name`,
+		fileID, userID,
+	)
+	if err != nil {
+		writeJSON(w, http.StatusOK, []interface{}{})
+		return
+	}
+	defer rows.Close()
+
+	var tags []map[string]interface{}
+	for rows.Next() {
+		var id int64
+		var name string
+		var color *string
+		rows.Scan(&id, &name, &color)
+		tags = append(tags, map[string]interface{}{
+			"id": id, "name": name, "color": color,
+		})
+	}
+	if tags == nil {
+		tags = []map[string]interface{}{}
+	}
+	writeJSON(w, http.StatusOK, tags)
+}
+
+// AssignFileTags assigns tags to a file (replaces all)
+func (h *Handler) AssignFileTags(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	var req struct {
+		TagIDs []int64 `json:"tag_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	// Verify file belongs to user
+	var ownerID int64
+	err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND deleted_at IS NULL`, fileID).Scan(&ownerID)
+	if err != nil || ownerID != userID {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+
+	// Replace all tag assignments in a transaction
+	tx, err := h.db.Begin()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "transaction failed")
+		return
+	}
+	defer tx.Rollback()
+
+	tx.Exec(`DELETE FROM file_tag_assignments WHERE file_id = $1`, fileID)
+	for _, tagID := range req.TagIDs {
+		// Verify tag belongs to user
+		var tid int64
+		if err := tx.QueryRow(`SELECT id FROM file_tags WHERE id = $1 AND user_id = $2`, tagID, userID).Scan(&tid); err != nil {
+			continue
+		}
+		tx.Exec(`INSERT INTO file_tag_assignments (file_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, fileID, tagID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "tags updated"})
+}
+
+// RemoveFileTag removes a single tag from a file
+func (h *Handler) RemoveFileTag(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	tagID, _ := strconv.ParseInt(chi.URLParam(r, "tagId"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	result, err := h.db.Exec(
+		`DELETE FROM file_tag_assignments
+		 WHERE file_id = $1 AND tag_id = $2
+		 AND $1 IN (SELECT id FROM file_items WHERE user_id = $3 AND deleted_at IS NULL)`,
+		fileID, tagID, userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		writeError(w, http.StatusNotFound, "assignment not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "tag removed"})
 }
 
 // ---------- Search ----------
