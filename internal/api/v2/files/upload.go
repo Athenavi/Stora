@@ -340,7 +340,7 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	// Resolve folder_id: JSON body > upload task > root folder
+	// Resolve folder_id: JSON body > upload task (nil = virtual root)
 	var folderID *int64
 	if reqFolderID != nil {
 		folderID = reqFolderID
@@ -348,20 +348,6 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		if fid, err := strconv.ParseInt(task.FolderID.String, 10, 64); err == nil {
 			folderID = &fid
 		}
-	}
-	if folderID == nil {
-		var rootID int64
-		if err := h.db.QueryRow(`SELECT id FROM folders WHERE user_id = $1 AND parent_id IS NULL LIMIT 1`, task.UserID).Scan(&rootID); err != nil {
-			err = h.db.QueryRow(
-				`INSERT INTO folders (user_id, name, parent_id, created_at, updated_at) VALUES ($1, '我的文件', NULL, $2, $2) RETURNING id`,
-				task.UserID, now,
-			).Scan(&rootID)
-			if err != nil {
-				utils.WriteError(w, http.StatusInternalServerError, "failed to create root folder")
-				return
-			}
-		}
-		folderID = &rootID
 	}
 
 	// Create file item
