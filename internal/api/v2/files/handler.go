@@ -173,21 +173,27 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type FileItem struct {
-		ID        int64   `json:"id"`
-		Filename  *string `json:"filename"`
-		OrigName  *string `json:"original_filename"`
-		FileSize  *int64  `json:"file_size"`
-		MimeType  *string `json:"mime_type"`
-		FileType  *string `json:"file_type"`
-		IsFolder  *bool   `json:"is_folder"`
-		IsFav     *bool   `json:"is_favorite"`
-		ThumbURL  *string `json:"thumbnail_url"`
-		Width     *int    `json:"width"`
-		Height    *int    `json:"height"`
-		Duration  *int    `json:"duration"`
-		FolderID  *int64  `json:"folder_id"`
-		CreatedAt *string `json:"created_at"`
-		UpdatedAt *string `json:"updated_at"`
+		ID           int64   `json:"id"`
+		Filename     *string `json:"filename"`
+		OrigName     *string `json:"original_filename"`
+		FileSize     *int64  `json:"file_size"`
+		MimeType     *string `json:"mime_type"`
+		FileType     *string `json:"file_type"`
+		IsFolder     *bool   `json:"is_folder"`
+		IsFav        *bool   `json:"is_favorite"`
+		ThumbURL     *string `json:"thumbnail_url"`
+		Width        *int    `json:"width"`
+		Height       *int    `json:"height"`
+		Duration     *int    `json:"duration"`
+		FolderID     *int64  `json:"folder_id"`
+		Category     *string `json:"category"`
+		SortOrder    *int64  `json:"sort_order"`
+		Description  *string `json:"description"`
+		FileHash     *string `json:"file_hash"`
+		IsEncrypted  *bool   `json:"is_encrypted"`
+		DownloadCnt  *int64  `json:"download_count"`
+		CreatedAt    *string `json:"created_at"`
+		UpdatedAt    *string `json:"updated_at"`
 	}
 
 	var items = make([]FileItem, 0)
@@ -195,7 +201,9 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		var item FileItem
 		rows.Scan(&item.ID, &item.Filename, &item.OrigName, &item.FileSize, &item.MimeType,
 			&item.FileType, &item.IsFolder, &item.IsFav, &item.ThumbURL, &item.Width,
-			&item.Height, &item.Duration, &item.FolderID, &item.CreatedAt, &item.UpdatedAt)
+			&item.Height, &item.Duration, &item.FolderID, &item.Category, &item.SortOrder,
+			&item.Description, &item.FileHash, &item.IsEncrypted, &item.DownloadCnt,
+			&item.CreatedAt, &item.UpdatedAt)
 		items = append(items, item)
 	}
 
