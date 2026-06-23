@@ -167,7 +167,7 @@ func (h *VaultHandler) CreateVault(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Format(time.RFC3339)
 	var vaultID int64
 	err = h.db.QueryRow(
-		`INSERT INTO vaults (user_id, name, password_hash, created_at, updated_at) VALUES ($1,$2,$3,$4,$4) RETURNING id`,
+		`INSERT INTO vaults (user_id, name, description, password_hash, created_at, updated_at) VALUES ($1,$2,'',$3,$4,$4) RETURNING id`,
 		userID, name, pwHash, now,
 	).Scan(&vaultID)
 

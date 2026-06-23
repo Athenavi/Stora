@@ -146,6 +146,9 @@ CREATE TABLE IF NOT EXISTS vaults (
     user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE
 );
 
+-- Fix existing databases where description was accidentally NOT NULL
+ALTER TABLE vaults ALTER COLUMN description DROP NOT NULL;
+
 -- Webhook: Webhook 配置
 CREATE TABLE IF NOT EXISTS webhooks (
     created_at TIMESTAMP NOT NULL DEFAULT now(),
