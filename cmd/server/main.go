@@ -340,6 +340,8 @@ func main() {
 			// Batch operations
 			r.Post("/files/batch/delete", batchHandler.BatchDelete)
 			r.Post("/files/batch/move", batchHandler.BatchMove)
+			r.Post("/files/batch/tags", batchHandler.BatchAssignTags)
+			r.Post("/files/batch/category", batchHandler.BatchSetCategory)
 			r.Post("/files/download/batch", batchHandler.BatchDownload)
 
 			// Trash — frontend calls /files/trash/* paths

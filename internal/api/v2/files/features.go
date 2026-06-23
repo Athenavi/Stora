@@ -729,6 +729,56 @@ func (h *BatchHandler) BatchMove(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]int{"moved": len(req.FileIDs)})
 }
 
+// BatchAssignTags replaces all tags on multiple files with the given tag set
+func (h *BatchHandler) BatchAssignTags(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	var req struct {
+		FileIDs []int64 `json:"file_ids"`
+		TagIDs  []int64 `json:"tag_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "file_ids required")
+		return
+	}
+
+	// For each file, replace tag assignments
+	// Verify files belong to user
+	for _, fid := range req.FileIDs {
+		var ownerID int64
+		err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND deleted_at IS NULL`, fid).Scan(&ownerID)
+		if err != nil || ownerID != userID {
+			continue
+		}
+		h.db.Exec(`DELETE FROM file_tag_assignments WHERE file_id = $1`, fid)
+		for _, tagID := range req.TagIDs {
+			h.db.Exec(`INSERT INTO file_tag_assignments (file_id, tag_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, fid, tagID)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"affected": len(req.FileIDs)})
+}
+
+// BatchSetCategory sets the category on multiple files
+func (h *BatchHandler) BatchSetCategory(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	var req struct {
+		FileIDs  []int64 `json:"file_ids"`
+		Category *string `json:"category"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
+		writeError(w, http.StatusBadRequest, "file_ids required")
+		return
+	}
+	_, err := h.db.Exec(
+		`UPDATE file_items SET category = $1 WHERE id = ANY($2) AND user_id = $3`,
+		req.Category, pq.Array(req.FileIDs), userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "batch category failed")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"affected": len(req.FileIDs)})
+}
+
 // ---------- Trash ----------
 
 type TrashHandler struct {

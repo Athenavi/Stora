@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, type PathChildrenResponse, type FileItem } from "~/lib/api";
+import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, listUserTags, type PathChildrenResponse, type FileItem } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Input } from "~/components/ui/Button";
 import PreviewPanel from "~/components/drive/PreviewPanel";
@@ -97,6 +97,11 @@ export default component$(() => {
   const clipboard = useSignal<{ id: number; name: string; type: string } | null>(null);
   const showProperties = useSignal<FileItem | null>(null);
   const groupBy = useSignal<string | null>(null);
+  const showBatchTags = useSignal(false);
+  const showBatchCategory = useSignal(false);
+  const allUserTags = useSignal<{ id: number; name: string; color: string | null }[]>([]);
+  const batchTagIds = useSignal<number[]>([]);
+  const batchCategoryName = useSignal("");
 
   const onPreview = $((item: any) => { previewFile.value = item; });
 
@@ -230,6 +235,10 @@ export default component$(() => {
             class="touch-target px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 rounded-lg">下载</button>
           <button onClick$={async () => { showShareDialog.value = true; }}
             class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg">分享</button>
+          <button onClick$={async () => { const t = await listUserTags(); allUserTags.value = t; batchTagIds.value = []; showBatchTags.value = true; }}
+            class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg">标签</button>
+          <button onClick$={async () => { batchCategoryName.value = ""; showBatchCategory.value = true; }}
+            class="touch-target px-3 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 rounded-lg">分类</button>
           <button onClick$={async () => { if (!confirm("确认删除？")) return; api.post("/files/batch/delete", { file_ids: [...selIds.value] }).catch(() => {}); selIds.value = []; refresh(); }}
             class="touch-target px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg">删除</button>
         </div>
@@ -246,6 +255,10 @@ export default component$(() => {
             class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">下载</button>
           <button onClick$={async () => { showShareDialog.value = true; }}
             class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">分享</button>
+          <button onClick$={async () => { const t = await listUserTags(); allUserTags.value = t; batchTagIds.value = []; showBatchTags.value = true; }}
+            class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">标签</button>
+          <button onClick$={async () => { batchCategoryName.value = ""; showBatchCategory.value = true; }}
+            class="px-3 py-1.5 text-xs font-medium text-indigo-600 hover:bg-indigo-100 rounded-lg transition-colors">分类</button>
           <button onClick$={async () => { if (!confirm("确认删除？")) return; api.post("/files/batch/delete", { file_ids: [...selIds.value] }).catch(() => {}); selIds.value = []; refresh(); }}
             class="px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 rounded-lg transition-colors">删除</button>
         </div>
@@ -584,6 +597,51 @@ export default component$(() => {
                   class="w-full touch-target px-4 py-3 text-sm font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors text-center">完成</button>
               </>
             )}
+          </div>
+        </>
+      )}
+
+      {/* Batch tag dialog */}
+      {showBatchTags.value && (
+        <>
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => showBatchTags.value = false} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col p-5 max-h-[85vh] overflow-auto">
+            <h3 class="text-sm font-semibold text-stora-foreground mb-3">批量设置标签 ({selIds.value.length} 项)</h3>
+            <div class="flex flex-wrap gap-2 mb-4">
+              {allUserTags.value.map(t => (
+                <button key={t.id} onClick$={() => {
+                  const i = batchTagIds.value.indexOf(t.id);
+                  if (i >= 0) batchTagIds.value = batchTagIds.value.filter(x => x !== t.id);
+                  else batchTagIds.value = [...batchTagIds.value, t.id];
+                }}
+                  class={`px-3 py-1.5 text-xs font-medium rounded-full border transition-colors ${batchTagIds.value.includes(t.id) ? "bg-indigo-100 text-indigo-700 border-indigo-300" : "text-slate-600 border-slate-300 hover:bg-slate-50"}`}>
+                  {t.name}
+                </button>
+              ))}
+            </div>
+            <button onClick$={async () => {
+              try { await api.post('/files/batch/tags', { file_ids: [...selIds.value], tag_ids: [...batchTagIds.value] }); showBatchTags.value = false; refresh(); } catch { alert("设置失败"); }
+            }} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700">应用标签</button>
+            <button onClick$={() => showBatchTags.value = false}
+              class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50">取消</button>
+          </div>
+        </>
+      )}
+
+      {/* Batch category dialog */}
+      {showBatchCategory.value && (
+        <>
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => showBatchCategory.value = false} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col p-5">
+            <h3 class="text-sm font-semibold text-stora-foreground mb-3">批量设置分类 ({selIds.value.length} 项)</h3>
+            <input type="text" bind:value={batchCategoryName} placeholder="输入分类名称..."
+              class="w-full mb-4 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              onKeyDown$={async (e: any) => { if (e.key === "Enter") { try { await api.post('/files/batch/category', { file_ids: [...selIds.value], category: e.target.value || null }); showBatchCategory.value = false; refresh(); } catch { alert("设置失败"); } }}} />
+            <button onClick$={async () => {
+              try { await api.post('/files/batch/category', { file_ids: [...selIds.value], category: batchCategoryName.value || null }); showBatchCategory.value = false; refresh(); } catch { alert("设置失败"); }
+            }} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700">应用分类</button>
+            <button onClick$={() => showBatchCategory.value = false}
+              class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50">取消</button>
           </div>
         </>
       )}
