@@ -1,11 +1,12 @@
 /**
  * Stora Share Landing — flat centered card design
  * Route: /s/[code]
+ * Features: file selection, save-to-drive with folder picker, download
  */
-import { component$, useSignal } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useLocation } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
-import { createServerApi } from "~/lib/api";
+import { createServerApi, isAuthenticated } from "~/lib/api";
 
 interface FolderItem { id: number; filename: string; file_size: number; file_type: string; }
 interface SubFolder { id: number; name: string; }
@@ -17,6 +18,9 @@ interface ShareAccess {
   protected?: boolean;
   folders?: SubFolder[];
   items?: FolderItem[];
+}
+interface FolderNode {
+  id: number; name: string; parent_id?: number | null; children: FolderNode[];
 }
 
 export const useShareData = routeLoader$(async ({ params, request }) => {
@@ -45,6 +49,78 @@ export default component$(() => {
   const shareData = useSignal<ShareAccess | null>(data.value);
   const loading = useSignal(false);
 
+  // Selection state
+  const selFileIds = useSignal<Set<number>>(new Set());
+  const selectAll = useSignal(false);
+  const toggleFile = $((id: number) => {
+    const s = new Set(selFileIds.value);
+    if (s.has(id)) s.delete(id); else s.add(id);
+    selFileIds.value = s;
+  });
+  const toggleAll = $((ids: number[]) => {
+    if (selFileIds.value.size === ids.length) { selFileIds.value = new Set(); }
+    else { selFileIds.value = new Set(ids); }
+  });
+
+  // Save-to-drive state
+  const showFolderPicker = useSignal(false);
+  const folderTree = useSignal<FolderNode[]>([]);
+  const targetFolderId = useSignal<number | undefined>(undefined);
+  const targetFolderName = useSignal("根目录");
+  const saving = useSignal(false);
+  const saveDone = useSignal(false);
+
+  const loadFolderTree = $(async () => {
+    try {
+      const res = await fetch("/api/v2/files/folders/tree");
+      const json = await res.json();
+      const d = json.data || json;
+      folderTree.value = Array.isArray(d) ? d : [];
+    } catch { folderTree.value = []; }
+  });
+
+  // Render folder tree picker
+  const renderFolderNode = (nodes: FolderNode[], depth = 0): any =>
+    nodes.map(node => (
+      <div key={node.id}>
+        <button onClick$={() => { targetFolderId.value = node.id; targetFolderName.value = node.name; showFolderPicker.value = false; }}
+          class={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-stora-muted ${targetFolderId.value === node.id ? "bg-stora-primary/10 text-stora-primary" : "text-stora-foreground"}`}
+          style={{ paddingLeft: `${12 + depth * 20}px` }}>
+          <span>📁</span>
+          <span class="truncate">{node.name}</span>
+        </button>
+        {node.children?.length > 0 && renderFolderNode(node.children, depth + 1)}
+      </div>
+    ));
+
+  const doSave = $(async (fileIds: number[]) => {
+    if (!isAuthenticated()) {
+      if (confirm("需要登录才能转存到你的 Stora。是否前往登录？")) {
+        window.location.href = `/login?redirect=${encodeURIComponent(loc.url.pathname)}`;
+      }
+      return;
+    }
+    // Show folder picker first
+    if (!showFolderPicker.value) {
+      showFolderPicker.value = true;
+      await loadFolderTree();
+      return;
+    }
+    // Execute save
+    saving.value = true;
+    try {
+      const res = await fetch(`/api/v2/share/${shareCode}/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ file_ids: fileIds, folder_id: targetFolderId.value || null }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      saveDone.value = true;
+      showFolderPicker.value = false;
+    } catch { error.value = "转存失败，请确认已登录"; }
+    saving.value = false;
+  });
+
   if (!data.value) {
     return (
       <div class="min-h-screen bg-stora-background flex items-center justify-center">
@@ -58,7 +134,6 @@ export default component$(() => {
 
   const s = shareData.value!;
   const item = s.item || {};
-  const isImage = item.file_type === "image";
   const isFolder = s.share_info?.is_folder || item.is_folder;
   const isBatch = s.share_info?.is_batch;
 
@@ -89,157 +164,134 @@ export default component$(() => {
     );
   }
 
-  if (isFolder) {
-    const subFolders = s.folders || [];
-    const files = s.items || [];
-    return (
-      <div class="min-h-screen bg-stora-background flex items-center justify-center p-4">
-        {/* Card per spec: 560px wide, but for folder a bit different */}
-        <div class="w-full max-w-[560px] bg-stora-card border border-stora-border p-8">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-stora-muted flex items-center justify-center text-2xl">📁</div>
-            <div>
-              <h1 class="text-lg font-semibold text-stora-foreground truncate">{item.filename || "共享文件夹"}</h1>
-              <p class="text-xs text-stora-muted-foreground">{subFolders.length} 个文件夹 · {files.length} 个文件</p>
-            </div>
-          </div>
-          {subFolders.length > 0 && (
-            <div class="mb-4">
-              <p class="text-xs font-medium text-stora-muted-foreground mb-2">文件夹</p>
-              <div class="divide-y divide-stora-border border border-stora-border">
-                {subFolders.map(f => (
-                  <div key={f.id} class="flex items-center gap-2 px-3 py-2 text-sm text-stora-foreground">
-                    <span>📁</span>
-                    <span class="truncate">{f.name}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {files.length > 0 && (
-            <div>
-              <p class="text-xs font-medium text-stora-muted-foreground mb-2">文件</p>
-              <div class="divide-y divide-stora-border border border-stora-border">
-                {files.map(f => (
-                  <div key={f.id} class="flex items-center gap-2 px-3 py-2 text-sm text-stora-foreground">
-                    <span>{typeIcon[f.file_type] || "📄"}</span>
-                    <span class="flex-1 truncate">{f.filename}</span>
-                    <span class="text-xs text-stora-nav-text">{fmtSize(f.file_size)}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          <button onClick$={() => { window.open(`/api/v2/share/${shareCode}/download`, "_blank"); }}
-            class="w-full h-12 mt-6 text-sm font-semibold text-white bg-stora-primary hover:bg-[#1D4ED8]">
-            ⬇ 下载全部 (ZIP)
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Build file list from whatever source
+  const allFiles: FolderItem[] = s.items || (item.id ? [{ id: item.id!, filename: item.filename || "", file_size: item.file_size || 0, file_type: item.file_type || "other" }] : []);
 
-  // Batch share — multiple files
-  if (isBatch) {
-    const files = s.items || [];
-    return (
-      <div class="min-h-screen bg-stora-background flex items-center justify-center p-4">
-        <div class="w-full max-w-[560px] bg-stora-card border border-stora-border p-8">
-          <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-stora-muted flex items-center justify-center text-2xl">📦</div>
-            <div>
-              <h1 class="text-lg font-semibold text-stora-foreground">分享的文件</h1>
-              <p class="text-xs text-stora-muted-foreground">{files.length} 个文件</p>
-            </div>
+  return (
+    <div class="min-h-screen bg-stora-background flex items-center justify-center p-4">
+      <div class="w-full max-w-[560px] bg-stora-card border border-stora-border p-8">
+
+        {/* Header */}
+        <div class="flex items-center gap-3 mb-4">
+          <div class="w-12 h-12 bg-stora-muted flex items-center justify-center text-2xl">
+            {isBatch ? "📦" : isFolder ? "📁" : typeMeta[item.file_type || ""] || "📄"}
           </div>
-          {files.length > 0 ? (
-            <div class="divide-y divide-stora-border border border-stora-border mb-4">
-              {files.map(f => (
+          <div class="flex-1 min-w-0">
+            <h1 class="text-lg font-semibold text-stora-foreground truncate">
+              {isBatch ? "分享的文件" : item.filename || item.name || "未命名文件"}
+            </h1>
+            <p class="text-xs text-stora-muted-foreground">{allFiles.length} 个文件</p>
+          </div>
+        </div>
+
+        {/* Folder list (only for folder shares) */}
+        {isFolder && s.folders && s.folders.length > 0 && (
+          <div class="mb-4">
+            <p class="text-xs font-medium text-stora-muted-foreground mb-2">文件夹</p>
+            <div class="divide-y divide-stora-border border border-stora-border">
+              {s.folders.map(f => (
                 <div key={f.id} class="flex items-center gap-2 px-3 py-2 text-sm text-stora-foreground">
-                  <span>{typeIcon[f.file_type] || "📄"}</span>
-                  <span class="flex-1 truncate">{f.filename}</span>
-                  <span class="text-xs text-stora-nav-text">{fmtSize(f.file_size)}</span>
+                  <span>📁</span><span class="truncate">{f.name}</span>
                 </div>
               ))}
             </div>
-          ) : (
-            <p class="text-sm text-stora-muted-foreground py-4 text-center">暂无文件</p>
-          )}
-          <button onClick$={() => { window.open(`/api/v2/share/${shareCode}/download`, "_blank"); }}
-            class="w-full h-12 text-sm font-semibold text-white bg-stora-primary hover:bg-[#1D4ED8]">
-            ⬇ 下载全部 (ZIP)
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Single file view — per spec centered card
-  const emoji = typeMeta[item.file_type || ""] || "📄";
-  const fileExt = (item.filename || "").split(".").pop()?.toUpperCase() || (item.file_type || "").toUpperCase() || "文件";
-  return (
-    <div class="min-h-screen bg-stora-background flex items-center justify-center p-4">
-      {/* Share card — 560px wide per spec */}
-      <div class="w-full max-w-[560px] bg-stora-card border border-stora-border p-12 flex flex-col items-center gap-7">
-        {/* Share badge — capsule per spec */}
-        <div class="inline-flex items-center h-[30px] px-3.5 bg-stora-tag-work text-stora-primary text-xs font-medium">
-          📎 分享文件
-        </div>
-
-        {/* File icon 96x96 per spec */}
-        <div class="w-24 h-24 bg-[#FEF3C7] flex items-center justify-center text-[44px]">
-          {emoji}
-        </div>
-
-        {/* Filename 24px Bold per spec */}
-        <h1 class="text-2xl font-bold text-stora-foreground text-center truncate w-full">{item.filename || item.name || "未命名文件"}</h1>
-
-        {/* Meta row per spec */}
-        <div class="flex items-center gap-6 text-sm font-medium text-stora-muted-foreground">
-          <span>📦 {fmtSize(item.file_size)}</span>
-          <span>📄 {fileExt} 文件</span>
-        </div>
-
-        {/* Divider */}
-        <div class="w-full h-px bg-stora-border" />
-
-        {/* Download button 464x56 per spec */}
-        {item.id && (
-          <button onClick$={() => { window.open(`/api/v2/share/${shareCode}/download`, "_blank"); }}
-            class="w-[464px] max-w-full h-14 text-base font-semibold text-white bg-stora-primary hover:bg-[#1D4ED8] flex items-center justify-center gap-2">
-            ⬇ 下载文件 ({fmtSize(item.file_size)})
-          </button>
+          </div>
         )}
 
-        {/* Preview area 464x200 per spec */}
-        <div class="w-[464px] max-w-full h-[200px] bg-stora-background flex flex-col items-center justify-center gap-3">
-          <div class="w-16 h-16 bg-stora-tag-work flex items-center justify-center text-[28px]">👁</div>
-          <p class="text-sm text-stora-nav-text">点击下载以查看完整文件</p>
-        </div>
+        {/* File list with checkboxes */}
+        {allFiles.length > 0 ? (
+          <div>
+            {/* Select all toggle */}
+            {allFiles.length > 1 && (
+              <div class="flex items-center gap-2 px-1 py-1.5 border-b border-stora-border mb-1">
+                <input type="checkbox"
+                  checked={selFileIds.value.size === allFiles.length}
+                  onChange$={() => toggleAll(allFiles.map(f => f.id))}
+                  class="border-stora-border" />
+                <span class="text-xs text-stora-muted-foreground">
+                  {selFileIds.value.size === 0 ? "全选" :
+                   selFileIds.value.size === allFiles.length ? "取消全选" :
+                   `已选 ${selFileIds.value.size} 项`}
+                </span>
+              </div>
+            )}
+            {/* Single file auto-selected */}
+            {allFiles.length === 1 && !selFileIds.value.has(allFiles[0].id) && (
+              (selFileIds.value = new Set([allFiles[0].id]), null)
+            )}
+            <div class="divide-y divide-stora-border border border-stora-border mb-4">
+              {allFiles.map(f => (
+                <div key={f.id}
+                  onClick$={() => toggleFile(f.id)}
+                  class={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-stora-muted ${selFileIds.value.has(f.id) ? "bg-stora-primary/5" : ""}`}>
+                  <input type="checkbox" checked={selFileIds.value.has(f.id)}
+                    onClick$={(e: any) => e.stopPropagation()}
+                    onChange$={() => toggleFile(f.id)} class="border-stora-border shrink-0" />
+                  <span>{typeIcon[f.file_type] || "📄"}</span>
+                  <span class="flex-1 truncate">{f.filename}</span>
+                  <span class="text-xs text-stora-nav-text shrink-0">{fmtSize(f.file_size)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <p class="text-sm text-stora-muted-foreground py-4 text-center">暂无文件</p>
+        )}
 
-        {/* Save button 464x48 per spec */}
-        <button onClick$={async () => {
-          try { await fetch(`/api/v2/share/${shareCode}/save`, { method: "POST" }); alert("已转存到你的 Stora"); } catch { alert("转存失败，请先登录"); }
-        }} class="w-[464px] max-w-full h-12 text-[15px] font-medium text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-background flex items-center justify-center gap-2">
-          📥 转存到我的 Stora
-        </button>
+        {/* Actions */}
+        {saveDone.value ? (
+          <p class="text-sm text-green-600 text-center py-3">✅ 已转存到 {targetFolderName.value}</p>
+        ) : (
+          <div class="flex flex-col gap-3">
+            <button onClick$={() => doSave([...selFileIds.value])}
+              disabled={selFileIds.value.size === 0 || saving.value}
+              class="w-full h-12 text-sm font-semibold text-white bg-stora-primary hover:bg-[#1D4ED8] disabled:opacity-50 disabled:cursor-not-allowed">
+              {saving.value ? "转存中..." :
+               showFolderPicker.value ? `选择文件夹后转存` :
+               !isAuthenticated() ? "📥 登录后转存到我的 Stora" :
+               `📥 转存到 ${targetFolderName.value} (${selFileIds.value.size} 项)`}
+            </button>
+            <button onClick$={() => { window.open(`/api/v2/share/${shareCode}/download`, "_blank"); }}
+              class="w-full h-12 text-sm font-semibold text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-background">
+              ⬇ 下载全部 (ZIP)
+            </button>
+          </div>
+        )}
 
-        {/* Secondary actions per spec */}
-        <div class="flex items-center gap-8 text-sm text-stora-nav-text">
-          <span class="cursor-pointer hover:text-stora-foreground">🚩 举报</span>
-          <span class="cursor-pointer hover:text-stora-foreground">👁 在线预览</span>
-          <span class="text-base font-semibold cursor-pointer hover:text-stora-foreground">⋯ 更多</span>
-        </div>
+        {/* Folder picker dialog */}
+        {showFolderPicker.value && (
+          <>
+            <div class="fixed inset-0 z-40 bg-black/30" onClick$={() => showFolderPicker.value = false} />
+            <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col max-h-[70vh]">
+              <div class="flex items-center justify-between px-4 py-3 border-b border-stora-border">
+                <span class="text-sm font-semibold text-stora-foreground">选择目标文件夹</span>
+                <button onClick$={() => showFolderPicker.value = false} class="text-stora-muted-foreground hover:text-stora-foreground">✕</button>
+              </div>
+              <div class="flex-1 overflow-auto py-2">
+                {/* Root option */}
+                <button onClick$={() => { targetFolderId.value = undefined; targetFolderName.value = "根目录"; showFolderPicker.value = false; }}
+                  class={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-stora-muted ${targetFolderId.value === undefined ? "bg-stora-primary/10 text-stora-primary" : "text-stora-foreground"}`}>
+                  <span>📂</span><span>根目录</span>
+                </button>
+                {folderTree.value.length === 0 ? (
+                  <p class="text-xs text-stora-muted-foreground text-center py-4">加载中...</p>
+                ) : renderFolderNode(folderTree.value)}
+              </div>
+              <div class="px-4 py-3 border-t border-stora-border">
+                <button onClick$={() => doSave([...selFileIds.value])}
+                  disabled={saving.value}
+                  class="w-full h-10 text-sm font-medium text-white bg-stora-primary hover:bg-[#1D4ED8] disabled:opacity-50">
+                  {saving.value ? "保存中..." : `转存到${targetFolderName.value}`}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
 
-        {/* Brand trace per spec */}
-        <div class="flex items-center gap-2">
+        {/* Brand trace */}
+        <div class="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-stora-border">
           <div class="w-6 h-6 bg-stora-primary flex items-center justify-center text-white text-sm font-bold">S</div>
           <span class="text-sm font-medium text-stora-muted-foreground">通过 Stora 安全分享</span>
-        </div>
-
-        {/* Security notice per spec */}
-        <div class="flex items-center gap-1.5 px-2.5 py-2">
-          <span class="text-xs text-stora-nav-text">🔒 此链接仅用于查看和下载，文件内容受加密保护</span>
         </div>
       </div>
     </div>

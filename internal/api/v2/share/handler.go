@@ -968,42 +968,95 @@ func (h *Handler) ShareFileUpload(w http.ResponseWriter, r *http.Request) {
 
 // ─── Save to My Drive ───
 
-// SaveToMyDrive copies a shared file to the authenticated user's drive.
-// POST /share/{code}/save
+// SaveToMyDrive copies shared files to the authenticated user's drive.
+// POST /share/{code}/save   body: { file_ids?: number[], folder_id?: number }
 func (h *Handler) SaveToMyDrive(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 	userID, _ := middleware.GetUserID(r.Context())
+	if userID == 0 {
+		writeError(w, http.StatusUnauthorized, "login required")
+		return
+	}
 
-	var fileID int64
-	var filePath, filename, mimeType string
-	var fileSize int64
-	err := h.db.QueryRow(
-		`SELECT s.file_id, f.file_path, COALESCE(f.original_filename, f.filename),
-		        COALESCE(f.mime_type, ''), COALESCE(f.file_size, 0)
-		 FROM share_links s JOIN file_items f ON s.file_id = f.id
-		 WHERE s.short_code = $1 AND s.is_active = true AND f.deleted_at IS NULL
-		 AND (s.expires_at IS NULL OR s.expires_at > $2)`,
-		code, time.Now().Format(time.RFC3339),
-	).Scan(&fileID, &filePath, &filename, &mimeType, &fileSize)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "link invalid or expired")
+	var req struct {
+		FileIDs  []int64 `json:"file_ids"`
+		FolderID *int64  `json:"folder_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// default: save all or first file
+	}
+
+	// Resolve which files to save — use file_ids from request, or fallback to share link's files
+	var fileIDs []int64
+	if len(req.FileIDs) > 0 {
+		fileIDs = req.FileIDs
+	} else {
+		// Collect all file IDs from share_link_items, or single file_id
+		rows, err := h.db.Query(
+			`SELECT sli.file_id FROM share_link_items sli
+			 JOIN share_links s ON sli.share_link_id = s.id
+			 WHERE s.short_code = $1 AND s.is_active = true
+			 UNION ALL
+			 SELECT s.file_id FROM share_links s
+			 WHERE s.short_code = $1 AND s.is_active = true AND s.file_id IS NOT NULL
+			 AND NOT EXISTS (SELECT 1 FROM share_link_items WHERE share_link_id = s.id)`,
+			code,
+		)
+		if err == nil {
+			defer rows.Close()
+			for rows.Next() {
+				var fid int64
+				rows.Scan(&fid)
+				fileIDs = append(fileIDs, fid)
+			}
+		}
+	}
+
+	if len(fileIDs) == 0 {
+		writeError(w, http.StatusNotFound, "no files to save")
 		return
 	}
 
 	now := time.Now().Format(time.RFC3339)
-	var newID int64
-	err = h.db.QueryRow(
-		`INSERT INTO file_items (user_id, filename, original_filename, file_path, file_size,
-		                         mime_type, storage_driver, is_folder, created_at, updated_at)
-		 VALUES ($1, $2, $2, $3, $4, $5, 'local', false, $6, $6) RETURNING id`,
-		userID, filename, filePath, fileSize, mimeType, now,
-	).Scan(&newID)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "save failed")
-		return
+	saved := 0
+
+	for _, fid := range fileIDs {
+		var filePath, filename, mimeType, fileHash, fileType string
+		var fileSize int64
+		err := h.db.QueryRow(
+			`SELECT COALESCE(f.file_path,''), COALESCE(f.original_filename, f.filename),
+			        COALESCE(f.mime_type,''), COALESCE(f.file_size,0),
+			        COALESCE(f.file_hash,''), COALESCE(f.file_type,'other')
+			 FROM file_items f WHERE f.id = $1 AND f.deleted_at IS NULL`,
+			fid,
+		).Scan(&filePath, &filename, &mimeType, &fileSize, &fileHash, &fileType)
+		if err != nil {
+			continue
+		}
+
+		// Update file_fingerprints reference count
+		if fileHash != "" {
+			h.db.Exec(`UPDATE file_fingerprints SET reference_count = reference_count + 1, updated_at = $1 WHERE hash = $2`, now, fileHash)
+		}
+
+		var newID int64
+		err = h.db.QueryRow(
+			`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
+			                         mime_type, file_type, storage_driver, file_hash, is_folder, created_at, updated_at)
+			 VALUES ($1, $2, $3, $3, $4, $5, $6, $7, 'local', $8, false, $9, $9) RETURNING id`,
+			userID, req.FolderID, filename, filePath, fileSize, mimeType, fileType, fileHash, now,
+		).Scan(&newID)
+		if err != nil {
+			continue
+		}
+
+		if fileSize > 0 {
+			h.db.Exec(`UPDATE users SET used_storage = used_storage + $1 WHERE id = $2`, fileSize, userID)
+		}
+		saved++
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]int64{"file_id": newID})
+	writeJSON(w, http.StatusCreated, map[string]int{"saved": saved})
 }
 
 // ─── QR Code ───
