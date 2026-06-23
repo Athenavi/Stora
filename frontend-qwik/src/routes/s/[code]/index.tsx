@@ -201,8 +201,8 @@ export default component$(() => {
   const rootNodeId = s.item?.id ?? null;
   const treeItems = childrenOf.get(rootNodeId) || childrenOf.get(null) || [];
 
-  // Recursive renderer
-  const renderNode = $((node: any, depth: number): any => {
+  // Recursive renderer — plain function, not $(), since it's only called during render
+  const renderNode = (node: any, depth: number): any => {
     const isFolderNode = node.is_folder;
     const nodeId = node.id;
     const children = childrenOf.get(nodeId) || [];
@@ -233,7 +233,7 @@ export default component$(() => {
         )}
       </div>
     );
-  });
+  };
 
   // Determine header
   const headerIcon = isBatch ? "📦" : isFolder ? "📁" : "📄";
