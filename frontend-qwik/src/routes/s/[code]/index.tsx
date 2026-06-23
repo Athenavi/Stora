@@ -185,9 +185,9 @@ export default component$(() => {
   }
 
   // Merge files from all sources
-  // For folder shares, items has flat list with folder_id/is_folder — build tree
-  const allFlatItems: any[] = (isFolder && s.items) || [];
-  const rootFiles: FolderItem[] = !isFolder ? (s.items && s.items.length > 0 ? s.items : (s.item?.id ? [{ id: s.item.id, filename: s.item.filename || s.item.name || "", file_size: s.item.file_size || 0, file_type: s.item.file_type || "other" }] : [])) : [];
+  // For folder/batch shares, items have folder_id/is_folder — build tree
+  const allFlatItems: any[] = ((isFolder || isBatch) && s.items) || [];
+  const rootFiles: FolderItem[] = !isFolder && !isBatch ? (s.items && s.items.length > 0 ? s.items : (s.item?.id ? [{ id: s.item.id, filename: s.item.filename || s.item.name || "", file_size: s.item.file_size || 0, file_type: s.item.file_type || "other" }] : [])) : [];
   const rootSubs: SubFolder[] = s.folders || [];
 
   // Build tree: group items by folder_id
@@ -197,9 +197,15 @@ export default component$(() => {
     if (!childrenOf.has(pid)) childrenOf.set(pid, []);
     childrenOf.get(pid)!.push(item);
   }
-  // Root-level items (folder_id = null or the shared folder's ID)
-  const rootNodeId = s.item?.id ?? null;
-  const treeItems = childrenOf.get(rootNodeId) || childrenOf.get(null) || [];
+  // Root-level items (folder_id = null)
+  const treeItems = childrenOf.get(null) || [];
+  // For batch shares, also check for items whose folder_id is not null (orphaned at root)
+  if (treeItems.length === 0 && allFlatItems.length > 0) {
+    // Put items with no matching parent at root
+    for (const item of allFlatItems) {
+      if (!item.is_folder) treeItems.push(item);
+    }
+  }
 
   // Recursive renderer — plain function, not $(), since it's only called during render
   const renderNode = (node: any, depth: number): any => {
@@ -238,7 +244,7 @@ export default component$(() => {
   // Determine header
   const headerIcon = isBatch ? "📦" : isFolder ? "📁" : "📄";
   const headerName = isBatch ? "分享的文件" : isFolder ? (s.item?.filename || s.item?.name || "共享文件夹") : (s.item?.filename || "未命名文件");
-  const totalFiles = isFolder ? allFlatItems.filter((x: any) => !x.is_folder).length : (rootFiles.length);
+  const totalFiles = (isFolder || isBatch) ? allFlatItems.filter((x: any) => !x.is_folder).length : (rootFiles.length);
 
   return (
     <div class="min-h-screen bg-stora-background flex items-center justify-center p-4">
@@ -253,13 +259,15 @@ export default component$(() => {
           </div>
         </div>
 
-        {/* Hierarchical tree view (for folder shares) */}
-        {isFolder && allFlatItems.length > 0 ? (
+        {/* Hierarchical tree view (for folder/batch shares) */}
+        {(isFolder || isBatch) && allFlatItems.length > 0 ? (
           <div class="divide-y divide-stora-border border border-stora-border mb-4 max-h-[500px] overflow-y-auto">
-            {treeItems.map((node: any) => renderNode(node, 0))}
+            {treeItems.length > 0 ? treeItems.map((node: any) => renderNode(node, 0)) : (
+              allFlatItems.map((node: any) => renderNode(node, 0))
+            )}
           </div>
-        ) : isFolder && allFlatItems.length === 0 ? (
-          <div class="py-8 text-center text-sm text-stora-muted-foreground">此文件夹为空</div>
+        ) : (isFolder || isBatch) && allFlatItems.length === 0 ? (
+          <div class="py-8 text-center text-sm text-stora-muted-foreground">{(isFolder ? "此文件夹为空" : "暂无文件")}</div>
         ) : (
           <>
             {/* File list with checkboxes (for batch/single-file shares) */}

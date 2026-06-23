@@ -405,12 +405,17 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 			Filename string `json:"filename"`
 			FileSize int64  `json:"file_size"`
 			FileType string `json:"file_type"`
+			IsFolder bool   `json:"is_folder"`
+			FolderID *int64 `json:"folder_id"`
+			FolderName string `json:"folder_name,omitempty"`
 		}
 		items := make([]BatchFileItem, 0, batchCount)
 		brows, err := h.db.Query(
-			`SELECT fi.id, COALESCE(fi.filename,''), COALESCE(fi.file_size,0), COALESCE(fi.file_type,'other')
+			`SELECT fi.id, COALESCE(fi.filename,''), COALESCE(fi.file_size,0), COALESCE(fi.file_type,'other'),
+			        fi.is_folder, fi.folder_id, COALESCE(p.filename, '')
 			 FROM share_link_items sli
 			 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL
+			 LEFT JOIN file_items p ON fi.folder_id = p.id AND p.is_folder = true
 			 WHERE sli.share_link_id = $1 ORDER BY fi.filename`,
 			linkID,
 		)
@@ -418,7 +423,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 			defer brows.Close()
 			for brows.Next() {
 				var bi BatchFileItem
-				brows.Scan(&bi.ID, &bi.Filename, &bi.FileSize, &bi.FileType)
+				brows.Scan(&bi.ID, &bi.Filename, &bi.FileSize, &bi.FileType, &bi.IsFolder, &bi.FolderID, &bi.FolderName)
 				items = append(items, bi)
 			}
 		}
