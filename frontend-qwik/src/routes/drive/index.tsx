@@ -386,11 +386,25 @@ export default component$(() => {
       </div>
 
       {/* Content */}
-      <div class={`flex-1 overflow-auto scrollbar-thin ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
+      <div class={`flex-1 overflow-auto scrollbar-thin ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}
+        preventdefault:contextmenu
+        onContextMenu$={(e: any) => {
+          if (clipboard.value) {
+            ctxPos.value = { x: e.clientX, y: e.clientY };
+            ctxItem.value = { id: 0, type: "paste", name: "" };
+          }
+        }}>
         {(!data.value) ? (
           <div class="p-6 space-y-3">{[1,2,3,4,5].map(i => <div key={i} class="flex items-center gap-4 px-4 py-3"><div class="w-5 h-5 bg-stora-muted" /><div class="w-10 h-10 bg-stora-muted" /><div class="flex-1 space-y-2"><div class="h-4 w-48 bg-stora-muted" /><div class="h-3 w-24 bg-stora-muted" /></div></div>)}</div>
         ) : (allItems.length === 0) ? (
-          <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground p-8 text-center">
+          <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground p-8 text-center"
+            preventdefault:contextmenu
+            onContextMenu$={(e: any) => {
+              if (clipboard.value) {
+                ctxPos.value = { x: e.clientX, y: e.clientY };
+                ctxItem.value = { id: 0, type: "paste", name: "" };
+              }
+            }}>
             <div class="w-20 h-20 bg-stora-muted flex items-center justify-center text-4xl mb-5">📂</div>
             <h3 class="text-lg font-semibold text-stora-foreground mb-1">空目录</h3>
             <p class="text-sm text-stora-muted-foreground mb-6">拖拽文件到此处，或点击上传按钮</p>
@@ -414,7 +428,19 @@ export default component$(() => {
             onContextMenu$={() => { ctxItem.value = null; }} />
           <div class="fixed z-50 min-w-[200px] max-h-[calc(100vh-16px)] overflow-y-auto bg-white border border-stora-border shadow-xl"
             style={{ left: `${ctxPos.value.x}px`, top: `${ctxPos.value.y}px` }}>
-            {ctxItem.value.type === "file" ? (
+            {ctxItem.value.type === "paste" ? (
+              <>
+                <div class="px-4 py-3 text-xs text-stora-muted-foreground border-b border-stora-border">粘贴到当前目录</div>
+                {clipboard.value && (
+                  <button onClick$={async () => {
+                    const ids = [...clipboard.value.fileIds];
+                    clipboard.value = null;
+                    ctxItem.value = null;
+                    try { await api.post('/files/batch/move', { file_ids: ids }); refresh(); } catch { alert("粘贴失败"); }
+                  }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.fileIds.length} 项</button>
+                )}
+              </>
+            ) : ctxItem.value.type === "file" ? (
               <>
                 <button onClick$={() => { const item = allItems.find(x => x.id === ctxItem.value!.id); if (item) onPreview(item); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">👁 预览</button>
