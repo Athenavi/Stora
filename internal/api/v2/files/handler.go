@@ -134,6 +134,22 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 		where = append(where, "is_favorite = false")
 	}
 
+	// category filter
+	if cat := r.URL.Query().Get("category"); cat != "" {
+		where = append(where, fmt.Sprintf("category = $%d", argIdx))
+		args = append(args, cat)
+		argIdx++
+	}
+
+	// tag_id filter
+	if tagIDStr := r.URL.Query().Get("tag_id"); tagIDStr != "" {
+		if tid, err := strconv.ParseInt(tagIDStr, 10, 64); err == nil {
+			where = append(where, fmt.Sprintf("id IN (SELECT file_id FROM file_tag_assignments WHERE tag_id = $%d)", argIdx))
+			args = append(args, tid)
+			argIdx++
+		}
+	}
+
 	// Sort
 	if sortBy == "" {
 		sortBy = "created_at"

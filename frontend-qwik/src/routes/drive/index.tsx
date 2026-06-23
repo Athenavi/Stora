@@ -33,7 +33,9 @@ export const useFileList = routeLoader$(async ({ url, request }) => {
   }
   const typeParam = fileType ? `&file_type=${fileType}` : "";
   const sortParam = `&sort_by=${sortBy}&sort_order=${sortOrder}`;
-  const files = await api.get(`/files?page=1&page_size=50${typeParam}${sortParam}`).catch(() => null);
+  const catParam = url.searchParams.get("category") ? `&category=${encodeURIComponent(url.searchParams.get("category")!)}` : "";
+  const tagParam = url.searchParams.get("tag_id") ? `&tag_id=${url.searchParams.get("tag_id")}` : "";
+  const files = await api.get(`/files?page=1&page_size=50${typeParam}${sortParam}${catParam}${tagParam}`).catch(() => null);
   return files ? { folders: [], files: files.items, path: ["我的文件"] } : null;
 });
 
@@ -268,6 +270,26 @@ export default component$(() => {
       {showUpload.value && (
         <div class="px-4 sm:px-8 py-4 border-b bg-white">
           <UploadZone folderId={resolvedFolderId.value} />
+        </div>
+      )}
+
+      {/* Active filter indicator */}
+      {(loc.url.searchParams.get("category") || loc.url.searchParams.get("tag_id")) && (
+        <div class="flex items-center gap-2 px-6 py-2 text-xs border-b border-stora-border bg-indigo-50/50 shrink-0">
+          <span class="text-stora-muted-foreground">筛选:</span>
+          {loc.url.searchParams.get("category") && (
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">
+              分类: {loc.url.searchParams.get("category")}
+              <button onClick$={() => nav('/drive')} class="ml-0.5 hover:opacity-60">&times;</button>
+            </span>
+          )}
+          {loc.url.searchParams.get("tag_id") && (
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full">
+              标签ID: {loc.url.searchParams.get("tag_id")}
+              <button onClick$={() => nav('/drive')} class="ml-0.5 hover:opacity-60">&times;</button>
+            </span>
+          )}
+          <button onClick$={() => nav('/drive')} class="text-stora-primary hover:underline ml-auto">清除筛选</button>
         </div>
       )}
 
@@ -705,7 +727,19 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
       {(groupBy === "category" ? groups : [{ label: "", items }]).map((grp) => (
         <>{grp.label ? (
           <tr class="bg-stora-muted/60 text-xs font-semibold text-stora-muted-foreground select-none">
-            <td colspan="6" class="px-4 py-1.5">{grp.label} · {grp.items.length} 项</td>
+            <td class="px-4 w-10"><input type="checkbox"
+              checked={selIds.value.length > 0 && grp.items.every((x: any) => selIds.value.includes(x.id))}
+              onChange$={() => {
+                const allSel = grp.items.every((x: any) => selIds.value.includes(x.id));
+                const gids = grp.items.map((x: any) => x.id);
+                if (allSel) { selIds.value = selIds.value.filter((id: number) => !gids.includes(id)); }
+                else { selIds.value = [...new Set([...selIds.value, ...gids])]; }
+                selIds.value = [...selIds.value];
+              }} class="border-stora-border" /></td>
+            <td colspan="5" class="px-2 py-1.5">
+              <span class="cursor-pointer hover:text-stora-primary" onClick$={() => nav(`/drive?category=${encodeURIComponent(grp.label)}`)}>{grp.label}</span>
+              <span class="ml-1 font-normal">· {grp.items.length} 项</span>
+            </td>
           </tr>
         ) : null}
         {grp.items.map((item: any) => {
@@ -747,6 +781,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
                   <div class={`w-7 h-7 flex items-center justify-center text-sm shrink-0`}>{tc.icon}</div>
                   <span class="text-sm font-medium text-stora-foreground truncate max-w-[200px]">{item.filename}</span>
                   {item.is_favorite && <span class="text-amber-500 text-xs shrink-0" title="已收藏">⭐</span>}
+                  {item.category && <span class="text-xs px-1.5 py-0.5 rounded bg-stora-muted text-stora-muted-foreground truncate max-w-[80px] cursor-pointer hover:bg-indigo-100" onClick$={(e: any) => { e.stopPropagation(); nav(`/drive?category=${encodeURIComponent(item.category)}`); }} title="点击筛选">{item.category}</span>}
                 </div>
               </td>
               <td class="px-2 text-sm text-stora-muted-foreground">{fmtSize(item.file_size)}</td>
@@ -795,6 +830,7 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; curren
           </div>
           <p class="text-xs font-medium text-stora-foreground truncate text-center">{item.filename}</p>
           <p class="text-xs text-stora-muted-foreground text-center mt-0.5">{fmtSize(item.file_size)}</p>
+          {item.category && <p class="text-xs text-stora-muted-foreground text-center mt-0.5 truncate cursor-pointer hover:text-stora-primary" onClick$={(e: any) => { e.stopPropagation(); nav(`/drive?category=${encodeURIComponent(item.category)}`); }}>{item.category}</p>}
           {item.is_favorite && <div class="absolute top-1 right-1 text-xs" title="已收藏">⭐</div>}
           {sel && <div class="absolute top-2 right-2 w-5 h-5 bg-stora-primary flex items-center justify-center"><span class="text-white text-xs">✓</span></div>}
         </div>
