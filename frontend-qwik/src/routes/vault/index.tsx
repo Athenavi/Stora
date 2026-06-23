@@ -66,10 +66,10 @@ export default component$(() => {
     loading.value = false;
   });
 
-  const doDeleteVault = async (id: number) => {
+  const doDeleteVault = $(async (id: number) => {
     if (!confirm("确认删除此私密空间？所有加密文件将永久丢失！")) return;
     try { await api.delete(`/vaults/${id}`); vaultList.value = vaultList.value.filter(v => v.id !== id); } catch {}
-  };
+  });
 
   const doUpload = async () => {
     const input = document.createElement("input"); input.type = "file"; input.multiple = true;
