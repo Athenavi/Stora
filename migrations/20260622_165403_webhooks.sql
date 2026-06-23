@@ -148,6 +148,8 @@ CREATE TABLE IF NOT EXISTS vaults (
 
 -- Fix existing databases where description was accidentally NOT NULL
 ALTER TABLE vaults ALTER COLUMN description DROP NOT NULL;
+-- Fix existing databases where deleted_at was accidentally NOT NULL
+ALTER TABLE file_items ALTER COLUMN deleted_at DROP NOT NULL;
 
 -- Webhook: Webhook 配置
 CREATE TABLE IF NOT EXISTS webhooks (

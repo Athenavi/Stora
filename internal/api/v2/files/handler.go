@@ -335,8 +335,8 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	var fileID int64
 	err = h.db.QueryRow(
 		`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
-		                         mime_type, file_type, storage_driver, file_hash, is_folder, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'local', $9, false, $10, $10) RETURNING id`,
+		                         mime_type, file_type, storage_driver, file_hash, is_folder, deleted_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'local', $9, false, NULL, $10, $10) RETURNING id`,
 		userID, folderID, filename, filename, storagePath, fileSize, mimeType, fileType, fileHash, now,
 	).Scan(&fileID)
 
