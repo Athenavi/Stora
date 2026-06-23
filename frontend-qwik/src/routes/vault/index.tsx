@@ -71,23 +71,6 @@ export default component$(() => {
     try { await api.delete(`/vaults/${id}`); vaultList.value = vaultList.value.filter(v => v.id !== id); } catch {}
   });
 
-  const doUpload = $(async () => {
-    const input = document.createElement("input"); input.type = "file"; input.multiple = true;
-    input.onchange = async () => {
-      if (!input.files?.length) return;
-      for (const file of Array.from(input.files)) {
-        const reader = new FileReader();
-        reader.onload = async () => {
-          const base64 = (reader.result as string).split(",")[1];
-          const fd = new FormData(); fd.append("filename", file.name); fd.append("file_size", String(file.size)); fd.append("mime_type", file.type || "application/octet-stream"); fd.append("file_content", base64);
-          try { await api.post(`/vaults/${unlockId.value}/items/upload`, fd, { headers: { "X-Vault-Token": vaultToken.value! } }); await loadItems(unlockId.value, vaultToken.value!); } catch {}
-        };
-        reader.readAsDataURL(file);
-      }
-    };
-    input.click();
-  });
-
   const doDownload = $(async (itemId: number) => { window.open(`/api/v2/vaults/${unlockId.value}/items/${itemId}`, "_blank"); });
 
   const doDeleteItem = $(async (itemId: number) => {
@@ -145,9 +128,7 @@ export default component$(() => {
                 }} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-destructive hover:bg-red-50">删除 ({vaultSelIds.value.length})</button>
                 <button onClick$={() => vaultSelIds.value = []} class="touch-target px-3 py-1.5 text-xs font-medium text-stora-muted-foreground hover:bg-stora-muted">取消</button>
               </>
-            ) : (
-              <button onClick$={doUpload} class="h-9 px-4 text-sm font-medium text-white bg-stora-vault hover:bg-[#6D28D9]"><span>⬆</span> 上传</button>
-            )}
+            ) : null}
             <button onClick$={doLock} class="h-9 px-4 text-sm font-medium text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-muted">锁定</button>
           </div>
         </div>
@@ -156,7 +137,7 @@ export default component$(() => {
             <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground">
               <div class="text-5xl mb-4">📁</div>
               <p class="text-lg font-medium text-stora-foreground">此私密空间为空</p>
-              <p class="text-sm mt-1">点击「上传」按钮添加加密文件</p>
+              <p class="text-sm mt-1">从文件页右键菜单将文件复制或移动到私密空间</p>
             </div>
           ) : (
             <div class="divide-y divide-stora-border">

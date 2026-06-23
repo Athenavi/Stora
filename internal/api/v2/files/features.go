@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/google/uuid"
 	"io"
 	"log"
 	"net/http"
@@ -296,75 +295,7 @@ func (h *VaultHandler) ListVaultItems(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, items)
 }
 
-func (h *VaultHandler) UploadVaultItem(w http.ResponseWriter, r *http.Request) {
-	userID, _ := middleware.GetUserID(r.Context())
-	vaultID, _ := strconv.ParseInt(chi.URLParam(r, "vaultId"), 10, 64)
-
-	if !h.requireVaultToken(w, r, vaultID) {
-		return
-	}
-
-	if err := r.ParseMultipartForm(100 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, "form parse failed")
-		return
-	}
-
-	filename := r.FormValue("filename")
-	fileSizeStr := r.FormValue("file_size")
-	mimeType := r.FormValue("mime_type")
-	fileContentB64 := r.FormValue("file_content")
-
-	if filename == "" || fileContentB64 == "" {
-		writeError(w, http.StatusBadRequest, "filename and file_content required")
-		return
-	}
-
-	fileSize, _ := strconv.ParseInt(fileSizeStr, 10, 64)
-	if fileSize <= 0 {
-		fileSize = int64(len(fileContentB64))
-	}
-	if mimeType == "" {
-		mimeType = "application/octet-stream"
-	}
-
-	// Encrypt the base64 content
-	encrypted, err := encrypt(fileContentB64)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "encryption failed")
-		return
-	}
-
-	// Write encrypted content to disk: <vaultDir>/<vaultID>/<uuid>.enc
-	vaultStorageDir := filepath.Join(h.vaultDir, fmt.Sprintf("%d", vaultID))
-	if err := os.MkdirAll(vaultStorageDir, 0700); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create vault storage")
-		return
-	}
-	itemUUID := uuid.New().String()
-	filePath := filepath.Join(vaultStorageDir, itemUUID+".enc")
-	if err := os.WriteFile(filePath, []byte(encrypted), 0600); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to write vault file")
-		return
-	}
-
-	EnsureVaultCompat(h.db)
-
-	now := time.Now().Format(time.RFC3339)
-	var itemID int64
-	err = h.db.QueryRow(
-		`INSERT INTO vault_items (vault_id, user_id, name, filename, file_size, mime_type, file_path, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8) RETURNING id`,
-		vaultID, userID, filename, filename, fileSize, mimeType, filePath, now,
-	).Scan(&itemID)
-
-	if err != nil {
-		os.Remove(filePath)
-		writeError(w, http.StatusInternalServerError, "insert failed")
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, map[string]int64{"id": itemID})
-}
+// ---------- Download Vault Item ----------
 
 func (h *VaultHandler) DownloadVaultItem(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())

@@ -342,7 +342,6 @@ func main() {
 			r.Post("/vaults/{vaultId}/verify-password", vaultHandler.VerifyVaultPassword)
 			r.Delete("/vaults/{vaultId}", vaultHandler.DeleteVault)
 			r.Get("/vaults/{vaultId}/items", vaultHandler.ListVaultItems)
-			r.Post("/vaults/{vaultId}/items/upload", vaultHandler.UploadVaultItem)
 			r.Get("/vaults/{vaultId}/items/{itemId}", vaultHandler.DownloadVaultItem)
 			r.Delete("/vaults/{vaultId}/items/{itemId}", vaultHandler.DeleteVaultItem)
 
