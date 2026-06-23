@@ -436,8 +436,12 @@ export default component$(() => {
                     const ids = [...clipboard.value.fileIds];
                     clipboard.value = null;
                     ctxItem.value = null;
-                    try { await api.post('/files/batch/move', { file_ids: ids }); refresh(); } catch { alert("粘贴失败"); }
+                    try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.fileIds.length} 项</button>
+                )}
+                {clipboard.value && (
+                  <button onClick$={() => { clipboard.value = null; ctxItem.value = null; }}
+                    class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-muted-foreground hover:bg-stora-muted touch-target">✕ 取消粘贴</button>
                 )}
               </>
             ) : ctxItem.value.type === "file" ? (
@@ -490,7 +494,7 @@ export default component$(() => {
                     const ids = [...clipboard.value.fileIds];
                     clipboard.value = null;
                     ctxItem.value = null;
-                    try { await api.post('/files/batch/move', { file_ids: ids }); refresh(); } catch { alert("粘贴失败"); }
+                    try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.fileIds.length} 项</button>
                 )}
                 <button onClick$={async () => {
@@ -597,7 +601,7 @@ export default component$(() => {
               <button onClick$={async () => {
                 const ids = [...selIds.value]; selIds.value = [];
                 showMoveDialog.value = false;
-                try { await api.post('/files/batch/move', { file_ids: ids }); refresh(); } catch {}
+                try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch {}
               }} class="w-full text-left px-3 py-2.5 text-sm text-stora-foreground hover:bg-stora-muted flex items-center gap-3 touch-target mb-1">
                 <span class="text-stora-accent">📁</span>
                 <span>根目录（我的文件）</span>
