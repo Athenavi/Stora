@@ -707,25 +707,40 @@ export default component$(() => {
 
                 <button onClick$={async () => {
                   shareCreating.value = true;
-                  const results: { code: string; url: string }[] = [];
                   const params: any = { permission: sharePermission.value };
                   if (sharePassword.value) params.password = sharePassword.value;
                   if (shareExpiry.value) params.expires_in_hours = shareExpiry.value;
-                  for (const id of selIds.value) {
-                    try {
-                      // Detect if ID belongs to a folder
-                      const item = allItems.find(x => x.id === id);
-                      const shareParams: any = { ...params };
+                  // Detect if all selected items are folders or files
+                  const allFolders = selIds.value.every(id => {
+                    const item = allItems.find(x => x.id === id);
+                    return item && (item as any).t === "f";
+                  });
+                  const allFiles = selIds.value.every(id => {
+                    const item = allItems.find(x => x.id === id);
+                    return item && (item as any).t !== "f";
+                  });
+                  try {
+                    let link;
+                    if (allFolders && selIds.value.length === 1) {
+                      // Single folder share — use existing folder_id path
+                      params.folder_id = selIds.value[0];
+                      link = await createShare(params);
+                    } else if (allFiles && selIds.value.length > 1) {
+                      // Batch file share — send all file IDs
+                      params.file_ids = selIds.value;
+                      link = await createShare(params);
+                    } else {
+                      // Single file share (or mixed — fallback to first item)
+                      const item = allItems.find(x => x.id === selIds.value[0]);
                       if (item && (item as any).t === "f") {
-                        shareParams.folder_id = id;
+                        params.folder_id = selIds.value[0];
                       } else {
-                        shareParams.file_id = id;
+                        params.file_id = selIds.value[0];
                       }
-                      const link = await createShare(shareParams as any);
-                      results.push({ code: link.short_code, url: `${window.location.origin}/s/${link.short_code}` });
-                    } catch {}
-                  }
-                  shareResult.value = results;
+                      link = await createShare(params);
+                    }
+                    shareResult.value = [{ code: link.short_code, url: `${window.location.origin}/s/${link.short_code}` }];
+                  } catch { alert("创建分享链接失败"); }
                   shareCreating.value = false;
                 }} disabled={shareCreating.value} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors text-center disabled:opacity-50">
                   {shareCreating.value ? "创建中..." : "创建分享链接"}
@@ -735,7 +750,7 @@ export default component$(() => {
               </>
             ) : (
               <>
-                <p class="text-xs text-green-600 mb-3">已创建 {shareResult.value.length} 个分享链接</p>
+                <p class="text-xs text-green-600 mb-3">分享链接已创建（{selIds.value.length} 个文件）</p>
                 <div class="max-h-48 overflow-auto space-y-2 mb-3">
                   {shareResult.value.map((r, i) => (
                     <div key={i} class="flex items-center gap-2 bg-slate-50 rounded-lg px-3 py-2">
