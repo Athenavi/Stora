@@ -184,7 +184,7 @@ export default component$(() => {
               const calls = quotaCalls.value.filter((t: number) => now - t < 1800000);
               if (calls.length >= 6) { return; }
               quotaCalls.value = [...calls, now];
-              try { quota.value = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); } catch {}
+              try { quota.value = await api.post<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota/recalculate"); } catch {}
             }} class="text-stora-nav-text hover:text-white transition-colors text-xs p-0.5 touch-target"
               title="刷新存储空间 (30分钟内限6次)">
               <span>↻</span>

@@ -260,6 +260,34 @@ func main() {
 					"usage_percent":  usagePercent,
 				})
 			})
+			// Recalculate storage quota from actual file sizes
+			r.Post("/users/me/quota/recalculate", func(w http.ResponseWriter, r *http.Request) {
+				userID, ok := middleware.GetUserID(r.Context())
+				if !ok {
+					utils.WriteError(w, http.StatusUnauthorized, "unauthorized")
+					return
+				}
+				var total, actual int64
+				err := db.QueryRow(`SELECT total_storage FROM users WHERE id = $1`, userID).Scan(&total)
+				if err != nil {
+					utils.WriteError(w, http.StatusNotFound, "user not found")
+					return
+				}
+				db.QueryRow(
+					`SELECT COALESCE(SUM(file_size), 0) FROM file_items WHERE user_id = $1 AND deleted_at IS NULL`,
+					userID,
+				).Scan(&actual)
+				db.Exec(`UPDATE users SET used_storage = $1 WHERE id = $2`, actual, userID)
+				var usagePercent float64
+				if total > 0 {
+					usagePercent = float64(actual) / float64(total) * 100
+				}
+				utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+					"max_storage":    total,
+					"used_storage":   actual,
+					"usage_percent":  usagePercent,
+				})
+			})
 
 			// Files
 			r.Get("/files", fileHandler.ListFiles)
