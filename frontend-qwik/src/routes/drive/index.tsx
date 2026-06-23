@@ -109,7 +109,13 @@ export default component$(() => {
       ctxItem.value = item;
       showActionSheet.value = true;
     } else {
-      ctxPos.value = { x: e.clientX, y: e.clientY };
+      const menuW = 210, menuH = 340;
+      let x = e.clientX, y = e.clientY;
+      if (x + menuW > window.innerWidth) x = window.innerWidth - menuW - 8;
+      if (y + menuH > window.innerHeight) y = window.innerHeight - menuH - 8;
+      if (x < 8) x = 8;
+      if (y < 8) y = 8;
+      ctxPos.value = { x, y };
       ctxItem.value = item;
     }
   });
@@ -340,7 +346,7 @@ export default component$(() => {
           <div class="fixed inset-0 z-50" onClick$={() => ctxItem.value = null}
             preventdefault:contextmenu
             onContextMenu$={() => { ctxItem.value = null; }} />
-          <div class="fixed z-50 min-w-[200px] bg-white border border-stora-border"
+          <div class="fixed z-50 min-w-[200px] max-h-[calc(100vh-16px)] overflow-y-auto bg-white border border-stora-border shadow-xl"
             style={{ left: `${ctxPos.value.x}px`, top: `${ctxPos.value.y}px` }}>
             {ctxItem.value.type === "file" ? (
               <>
