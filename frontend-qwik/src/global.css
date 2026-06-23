@@ -72,3 +72,12 @@ body {
 @media (min-width: 640px) { .card-grid { grid-template-columns: repeat(4, 1fr); } }
 @media (min-width: 1024px) { .card-grid { grid-template-columns: repeat(5, 1fr); } }
 @media (min-width: 1280px) { .card-grid { grid-template-columns: repeat(6, 1fr); } }
+
+/* Slide-in animation for preview panel */
+@keyframes slide-in-right {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.animate-slide-in {
+  animation: slide-in-right 0.25s ease-out;
+}

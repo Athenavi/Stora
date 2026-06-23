@@ -6,6 +6,8 @@ import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
 import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, type PathChildrenResponse, type FileItem } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Input } from "~/components/ui/Button";
+import PreviewPanel from "~/components/drive/PreviewPanel";
+import UploadZone from "~/components/upload/UploadZone";
 
 export const useFileList = routeLoader$(async ({ url, request }) => {
   const folderPath = url.searchParams.get("Path") || "";
@@ -91,6 +93,9 @@ export default component$(() => {
   const moveTargetId = useSignal<number | undefined>(undefined);
   const moveTree = useSignal<any[]>([]);
   const moveTreeLoading = useSignal(false);
+  const previewFile = useSignal<FileItem | null>(null);
+
+  const onPreview = $((item: any) => { previewFile.value = item; });
 
   const doRename = (item: { id: number; type: string; name: string }) => {
     renameId.value = item.id;
@@ -230,26 +235,10 @@ export default component$(() => {
         </div>
       )}
 
-      {/* Upload zone */}
+      {/* Upload zone — full-width large drop area */}
       {showUpload.value && (
-        <div class="px-4 sm:px-6 py-3 border-b bg-white"
-          preventdefault:dragover preventdefault:drop
-          onDragOver$={() => document.getElementById("drop-hint")!.classList.remove("hidden")}
-          onDragLeave$={() => document.getElementById("drop-hint")!.classList.add("hidden")}
-          onDrop$={async (e: DragEvent) => {
-            document.getElementById("drop-hint")!.classList.add("hidden");
-            for (const f of e.dataTransfer?.files || []) await uploadFile(f, resolvedFolderId.value).catch(() => {});
-            refresh();
-          }}
-        >
-          <div id="drop-hint" class="hidden border-2 border-dashed border-indigo-300 bg-indigo-50 rounded-xl p-4 text-center text-indigo-600 text-sm mb-3">📥 释放以上传文件</div>
-          <div class="flex items-center gap-3">
-            <input type="file" multiple class="text-sm" onChange$={async (e: any) => {
-              for (const f of e.target.files || []) await uploadFile(f, resolvedFolderId.value).catch(() => {});
-              refresh();
-            }} />
-            <span class="text-xs text-slate-400">或拖拽文件到上方虚线区域</span>
-          </div>
+        <div class="px-4 sm:px-8 py-4 border-b bg-white">
+          <UploadZone folderId={resolvedFolderId.value} />
         </div>
       )}
 
@@ -325,18 +314,22 @@ export default component$(() => {
 
       {/* Content */}
       <div class={`flex-1 overflow-auto scrollbar-thin ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
-        {!data.value ? (
+        {(!data.value) ? (
           <div class="p-6 space-y-3">{[1,2,3,4,5].map(i => <div key={i} class="flex items-center gap-4 px-4 py-3"><div class="w-5 h-5 bg-stora-muted" /><div class="w-10 h-10 bg-stora-muted" /><div class="flex-1 space-y-2"><div class="h-4 w-48 bg-stora-muted" /><div class="h-3 w-24 bg-stora-muted" /></div></div>)}</div>
-        ) : allItems.length === 0 ? (
+        ) : (allItems.length === 0) ? (
           <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground p-8 text-center">
             <div class="w-20 h-20 bg-stora-muted flex items-center justify-center text-4xl mb-5">📂</div>
             <h3 class="text-lg font-semibold text-stora-foreground mb-1">空目录</h3>
             <p class="text-sm text-stora-muted-foreground mb-6">拖拽文件到此处，或点击上传按钮</p>
             <button onClick$={() => showUpload.value = true} class="px-6 py-3 bg-stora-primary text-white text-sm font-medium">上传文件</button>
           </div>
-        ) : viewMode.value === "list" ? <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} currentPath={currentPath}
-          onContextItem$={(item: any, e: any) => openCtx(item, e)} /> : <GridView items={allItems} selIds={selIds} nav={nav} currentPath={currentPath}
-          onContextItem$={(item: any, e: any) => openCtx(item, e)} />}
+        ) : (viewMode.value === "list") ? (
+          <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} currentPath={currentPath}
+            onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)} />
+        ) : (
+          <GridView items={allItems} selIds={selIds} nav={nav} currentPath={currentPath}
+            onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)} />
+        )}
       </div>
 
       {/* Desktop context menu overlay */}
@@ -347,7 +340,7 @@ export default component$(() => {
             style={{ left: `${ctxPos.value.x}px`, top: `${ctxPos.value.y}px` }}>
             {ctxItem.value.type === "file" ? (
               <>
-                <button onClick$={() => { nav(`/view?id=${ctxItem.value!.id}`); ctxItem.value = null; }}
+                <button onClick$={() => { const item = allItems.find(x => x.id === ctxItem.value!.id); if (item) onPreview(item); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">👁 预览</button>
                 <button onClick$={() => { window.open(`/api/v2/files/download/${ctxItem.value!.id}`, "_blank"); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">⬇ 下载</button>
@@ -397,7 +390,7 @@ export default component$(() => {
             <p class="text-xs text-slate-400 text-center mb-3">{ctxItem.value.type === "file" ? ctxItem.value.name : ctxItem.value.name}</p>
             {ctxItem.value.type === "file" ? (
               <div class="space-y-1">
-                <button onClick$={() => { nav(`/view?id=${ctxItem.value!.id}`); ctxItem.value = null; showActionSheet.value = false; }}
+                <button onClick$={() => { const item = allItems.find(x => x.id === ctxItem.value!.id); if (item) onPreview(item); ctxItem.value = null; showActionSheet.value = false; }}
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">👁 预览</button>
                 <button onClick$={() => { window.open(`/api/v2/files/download/${ctxItem.value!.id}`, "_blank"); ctxItem.value = null; showActionSheet.value = false; }}
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">⬇ 下载</button>
@@ -554,13 +547,16 @@ export default component$(() => {
           </div>
         </>
       )}
+
+      {/* Preview panel */}
+      <PreviewPanel file={previewFile.value} onClose$={() => { previewFile.value = null; }} />
     </div>
   );
 });
 
 // ─── List View ───
 
-export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any }>(({ items, selIds, renameId, renameVal, nav, currentPath, onContextItem$ }) => {
+export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any }>(({ items, selIds, renameId, renameVal, nav, currentPath, onContextItem$, onPreview$ }) => {
   const sortBy = useSignal("");
   const sortOrder = useSignal("");
   const loc = useLocation();
@@ -626,7 +622,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
             onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>
             <td class="px-4"><input type="checkbox" checked={sel}
               onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" /></td>
-            <td class="px-2 cursor-pointer" onClick$={() => nav(`/view?id=${item.id}`)}>
+            <td class="px-2 cursor-pointer" onClick$={() => onPreview$ ? onPreview$(item) : nav(`/view?id=${item.id}`)}>
               <div class="flex items-center gap-3">
                 <div class={`w-7 h-7 flex items-center justify-center text-sm shrink-0`}>{tc.icon}</div>
                 <span class="text-sm font-medium text-stora-foreground truncate max-w-xs">{item.filename}</span>
@@ -647,7 +643,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
 
 // ─── Grid View ───
 
-export const GridView = component$<{ items: any[]; selIds: any; nav: any; currentPath?: string; onContextItem$?: any }>(({ items, selIds, nav, onContextItem$ }) => (
+export const GridView = component$<{ items: any[]; selIds: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any }>(({ items, selIds, nav, onContextItem$, onPreview$ }) => (
   <div class="card-grid p-6">
     {items.map((item: any) => {
       if (item.t === "f") return (
@@ -662,7 +658,7 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; curren
       const sel = selIds.value.includes(item.id);
       const tc = typeMeta[item.file_type] || typeMeta.other;
       return (
-        <div key={item.id} draggable onClick$={() => nav(`/view?id=${item.id}`)}
+        <div key={item.id} draggable onClick$={() => onPreview$ ? onPreview$(item) : nav(`/view?id=${item.id}`)}
           onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
           onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}
           class={`bg-stora-card border cursor-pointer p-3 relative ${sel ? "border-stora-primary" : "border-stora-border hover:border-stora-muted-foreground"}`}>
