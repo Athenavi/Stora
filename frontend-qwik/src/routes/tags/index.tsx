@@ -104,6 +104,11 @@ export default component$(() => {
         ) : (
           <>
             {/* Tag cloud — pill/capsule per spec: 34px h, radius 17px */}
+            <div class="flex items-center gap-3 mb-6">
+              <button onClick$={() => { showCreate.value = true; editId.value = 0; name.value = ""; color.value = TAG_COLORS[0]; }}
+                class="h-9 px-4 text-sm font-medium text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-muted rounded-lg">➕ 新建标签</button>
+              <span class="text-xs text-stora-muted-foreground">共 {tagList.length} 个标签</span>
+            </div>
             <div class="flex flex-wrap gap-2.5 mb-8">
               {tagList.map(tag => (
                 <div key={tag.id}
