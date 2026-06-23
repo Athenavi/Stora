@@ -1,10 +1,11 @@
 /**
  * Stora Photo Wall — flat design timeline grid
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi, batchDownload, api } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
+import InfiniteScroll from "~/components/ui/InfiniteScroll";
 
 interface Photo {
   id: number;
@@ -50,7 +51,37 @@ export default component$(() => {
   const touchStartX = useSignal(0);
   const currentPhotoIndex = useSignal(0);
   const selIds = useSignal<number[]>([]);
-  const allPhotos = groups.value.flatMap(g => g.photos);
+  const photoPage = useSignal(1);
+  const photoTotal = useSignal(0);
+  const photoLoading = useSignal(false);
+  const allPhotosAccum = useSignal(groups.value.flatMap(g => g.photos));
+  const allGroups = useSignal(groups.value);
+
+  const loadMorePhotos = $(async () => {
+    if (photoLoading.value) return;
+    photoLoading.value = true;
+    try {
+      const next = photoPage.value + 1;
+      const res = await fetch(`/api/v2/files?file_type=image&sort_by=created_at&sort_order=desc&page=${next}&page_size=200`);
+      const json = await res.json();
+      const d = json.data || json;
+      if (d.items?.length) {
+        const newPhotos: Photo[] = d.items;
+        allPhotosAccum.value = [...allPhotosAccum.value, ...newPhotos];
+        // Re-group by day
+        const groupsMap: Record<string, Photo[]> = {};
+        for (const p of allPhotosAccum.value) {
+          const dt = p.created_at ? p.created_at.split("T")[0] : "未知";
+          if (!groupsMap[dt]) groupsMap[dt] = [];
+          groupsMap[dt].push(p);
+        }
+        allGroups.value = Object.entries(groupsMap).map(([date, ph]) => ({ date, photos: ph }));
+        photoTotal.value = d.total || 0;
+        photoPage.value = next;
+      }
+    } catch {}
+    photoLoading.value = false;
+  });
 
   const toggleSel = (id: number) => {
     const i = selIds.value.indexOf(id);
@@ -85,7 +116,7 @@ export default component$(() => {
       )}
 
       <div class={`flex-1 overflow-auto scrollbar-thin p-6 ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}>
-        {groups.value.length === 0 ? (
+        {allGroups.value.length === 0 ? (
           <div class="flex flex-col items-center justify-center h-full text-stora-muted-foreground">
             <div class="w-20 h-20 bg-stora-muted flex items-center justify-center text-4xl mb-5">📷</div>
             <h3 class="text-lg font-semibold text-stora-foreground mb-1">暂无照片</h3>
@@ -93,7 +124,7 @@ export default component$(() => {
           </div>
         ) : (
           <div class="space-y-8">
-            {groups.value.map(group => (
+            {allGroups.value.map(group => (
               <div key={group.date}>
                 <h2 class="text-sm font-medium text-stora-muted-foreground mb-3 sticky top-0 bg-stora-background py-2 z-10">
                   {fmtDate(group.date)} · {group.photos.length} 张
@@ -106,7 +137,7 @@ export default component$(() => {
                       <div key={photo.id}
                         onClick$={() => {
                           if (selIds.value.length > 0) { toggleSel(photo.id); }
-                          else { lightbox.value = photo; currentPhotoIndex.value = allPhotos.findIndex(p => p.id === photo.id); }
+                          else { lightbox.value = photo; currentPhotoIndex.value = allPhotosAccum.value.findIndex(p => p.id === photo.id); }
                         }}
                         onContextMenu$={(e: any) => { e.preventDefault(); toggleSel(photo.id); }}
                         class={`w-[220px] h-[220px] bg-stora-muted cursor-pointer relative overflow-hidden ${sel ? 'ring-2 ring-stora-primary' : 'hover:ring-2 hover:ring-stora-secondary'}`}>
@@ -132,6 +163,11 @@ export default component$(() => {
             ))}
           </div>
         )}
+        <InfiniteScroll
+          hasMore={allPhotosAccum.value.length < (photoTotal.value || allPhotosAccum.value.length + 1)}
+          loading={photoLoading.value}
+          onLoadMore$={loadMorePhotos}
+        />
       </div>
 
       {/* Lightbox */}
@@ -144,7 +180,7 @@ export default component$(() => {
             if (Math.abs(dx) > 60) {
               const dir = dx > 0 ? -1 : 1;
               const newIdx = currentPhotoIndex.value + dir;
-              if (newIdx >= 0 && newIdx < allPhotos.length) { currentPhotoIndex.value = newIdx; lightbox.value = allPhotos[newIdx]; }
+              if (newIdx >= 0 && newIdx < allPhotosAccum.value.length) { currentPhotoIndex.value = newIdx; lightbox.value = allPhotosAccum.value[newIdx]; }
             }
           }}>
           <button onClick$={() => lightbox.value = null}
@@ -153,7 +189,7 @@ export default component$(() => {
             <Icon name="close" size={24} />
           </button>
           {currentPhotoIndex.value > 0 && (
-            <button onClick$={(e: any) => { e.stopPropagation(); currentPhotoIndex.value--; lightbox.value = allPhotos[currentPhotoIndex.value]; }}
+            <button onClick$={(e: any) => { e.stopPropagation(); currentPhotoIndex.value--; lightbox.value = allPhotosAccum.value[currentPhotoIndex.value]; }}
               class="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/10 text-white flex items-center justify-center hover:bg-white/20 touch-target"
               aria-label="上一张">
               <Icon name="chevronLeft" size={24} />
@@ -163,8 +199,8 @@ export default component$(() => {
             alt={lightbox.value.filename}
             class="max-w-full max-h-full object-contain px-16"
             onClick$={(e: any) => e.stopPropagation()} />
-          {currentPhotoIndex.value < allPhotos.length - 1 && (
-            <button onClick$={(e: any) => { e.stopPropagation(); currentPhotoIndex.value++; lightbox.value = allPhotos[currentPhotoIndex.value]; }}
+          {currentPhotoIndex.value < allPhotosAccum.value.length - 1 && (
+            <button onClick$={(e: any) => { e.stopPropagation(); currentPhotoIndex.value++; lightbox.value = allPhotosAccum.value[currentPhotoIndex.value]; }}
               class="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-white/10 text-white flex items-center justify-center hover:bg-white/20 touch-target"
               aria-label="下一张">
               <Icon name="chevronRight" size={24} />
@@ -173,7 +209,7 @@ export default component$(() => {
           <div class="absolute bottom-6 left-1/2 -translate-x-1/2 bg-black/60 text-white text-sm px-4 py-2 max-w-[90vw] truncate">
             {lightbox.value.filename}
             {lightbox.value.width && lightbox.value.height ? ` · ${lightbox.value.width}×${lightbox.value.height}` : ""}
-            <span class="hidden sm:inline"> · {currentPhotoIndex.value + 1}/{allPhotos.length}</span>
+            <span class="hidden sm:inline"> · {currentPhotoIndex.value + 1}/{allPhotosAccum.value.length}</span>
           </div>
         </div>
       )}
