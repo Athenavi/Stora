@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, listUserTags, listVaults, copyFileToVault, type PathChildrenResponse, type FileItem } from "~/lib/api";
+import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, listUserTags, listVaults, copyFileToVault, createOfflineDownload, listOfflineDownloads, retryOfflineDownload, type PathChildrenResponse, type FileItem } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Input } from "~/components/ui/Button";
 import PreviewPanel from "~/components/drive/PreviewPanel";
@@ -110,6 +110,12 @@ export default component$(() => {
   const targetVaultId = useSignal<number>(0);
   const showVaultConfirm = useSignal(false);
   const vaultFileId = useSignal<number>(0);
+  const showOfflineDl = useSignal(false);
+  const offlineUrl = useSignal("");
+  const offlineFilename = useSignal("");
+  const offlineRemaining = useSignal(0);
+  const showOfflineTasks = useSignal(false);
+  const offlineTasks = useSignal<import("~/lib/api/files").OfflineTask[]>([]);
 
   const onPreview = $((item: any) => { previewFile.value = item; });
 
@@ -209,6 +215,16 @@ export default component$(() => {
           class={`touch-target h-10 px-3 text-sm font-medium border transition-colors ${groupBy.value ? "bg-stora-primary text-white border-stora-primary" : "text-stora-muted-foreground border-stora-border hover:bg-stora-muted"}`}
           title={groupBy.value ? "取消分组" : "按分类分组"}>
           {groupBy.value ? "📂 已分组" : "📂 分组"}
+        </button>
+
+        {/* Offline download button */}
+        <button onClick$={() => { offlineUrl.value = ""; offlineFilename.value = ""; showOfflineDl.value = true; }}
+          class="hidden sm:inline-flex items-center gap-2 h-10 px-4 text-sm font-medium text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-muted">
+          <span>⬇</span> 离线下载
+        </button>
+        <button onClick$={async () => { try { offlineTasks.value = await listOfflineDownloads(); showOfflineTasks.value = true; } catch {} }}
+          class="hidden sm:inline-flex items-center gap-2 h-10 px-4 text-sm font-medium text-stora-foreground bg-stora-card border border-stora-border hover:bg-stora-muted" title="查看下载任务">
+          <span>📋</span> 任务
         </button>
 
         {/* Upload button — primary blue */}
@@ -749,6 +765,71 @@ export default component$(() => {
             </button>
             <button onClick$={() => showVaultConfirm.value = false}
               class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50">取消</button>
+          </div>
+        </>
+      )}
+
+      {/* Offline download dialog */}
+      {showOfflineDl.value && (
+        <>
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => showOfflineDl.value = false} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col p-5">
+            <h3 class="text-sm font-semibold text-stora-foreground mb-1">离线下载</h3>
+            <p class="text-xs text-stora-muted-foreground mb-4">输入文件 URL，下载后自动保存到「离线下载」文件夹</p>
+            <input type="url" bind:value={offlineUrl} placeholder="https://example.com/file.zip"
+              class="w-full mb-3 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              onKeyDown$={async (e: any) => { if (e.key === "Enter") { try { const r = await createOfflineDownload(e.target.value, offlineFilename.value || undefined); offlineRemaining.value = r.monthly_remaining; showOfflineDl.value = false; } catch (ex: any) { alert(ex.message || "创建失败"); } }}} />
+            <input type="text" bind:value={offlineFilename} placeholder="文件名（可选，留空自动识别）"
+              class="w-full mb-4 px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <button onClick$={async () => {
+              try { const r = await createOfflineDownload(offlineUrl.value, offlineFilename.value || undefined); offlineRemaining.value = r.monthly_remaining; showOfflineDl.value = false; } catch (ex: any) { alert(ex.message || "创建失败"); }
+            }} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700">开始下载</button>
+            <button onClick$={() => showOfflineDl.value = false}
+              class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50">取消</button>
+          </div>
+        </>
+      )}
+
+      {/* Offline tasks list dialog */}
+      {showOfflineTasks.value && (
+        <>
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => showOfflineTasks.value = false} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col p-5 max-h-[80vh]">
+            <h3 class="text-sm font-semibold text-stora-foreground mb-3">离线下载任务</h3>
+            <div class="flex-1 overflow-auto space-y-2">
+              {offlineTasks.value.length === 0 ? (
+                <p class="text-xs text-stora-muted-foreground text-center py-8">暂无任务</p>
+              ) : offlineTasks.value.map(t => (
+                <div key={t.id} class="flex items-center gap-3 px-3 py-2.5 bg-stora-muted rounded-lg">
+                  <span class="text-base shrink-0">
+                    {t.status === "completed" ? "✅" : t.status === "failed" ? "❌" : t.status === "downloading" ? "⬇" : "⏳"}
+                  </span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-xs font-medium text-stora-foreground truncate">{t.filename || t.url}</p>
+                    <p class="text-xs text-stora-muted-foreground">
+                      {t.status === "completed" ? "已完成" :
+                       t.status === "failed" ? `失败 (自动重试${t.retry_count}次/手动${t.manual_retries}次)` :
+                       t.status === "downloading" ? (t.progress >= 0 ? `下载中 ${t.progress}%` : "下载中...") :
+                       "等待中"}
+                    </p>
+                    {t.status === "downloading" && t.progress >= 0 && (
+                      <div class="mt-1 w-full bg-slate-200 rounded-full h-1 overflow-hidden">
+                        <div class="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${t.progress}%` }} />
+                      </div>
+                    )}
+                    {t.status === "downloading" && t.progress < 0 && (
+                      <p class="text-xs text-stora-muted-foreground mt-0.5">无法获取进度，但任务进行中</p>
+                    )}
+                  </div>
+                  {t.status === "failed" && t.manual_retries < 5 && (
+                    <button onClick$={async () => { try { await retryOfflineDownload(t.id); offlineTasks.value = await listOfflineDownloads(); } catch {} }}
+                      class="text-xs text-indigo-600 hover:underline shrink-0">重试</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button onClick$={() => showOfflineTasks.value = false}
+              class="w-full mt-3 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50">关闭</button>
           </div>
         </>
       )}

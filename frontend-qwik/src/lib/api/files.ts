@@ -204,6 +204,32 @@ export const copyFileToVault = (fileId: number, vaultId: number, action: 'copy' 
 export const listVaults = (): Promise<{ id: number; name: string }[]> =>
   api.get('/vaults');
 
+// ─── Offline Download ───
+
+export interface OfflineTask {
+  id: number;
+  url: string;
+  filename: string;
+  status: string;
+  progress: number;
+  retry_count: number;
+  manual_retries: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export const createOfflineDownload = (url: string, filename?: string): Promise<{ task_id: number; monthly_remaining: number }> =>
+  api.post('/files/offline-download', { url, filename });
+
+export const listOfflineDownloads = (): Promise<OfflineTask[]> =>
+  api.get('/files/offline-download');
+
+export const getOfflineDownload = (id: number): Promise<OfflineTask> =>
+  api.get(`/files/offline-download/${id}`);
+
+export const retryOfflineDownload = (id: number): Promise<void> =>
+  api.post(`/files/offline-download/${id}/retry`);
+
 // ─── Download ───
 
 /** 批量下载：将选中文件打包为 ZIP */
@@ -232,17 +258,6 @@ export function batchDownload(fileIds: number[], folderIds: number[] = []) {
       alert('批量下载失败，请重试');
     });
 }
-
-/** 离线下载（URL 转存） */
-export const createOfflineDownload = (url: string, filename?: string): Promise<{ task_id: number }> => {
-  const body: any = { url };
-  if (filename) body.filename = filename;
-  return api.post('/files/offline-download', body);
-};
-
-/** 列出离线下载任务 */
-export const listOfflineDownloads = (): Promise<any[]> =>
-  api.get('/files/offline-download');
 
 export const getDownloadToken = (fileId: number): Promise<{ token: string; expires_in: number }> =>
   api.get(`/files/download/token/${fileId}`);
