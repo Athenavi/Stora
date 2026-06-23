@@ -152,7 +152,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 			// Resolve folders: collect all file_items inside each folder
 			for _, fid := range req.FolderIDs {
 				rows, err := h.db.Query(
-					`SELECT id FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL`, fid,
+					`SELECT id FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false`, fid,
 				)
 				if err != nil {
 					continue

@@ -215,7 +215,9 @@ export default component$(() => {
   }
 
   // Merge files from all sources
-  const rootFiles: FolderItem[] = s.items || [];
+  const rootFiles: FolderItem[] = s.items && s.items.length > 0
+    ? s.items
+    : (s.item?.id ? [{ id: s.item.id, filename: s.item.filename || s.item.name || "", file_size: s.item.file_size || 0, file_type: s.item.file_type || "other" }] : []);
   const rootSubs: SubFolder[] = s.folders || [];
 
   // Determine which level to display
