@@ -84,6 +84,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	var password *string
 	var expiresInHours int
 	maxDownloads := 0
+	var batchFileIDs []int64 // non-nil when creating a batch share
 
 	ct := r.Header.Get("Content-Type")
 	if strings.HasPrefix(ct, "multipart/form-data") || strings.HasPrefix(ct, "application/x-www-form-urlencoded") {
@@ -119,6 +120,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			FileID         int64   `json:"file_id"`
 			FolderID       int64   `json:"folder_id"`
+			FileIDs        []int64 `json:"file_ids"`
 			Permission     string  `json:"permission"`
 			Password       *string `json:"password"`
 			ExpiresInHours int     `json:"expires_in_hours"`
@@ -134,10 +136,25 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		password = req.Password
 		expiresInHours = req.ExpiresInHours
 		maxDownloads = req.MaxDownloads
+
+		// Batch share: use file_ids when no single file_id/folder_id
+		if fileID == 0 && folderID == 0 && len(req.FileIDs) > 0 {
+			// Validate all files belong to the user
+			for _, fid := range req.FileIDs {
+				var ownerID int64
+				err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND deleted_at IS NULL`, fid).Scan(&ownerID)
+				if err != nil || ownerID != userID {
+					writeError(w, http.StatusNotFound, fmt.Sprintf("file %d not found", fid))
+					return
+				}
+			}
+			batchFileIDs = req.FileIDs
+			fileID = req.FileIDs[0] // first file for backward compat display
+		}
 	}
 
 	if fileID == 0 && folderID == 0 {
-		writeError(w, http.StatusBadRequest, "file_id or folder_id required")
+		writeError(w, http.StatusBadRequest, "file_id, folder_id, or file_ids required")
 		return
 	}
 	if fileID != 0 && folderID != 0 {
@@ -216,12 +233,23 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		h.db.QueryRow(`SELECT COALESCE(filename, '') FROM file_items WHERE id = $1`, fileID).Scan(&itemName)
 	}
 
+	// For batch shares, insert share_link_items for all files
+	fileCount := 1
+	if len(batchFileIDs) > 0 {
+		fileCount = len(batchFileIDs)
+		for _, fid := range batchFileIDs {
+			h.db.Exec(`INSERT INTO share_link_items (share_link_id, file_id) VALUES ($1, $2)`, linkID, fid)
+		}
+	}
+
 	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{
 		"id":                 linkID,
 		"short_code":         shortCode,
 		"permission":         permission,
 		"password_protected": passwordVal != "",
 		"is_folder":          isFolder,
+		"is_batch":           len(batchFileIDs) > 0,
+		"file_count":         fileCount,
 		"filename":           itemName,
 		"url":                "/s/" + shortCode,
 	})
@@ -275,10 +303,14 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	// Increment view count
 	h.db.Exec(`UPDATE share_links SET view_count = view_count + 1 WHERE id = $1`, linkID)
 
-	// Determine if this is a file or folder share
+	// Determine if this is a file, folder, or batch share
 	var isFolder bool
 	var folderID int64
 	h.db.QueryRow(`SELECT folder_id IS NOT NULL, COALESCE(folder_id, 0) FROM share_links WHERE id = $1`, linkID).Scan(&isFolder, &folderID)
+
+	// Check for batch share (multiple files via share_link_items)
+	var batchCount int
+	h.db.QueryRow(`SELECT COUNT(*) FROM share_link_items WHERE share_link_id = $1`, linkID).Scan(&batchCount)
 
 	if isFolder {
 		// Return folder info + file listing
@@ -339,6 +371,46 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 			},
 			"folders": subFolders,
 			"items":   items,
+		})
+		return
+	}
+
+	// Batch share: multiple files via share_link_items
+	if batchCount > 0 {
+		type BatchFileItem struct {
+			ID       int64  `json:"id"`
+			Filename string `json:"filename"`
+			FileSize int64  `json:"file_size"`
+			FileType string `json:"file_type"`
+		}
+		items := make([]BatchFileItem, 0, batchCount)
+		brows, err := h.db.Query(
+			`SELECT fi.id, COALESCE(fi.filename,''), COALESCE(fi.file_size,0), COALESCE(fi.file_type,'other')
+			 FROM share_link_items sli
+			 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL
+			 WHERE sli.share_link_id = $1 ORDER BY fi.filename`,
+			linkID,
+		)
+		if err == nil {
+			defer brows.Close()
+			for brows.Next() {
+				var bi BatchFileItem
+				brows.Scan(&bi.ID, &bi.Filename, &bi.FileSize, &bi.FileType)
+				items = append(items, bi)
+			}
+		}
+
+		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"share_info": map[string]interface{}{
+				"id":                 linkID,
+				"short_code":         code,
+				"permission":         "read",
+				"password_protected": hashedPw != nil && *hashedPw != "",
+				"is_folder":          false,
+				"is_batch":           true,
+				"file_count":         batchCount,
+			},
+			"items": items,
 		})
 		return
 	}
@@ -444,6 +516,56 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 
 		zw := zip.NewWriter(w)
 		for _, f := range files {
+			reader, rErr := h.storage.Retrieve(f.FilePath)
+			if rErr != nil {
+				continue
+			}
+			hdr := &zip.FileHeader{Name: f.Filename, Method: zip.Deflate}
+			writer, wErr := zw.CreateHeader(hdr)
+			if wErr != nil {
+				reader.Close()
+				continue
+			}
+			io.Copy(writer, reader)
+			reader.Close()
+		}
+		zw.Close()
+		return
+	}
+
+	// Check for batch share (download as ZIP)
+	var batchCount int
+	h.db.QueryRow(`SELECT COUNT(*) FROM share_link_items WHERE share_link_id = (SELECT id FROM share_links WHERE short_code = $1 OR token = $1)`, code).Scan(&batchCount)
+	if batchCount > 0 {
+		type batchFileRef struct {
+			FilePath string
+			Filename string
+		}
+		brows, err := h.db.Query(
+			`SELECT fi.file_path, COALESCE(fi.original_filename, fi.filename)
+			 FROM share_link_items sli
+			 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL
+			 WHERE sli.share_link_id = (SELECT id FROM share_links WHERE short_code = $1 OR token = $1)`,
+			code,
+		)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "query failed")
+			return
+		}
+		var batchFiles []batchFileRef
+		for brows.Next() {
+			var bf batchFileRef
+			brows.Scan(&bf.FilePath, &bf.Filename)
+			batchFiles = append(batchFiles, bf)
+		}
+		brows.Close()
+
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="shared-files.zip"`))
+		w.WriteHeader(http.StatusOK)
+
+		zw := zip.NewWriter(w)
+		for _, f := range batchFiles {
 			reader, rErr := h.storage.Retrieve(f.FilePath)
 			if rErr != nil {
 				continue

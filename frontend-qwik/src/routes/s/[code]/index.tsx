@@ -9,10 +9,10 @@ import { createServerApi } from "~/lib/api";
 
 interface FolderItem { id: number; filename: string; file_size: number; file_type: string; }
 interface SubFolder { id: number; name: string; }
-interface ShareInfo { id: number; short_code: string; permission: string; password_protected: boolean; is_folder?: boolean; }
+interface ShareInfo { id: number; short_code: string; permission: string; password_protected: boolean; is_folder?: boolean; is_batch?: boolean; file_count?: number; }
 interface ShareAccess {
   share_info: ShareInfo;
-  item: { id?: number; filename?: string; file_size?: number; file_type?: string; mime_type?: string; name?: string; is_folder?: boolean };
+  item?: { id?: number; filename?: string; file_size?: number; file_type?: string; mime_type?: string; name?: string; is_folder?: boolean };
   need_password?: boolean;
   protected?: boolean;
   folders?: SubFolder[];
@@ -60,6 +60,7 @@ export default component$(() => {
   const item = s.item || {};
   const isImage = item.file_type === "image";
   const isFolder = s.share_info?.is_folder || item.is_folder;
+  const isBatch = s.share_info?.is_batch;
 
   if (s.need_password) {
     return (
@@ -131,6 +132,41 @@ export default component$(() => {
           )}
           <button onClick$={() => { window.open(`/api/v2/share/${shareCode}/download`, "_blank"); }}
             class="w-full h-12 mt-6 text-sm font-semibold text-white bg-stora-primary hover:bg-[#1D4ED8]">
+            ⬇ 下载全部 (ZIP)
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Batch share — multiple files
+  if (isBatch) {
+    const files = s.items || [];
+    return (
+      <div class="min-h-screen bg-stora-background flex items-center justify-center p-4">
+        <div class="w-full max-w-[560px] bg-stora-card border border-stora-border p-8">
+          <div class="flex items-center gap-3 mb-4">
+            <div class="w-12 h-12 bg-stora-muted flex items-center justify-center text-2xl">📦</div>
+            <div>
+              <h1 class="text-lg font-semibold text-stora-foreground">分享的文件</h1>
+              <p class="text-xs text-stora-muted-foreground">{files.length} 个文件</p>
+            </div>
+          </div>
+          {files.length > 0 ? (
+            <div class="divide-y divide-stora-border border border-stora-border mb-4">
+              {files.map(f => (
+                <div key={f.id} class="flex items-center gap-2 px-3 py-2 text-sm text-stora-foreground">
+                  <span>{typeIcon[f.file_type] || "📄"}</span>
+                  <span class="flex-1 truncate">{f.filename}</span>
+                  <span class="text-xs text-stora-nav-text">{fmtSize(f.file_size)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p class="text-sm text-stora-muted-foreground py-4 text-center">暂无文件</p>
+          )}
+          <button onClick$={() => { window.open(`/api/v2/share/${shareCode}/download`, "_blank"); }}
+            class="w-full h-12 text-sm font-semibold text-white bg-stora-primary hover:bg-[#1D4ED8]">
             ⬇ 下载全部 (ZIP)
           </button>
         </div>
