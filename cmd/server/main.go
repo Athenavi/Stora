@@ -466,6 +466,7 @@ func main() {
 		r.Post("/share/{code}/upload", shareHandler.ShareFileUpload)
 		r.Post("/share/{code}/save", shareHandler.SaveToMyDrive)
 		r.Get("/share/{code}/qrcode", shareHandler.ShareQRCode)
+		r.Get("/share/{code}/folder/{folderId}", shareHandler.ShareFolderChildren)
 		r.Get("/files/shares/access/{code}", shareHandler.VerifySharePassword)
 
 		// File preview (optional auth for <img> tags)

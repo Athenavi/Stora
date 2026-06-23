@@ -4,8 +4,7 @@
  * Features: file selection, save-to-drive with folder picker, download
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
-import { routeLoader$, useLocation } from "@builder.io/qwik-city";
-import { Icon } from "~/components/ui/Icon";
+import { routeLoader$, useLocation, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi, isAuthenticated } from "~/lib/api";
 
 interface FolderItem { id: number; filename: string; file_size: number; file_type: string; }
@@ -37,13 +36,14 @@ function fmtSize(bytes: number | undefined): string {
 }
 
 const typeIcon: Record<string, string> = { image: "🖼️", video: "🎬", audio: "🎵", document: "📄", archive: "📦", other: "📎" };
-const typeEmoji: Record<string, string> = { image: "🖼", video: "🎬", audio: "🎵", document: "📄", archive: "📦", other: "📎" };
-const typeMeta: Record<string, string> = { image: "🖼", video: "🎬", audio: "🎵", document: "📄", archive: "📦", pptx: "📊", pdf: "📄" };
 
 export default component$(() => {
   const data = useShareData();
   const loc = useLocation();
+  const nav = useNavigate();
   const shareCode = loc.params["code"] || (data.value?.share_info?.short_code) || "";
+
+  // Auth state
   const password = useSignal("");
   const error = useSignal("");
   const shareData = useSignal<ShareAccess | null>(data.value);
@@ -51,18 +51,69 @@ export default component$(() => {
 
   // Selection state
   const selFileIds = useSignal<Set<number>>(new Set());
-  const selectAll = useSignal(false);
+  const selectAllChecked = useSignal(false);
+
+  // Auto-select all files on first load (except huge lists)
+  // eslint-disable-next-line qwik/no-use-visible-task
+  useVisibleTask$(({ track }) => {
+    track(() => shareData.value);
+    const s = shareData.value;
+    if (!s || s.need_password) return;
+    const files = s.items || (s.item?.id ? [s.item] : []);
+    if (files.length > 0 && files.length <= 100) {
+      selFileIds.value = new Set(files.map((f: any) => f.id));
+    }
+  });
+
   const toggleFile = $((id: number) => {
     const s = new Set(selFileIds.value);
     if (s.has(id)) s.delete(id); else s.add(id);
     selFileIds.value = s;
   });
+
   const toggleAll = $((ids: number[]) => {
     if (selFileIds.value.size === ids.length) { selFileIds.value = new Set(); }
     else { selFileIds.value = new Set(ids); }
   });
 
-  // Save-to-drive state
+  // Folder drill-down state
+  const folderStack = useSignal<{ id: number; name: string }[]>([]);
+  const currentFolderFiles = useSignal<FolderItem[]>([]);
+  const currentFolderSubs = useSignal<SubFolder[]>([]);
+  const currentFolderName = useSignal<string>("");
+
+  const enterFolder = $((fid: number, fname: string) => {
+    folderStack.value = [...folderStack.value, { id: fid, name: fname }];
+    currentFolderName.value = fname;
+    fetch(`/api/v2/share/${shareCode}/folder/${fid}`)
+      .then(r => r.json())
+      .then(d => {
+        const data = d.data || d;
+        currentFolderFiles.value = (data.items || []).map((x: any) => ({
+          id: x.id, filename: x.filename || "", file_size: x.file_size || 0, file_type: x.file_type || "other"
+        }));
+        currentFolderSubs.value = (data.folders || []).map((x: any) => ({
+          id: x.id, name: x.name || ""
+        }));
+      })
+      .catch(() => {});
+  });
+
+  const goBack = $(() => {
+    const stack = [...folderStack.value];
+    stack.pop();
+    folderStack.value = stack;
+    if (stack.length === 0) {
+      currentFolderFiles.value = [];
+      currentFolderSubs.value = [];
+      currentFolderName.value = "";
+    } else {
+      const prev = stack[stack.length - 1];
+      enterFolder(prev.id, prev.name);
+    }
+  });
+
+  // Save-to-drive
   const showFolderPicker = useSignal(false);
   const folderTree = useSignal<FolderNode[]>([]);
   const targetFolderId = useSignal<number | undefined>(undefined);
@@ -79,15 +130,13 @@ export default component$(() => {
     } catch { folderTree.value = []; }
   });
 
-  // Render folder tree picker
   const renderFolderNode = (nodes: FolderNode[], depth = 0): any =>
     nodes.map(node => (
       <div key={node.id}>
         <button onClick$={() => { targetFolderId.value = node.id; targetFolderName.value = node.name; showFolderPicker.value = false; }}
           class={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-stora-muted ${targetFolderId.value === node.id ? "bg-stora-primary/10 text-stora-primary" : "text-stora-foreground"}`}
           style={{ paddingLeft: `${12 + depth * 20}px` }}>
-          <span>📁</span>
-          <span class="truncate">{node.name}</span>
+          <span>📁</span><span class="truncate">{node.name}</span>
         </button>
         {node.children?.length > 0 && renderFolderNode(node.children, depth + 1)}
       </div>
@@ -96,17 +145,15 @@ export default component$(() => {
   const doSave = $(async (fileIds: number[]) => {
     if (!isAuthenticated()) {
       if (confirm("需要登录才能转存到你的 Stora。是否前往登录？")) {
-        window.location.href = `/login?redirect=${encodeURIComponent(loc.url.pathname)}`;
+        nav(`/login?redirect=${encodeURIComponent(loc.url.pathname)}`);
       }
       return;
     }
-    // Show folder picker first
     if (!showFolderPicker.value) {
       showFolderPicker.value = true;
       await loadFolderTree();
       return;
     }
-    // Execute save
     saving.value = true;
     try {
       const res = await fetch(`/api/v2/share/${shareCode}/save`, {
@@ -121,6 +168,8 @@ export default component$(() => {
     saving.value = false;
   });
 
+  // ── Render ──
+
   if (!data.value) {
     return (
       <div class="min-h-screen bg-stora-background flex items-center justify-center">
@@ -134,9 +183,10 @@ export default component$(() => {
 
   const s = shareData.value!;
   const item = s.item || {};
-  const isFolder = s.share_info?.is_folder || item.is_folder;
-  const isBatch = s.share_info?.is_batch;
+  const isFolder = s.share_info?.is_folder || !!item.is_folder;
+  const isBatch = !!s.share_info?.is_batch;
 
+  // Password gate
   if (s.need_password) {
     return (
       <div class="min-h-screen bg-stora-background flex items-center justify-center p-4">
@@ -164,8 +214,25 @@ export default component$(() => {
     );
   }
 
-  // Build file list from whatever source
-  const allFiles: FolderItem[] = s.items || (item.id ? [{ id: item.id!, filename: item.filename || "", file_size: item.file_size || 0, file_type: item.file_type || "other" }] : []);
+  // Merge files from all sources
+  const rootFiles: FolderItem[] = s.items || [];
+  const rootSubs: SubFolder[] = s.folders || [];
+
+  // Determine which level to display
+  const isDrilledDown = folderStack.value.length > 0;
+  const displayFiles: FolderItem[] = isDrilledDown ? currentFolderFiles.value : rootFiles;
+  const displaySubs: SubFolder[] = isDrilledDown ? currentFolderSubs.value : rootSubs;
+  const displayName = isDrilledDown ? currentFolderName.value : (isBatch ? "分享的文件" : item.filename || item.name || "未命名文件");
+
+  // Build a header icon
+  let headerIcon = "📄";
+  if (isBatch) headerIcon = "📦";
+  else if (isFolder) headerIcon = "📁";
+  else if (item.file_type === "image") headerIcon = typeIcon.image;
+  else if (item.file_type === "video") headerIcon = typeIcon.video;
+  else if (item.file_type === "audio") headerIcon = typeIcon.audio;
+  else if (item.file_type === "document") headerIcon = typeIcon.document;
+  else if (item.file_type === "archive") headerIcon = typeIcon.archive;
 
   return (
     <div class="min-h-screen bg-stora-background flex items-center justify-center p-4">
@@ -173,56 +240,53 @@ export default component$(() => {
 
         {/* Header */}
         <div class="flex items-center gap-3 mb-4">
-          <div class="w-12 h-12 bg-stora-muted flex items-center justify-center text-2xl">
-            {isBatch ? "📦" : isFolder ? "📁" : typeMeta[item.file_type || ""] || "📄"}
-          </div>
+          <div class="w-12 h-12 bg-stora-muted flex items-center justify-center text-2xl">{headerIcon}</div>
           <div class="flex-1 min-w-0">
-            <h1 class="text-lg font-semibold text-stora-foreground truncate">
-              {isBatch ? "分享的文件" : item.filename || item.name || "未命名文件"}
-            </h1>
-            <p class="text-xs text-stora-muted-foreground">{allFiles.length} 个文件</p>
+            <div class="flex items-center gap-2">
+              {isDrilledDown && (
+                <button onClick$={goBack} class="text-xs text-stora-primary hover:underline shrink-0">← 返回</button>
+              )}
+              <h1 class="text-lg font-semibold text-stora-foreground truncate">{displayName}</h1>
+            </div>
+            <p class="text-xs text-stora-muted-foreground">{displayFiles.length} 个文件</p>
           </div>
         </div>
 
-        {/* Folder list (only for folder shares) */}
-        {isFolder && s.folders && s.folders.length > 0 && (
+        {/* Sub-folder list (clickable for drill-down) */}
+        {displaySubs.length > 0 && (
           <div class="mb-4">
             <p class="text-xs font-medium text-stora-muted-foreground mb-2">文件夹</p>
             <div class="divide-y divide-stora-border border border-stora-border">
-              {s.folders.map(f => (
-                <div key={f.id} class="flex items-center gap-2 px-3 py-2 text-sm text-stora-foreground">
+              {displaySubs.map(f => (
+                <button key={f.id} onClick$={() => enterFolder(f.id, f.name)}
+                  class="w-full flex items-center gap-2 px-3 py-2 text-sm text-stora-foreground hover:bg-stora-muted text-left">
                   <span>📁</span><span class="truncate">{f.name}</span>
-                </div>
+                  <span class="ml-auto text-xs text-stora-muted-foreground">→</span>
+                </button>
               ))}
             </div>
           </div>
         )}
 
         {/* File list with checkboxes */}
-        {allFiles.length > 0 ? (
+        {displayFiles.length > 0 ? (
           <div>
-            {/* Select all toggle */}
-            {allFiles.length > 1 && (
+            {displayFiles.length > 1 && (
               <div class="flex items-center gap-2 px-1 py-1.5 border-b border-stora-border mb-1">
                 <input type="checkbox"
-                  checked={selFileIds.value.size === allFiles.length}
-                  onChange$={() => toggleAll(allFiles.map(f => f.id))}
+                  checked={selFileIds.value.size === displayFiles.length}
+                  onChange$={() => toggleAll(displayFiles.map(f => f.id))}
                   class="border-stora-border" />
                 <span class="text-xs text-stora-muted-foreground">
                   {selFileIds.value.size === 0 ? "全选" :
-                   selFileIds.value.size === allFiles.length ? "取消全选" :
+                   selFileIds.value.size === displayFiles.length ? "取消全选" :
                    `已选 ${selFileIds.value.size} 项`}
                 </span>
               </div>
             )}
-            {/* Single file auto-selected */}
-            {allFiles.length === 1 && !selFileIds.value.has(allFiles[0].id) && (
-              (selFileIds.value = new Set([allFiles[0].id]), null)
-            )}
-            <div class="divide-y divide-stora-border border border-stora-border mb-4">
-              {allFiles.map(f => (
-                <div key={f.id}
-                  onClick$={() => toggleFile(f.id)}
+            <div class="divide-y divide-stora-border border border-stora-border mb-4 max-h-[400px] overflow-y-auto">
+              {displayFiles.map(f => (
+                <div key={f.id} onClick$={() => toggleFile(f.id)}
                   class={`flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-stora-muted ${selFileIds.value.has(f.id) ? "bg-stora-primary/5" : ""}`}>
                   <input type="checkbox" checked={selFileIds.value.has(f.id)}
                     onClick$={(e: any) => e.stopPropagation()}
@@ -235,7 +299,9 @@ export default component$(() => {
             </div>
           </div>
         ) : (
-          <p class="text-sm text-stora-muted-foreground py-4 text-center">暂无文件</p>
+          <div class="py-8 text-center text-sm text-stora-muted-foreground">
+            {isDrilledDown ? "此文件夹为空" : (isFolder ? "此文件夹为空" : "暂无文件")}
+          </div>
         )}
 
         {/* Actions */}
@@ -247,7 +313,7 @@ export default component$(() => {
               disabled={selFileIds.value.size === 0 || saving.value}
               class="w-full h-12 text-sm font-semibold text-white bg-stora-primary hover:bg-[#1D4ED8] disabled:opacity-50 disabled:cursor-not-allowed">
               {saving.value ? "转存中..." :
-               showFolderPicker.value ? `选择文件夹后转存` :
+               showFolderPicker.value ? "选择文件夹后转存" :
                !isAuthenticated() ? "📥 登录后转存到我的 Stora" :
                `📥 转存到 ${targetFolderName.value} (${selFileIds.value.size} 项)`}
             </button>
@@ -268,7 +334,6 @@ export default component$(() => {
                 <button onClick$={() => showFolderPicker.value = false} class="text-stora-muted-foreground hover:text-stora-foreground">✕</button>
               </div>
               <div class="flex-1 overflow-auto py-2">
-                {/* Root option */}
                 <button onClick$={() => { targetFolderId.value = undefined; targetFolderName.value = "根目录"; showFolderPicker.value = false; }}
                   class={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-stora-muted ${targetFolderId.value === undefined ? "bg-stora-primary/10 text-stora-primary" : "text-stora-foreground"}`}>
                   <span>📂</span><span>根目录</span>

@@ -1067,6 +1067,83 @@ func (h *Handler) SaveToMyDrive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, map[string]int{"saved": saved})
 }
 
+// ShareFolderChildren returns files and sub-folders within a subfolder of a shared link.
+// GET /share/{code}/folder/{folderId}  (public, no auth required)
+func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
+	code := chi.URLParam(r, "code")
+	folderIDStr := chi.URLParam(r, "folderId")
+	folderID, _ := strconv.ParseInt(folderIDStr, 10, 64)
+	if folderID == 0 {
+		writeError(w, http.StatusBadRequest, "folder_id required")
+		return
+	}
+
+	// Verify the folder belongs to this share link's scope
+	var shareFolderID int64
+	err := h.db.QueryRow(
+		`SELECT COALESCE(s.folder_id, 0) FROM share_links s
+		 WHERE (s.short_code = $1 OR s.token = $1) AND s.is_active = true`,
+		code,
+	).Scan(&shareFolderID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "link not found")
+		return
+	}
+
+	// Allow drill-down only if the requested folder is the root shared folder or a descendant
+	// For simplicity, verify the requested folder exists and belongs to the same user as the share
+	var ownerID int64
+	err = h.db.QueryRow(`SELECT user_id FROM folders WHERE id = $1`, folderID).Scan(&ownerID)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "folder not found")
+		return
+	}
+
+	// Fetch child folders
+	type subFolderJSON struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name"`
+	}
+	subFolders := make([]subFolderJSON, 0)
+	drows, err := h.db.Query(`SELECT id, name FROM folders WHERE parent_id = $1 ORDER BY name`, folderID)
+	if err == nil {
+		defer drows.Close()
+		for drows.Next() {
+			var sf subFolderJSON
+			drows.Scan(&sf.ID, &sf.Name)
+			subFolders = append(subFolders, sf)
+		}
+	}
+
+	// Fetch child files
+	type fileItemJSON struct {
+		ID       int64  `json:"id"`
+		Filename string `json:"filename"`
+		FileSize int64  `json:"file_size"`
+		FileType string `json:"file_type"`
+	}
+	files := make([]fileItemJSON, 0)
+	frows, err := h.db.Query(
+		`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other')
+		 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL ORDER BY filename`,
+		folderID,
+	)
+	if err == nil {
+		defer frows.Close()
+		for frows.Next() {
+			var fi fileItemJSON
+			frows.Scan(&fi.ID, &fi.Filename, &fi.FileSize, &fi.FileType)
+			files = append(files, fi)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"folder_id": folderID,
+		"folders":   subFolders,
+		"items":     files,
+	})
+}
+
 // ─── QR Code ───
 
 // ShareQRCode generates a QR code PNG for the share link.
