@@ -1,7 +1,7 @@
 /**
  * Stora File Preview — 文件预览（视频/音频/文档编辑 + Flyfish Viewer + 转码清晰度切换）
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useLocation } from "@builder.io/qwik-city";
 import { createServerApi, api } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
@@ -85,22 +85,22 @@ export default component$(() => {
     } catch {}
   });
 
-  const startEditing = async () => {
+  const startEditing = $(async () => {
     try {
       const resp = await fetch(previewUrl);
       editContent.value = await resp.text();
       editing.value = true;
-    } catch {}
-  };
+    } catch (e) { console.error(e); }
+  });
 
-  const saveContent = async () => {
+  const saveContent = $(async () => {
     saving.value = true;
     try {
       await api.put(`/files/${f.id}/content`, { content: editContent.value });
       editing.value = false;
-    } catch {}
+    } catch (e) { console.error(e); }
     saving.value = false;
-  };
+  });
 
   const doTranscode = async () => {
     transcodeLoading.value = true;
