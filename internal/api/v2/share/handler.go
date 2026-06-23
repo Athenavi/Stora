@@ -1031,6 +1031,7 @@ func (h *Handler) SaveToMyDrive(w http.ResponseWriter, r *http.Request) {
 			fid,
 		).Scan(&filePath, &filename, &mimeType, &fileSize, &fileHash, &fileType)
 		if err != nil {
+			log.Printf("[SaveToMyDrive] source file %d not found: %v", fid, err)
 			continue
 		}
 
@@ -1039,14 +1040,21 @@ func (h *Handler) SaveToMyDrive(w http.ResponseWriter, r *http.Request) {
 			h.db.Exec(`UPDATE file_fingerprints SET reference_count = reference_count + 1, updated_at = $1 WHERE hash = $2`, now, fileHash)
 		}
 
+		// Convert *int64 to interface{} for pq — nil pointer is sent as SQL NULL
+		var folderIDArg interface{}
+		if req.FolderID != nil {
+			folderIDArg = *req.FolderID
+		}
+
 		var newID int64
 		err = h.db.QueryRow(
 			`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
 			                         mime_type, file_type, storage_driver, file_hash, is_folder, created_at, updated_at)
 			 VALUES ($1, $2, $3, $3, $4, $5, $6, $7, 'local', $8, false, $9, $9) RETURNING id`,
-			userID, req.FolderID, filename, filePath, fileSize, mimeType, fileType, fileHash, now,
+			userID, folderIDArg, filename, filePath, fileSize, mimeType, fileType, fileHash, now,
 		).Scan(&newID)
 		if err != nil {
+			log.Printf("[SaveToMyDrive] INSERT failed for %q: %v", filename, err)
 			continue
 		}
 
