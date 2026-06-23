@@ -64,12 +64,12 @@ func (h *OfflineDownloadHandler) CreateDownloadTask(w http.ResponseWriter, r *ht
 	// Auto-create "离线下载" folder if it doesn't exist
 	var offlineFolderID int64
 	err := h.db.QueryRow(
-		`SELECT id FROM folders WHERE user_id = $1 AND name = '离线下载' AND parent_id IS NULL`,
+		`SELECT id FROM file_items WHERE user_id = $1 AND filename = '离线下载' AND folder_id IS NULL AND is_folder = true AND deleted_at IS NULL`,
 		userID,
 	).Scan(&offlineFolderID)
 	if err != nil {
 		h.db.QueryRow(
-			`INSERT INTO folders (user_id, name, parent_id, created_at, updated_at) VALUES ($1, '离线下载', NULL, $2, $2) RETURNING id`,
+			`INSERT INTO file_items (user_id, filename, is_folder, created_at, updated_at) VALUES ($1, '离线下载', true, $2, $2) RETURNING id`,
 			userID, time.Now().Format(time.RFC3339),
 		).Scan(&offlineFolderID)
 	}

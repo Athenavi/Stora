@@ -213,9 +213,9 @@ func (h *TeamHandler) ListTeamFolders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows, err := h.db.Query(
-		`SELECT tf.id, tf.folder_id, COALESCE(f.name, ''), tf.permission, tf.created_at
-		 FROM team_folders tf JOIN folders f ON tf.folder_id = f.id
-		 WHERE tf.team_id = $1 ORDER BY f.name`,
+		`SELECT tf.id, tf.folder_id, COALESCE(f.filename, ''), tf.permission, tf.created_at
+		 FROM team_folders tf JOIN file_items f ON tf.folder_id = f.id AND f.is_folder = true
+		 WHERE tf.team_id = $1 ORDER BY f.filename`,
 		teamID,
 	)
 	if err != nil {

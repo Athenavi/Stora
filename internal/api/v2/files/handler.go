@@ -803,7 +803,8 @@ func (h *Handler) ListFolders(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 
 	rows, err := h.db.Query(
-		`SELECT id, parent_id, name FROM folders WHERE user_id = $1 ORDER BY name`,
+		`SELECT id, folder_id, filename FROM file_items
+		 WHERE user_id = $1 AND is_folder = true AND deleted_at IS NULL ORDER BY filename`,
 		userID,
 	)
 	if err != nil {
@@ -860,7 +861,8 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	// Check for duplicate folder name at the same level
 	var existing int64
 	h.db.QueryRow(
-		`SELECT id FROM folders WHERE user_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND name = $3`,
+		`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
+		 AND filename = $3 AND is_folder = true AND deleted_at IS NULL`,
 		userID, req.ParentID, req.Name,
 	).Scan(&existing)
 	if existing > 0 {
@@ -871,8 +873,8 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().Format(time.RFC3339)
 	var folderID int64
 	err := h.db.QueryRow(
-		`INSERT INTO folders (user_id, parent_id, name, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $4) RETURNING id`,
+		`INSERT INTO file_items (user_id, folder_id, filename, is_folder, created_at, updated_at)
+		 VALUES ($1, $2, $3, true, $4, $4) RETURNING id`,
 		userID, req.ParentID, req.Name, now,
 	).Scan(&folderID)
 
@@ -892,9 +894,10 @@ func (h *Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	folderID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	userID, _ := middleware.GetUserID(r.Context())
 
+	now := time.Now().Format(time.RFC3339)
 	result, err := h.db.Exec(
-		`DELETE FROM folders WHERE id = $1 AND user_id = $2`,
-		folderID, userID,
+		`UPDATE file_items SET deleted_at = $1, updated_at = $1 WHERE id = $2 AND user_id = $3 AND is_folder = true`,
+		now, folderID, userID,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "delete failed")
@@ -921,8 +924,8 @@ func (h *Handler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := h.db.Exec(
-		`UPDATE folders SET name = $1 WHERE id = $2 AND user_id = $3`,
-		req.Name, folderID, userID,
+		`UPDATE file_items SET filename = $1, updated_at = $2 WHERE id = $3 AND user_id = $4 AND is_folder = true`,
+		req.Name, time.Now().Format(time.RFC3339), folderID, userID,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "update failed")
@@ -950,7 +953,8 @@ func (h *Handler) GetFolderChildren(w http.ResponseWriter, r *http.Request) {
 	var names = make(map[int64]string)
 	var parents = make(map[int64]int64)
 
-	rows, err := h.db.Query(`SELECT id, COALESCE(parent_id,0), name FROM folders WHERE user_id = $1`, userID)
+	rows, err := h.db.Query(`SELECT id, COALESCE(folder_id,0), filename FROM file_items
+		 WHERE user_id = $1 AND is_folder = true AND deleted_at IS NULL`, userID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query failed")
 		return
@@ -985,7 +989,7 @@ func (h *Handler) GetFolderChildren(w http.ResponseWriter, r *http.Request) {
 		ParentID *int64 `json:"parent_id"`
 	}
 	var folders []FolderItem
-	frows, err := h.db.Query(`SELECT id, parent_id, name FROM folders WHERE user_id = $1 AND parent_id = $2 ORDER BY name`, userID, folderID)
+	frows, err := h.db.Query(`SELECT id, folder_id, filename FROM file_items WHERE user_id = $1 AND folder_id = $2 AND is_folder = true AND deleted_at IS NULL ORDER BY filename`, userID, folderID)
 	if err == nil {
 		defer frows.Close()
 		for frows.Next() {
@@ -1531,7 +1535,8 @@ type folderNode struct {
 // Returns: nameOf[id], childrenOf[parentID], roots, error
 func (h *Handler) loadFolderTree(userID int64) (map[int64]string, map[int64][]int64, []int64, error) {
 	rows, err := h.db.Query(
-		`SELECT id, COALESCE(parent_id,0), name FROM folders WHERE user_id = $1`,
+		`SELECT id, COALESCE(folder_id,0), filename FROM file_items
+		 WHERE user_id = $1 AND is_folder = true AND deleted_at IS NULL`,
 		userID,
 	)
 	if err != nil {
@@ -1743,7 +1748,8 @@ func (h *Handler) CreateFolderByPath(w http.ResponseWriter, r *http.Request) {
 
 	// Build tree from tx
 	rows, err := tx.Query(
-		`SELECT id, COALESCE(parent_id,0), name FROM folders WHERE user_id = $1`, userID)
+		`SELECT id, COALESCE(folder_id,0), filename FROM file_items
+		 WHERE user_id = $1 AND is_folder = true AND deleted_at IS NULL`, userID)
 	if err != nil {
 		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("query failed: %v", err))
 		return
@@ -1772,7 +1778,7 @@ func (h *Handler) CreateFolderByPath(w http.ResponseWriter, r *http.Request) {
 	// Verify parent still exists
 	var exists int
 	if parentID > 0 {
-		err = tx.QueryRow(`SELECT 1 FROM folders WHERE id = $1 AND user_id = $2`, parentID, userID).Scan(&exists)
+		err = tx.QueryRow(`SELECT 1 FROM file_items WHERE id = $1 AND user_id = $2 AND is_folder = true AND deleted_at IS NULL`, parentID, userID).Scan(&exists)
 		if err != nil {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "parent folder no longer exists"})
 			return
@@ -1788,7 +1794,8 @@ func (h *Handler) CreateFolderByPath(w http.ResponseWriter, r *http.Request) {
 
 	// Check for duplicate folder name at the same level
 	var dupID int64
-	tx.QueryRow(`SELECT id FROM folders WHERE user_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND name = $3`,
+	tx.QueryRow(`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
+		 AND filename = $3 AND is_folder = true AND deleted_at IS NULL`,
 		userID, parentPtr, req.Name,
 	).Scan(&dupID)
 	if dupID > 0 {
@@ -1797,8 +1804,8 @@ func (h *Handler) CreateFolderByPath(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = tx.QueryRow(
-		`INSERT INTO folders (user_id, parent_id, name, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $4) RETURNING id`,
+		`INSERT INTO file_items (user_id, folder_id, filename, is_folder, created_at, updated_at)
+		 VALUES ($1, $2, $3, true, $4, $4) RETURNING id`,
 		userID, parentPtr, req.Name, now,
 	).Scan(&newID)
 	if err != nil {

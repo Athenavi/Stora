@@ -203,7 +203,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	// Verify ownership
 	if folderID > 0 {
 		var ownerID int64
-		err := h.db.QueryRow(`SELECT user_id FROM folders WHERE id = $1`, folderID).Scan(&ownerID)
+		err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&ownerID)
 		if err != nil || ownerID != userID {
 			writeError(w, http.StatusNotFound, "folder not found")
 			return
@@ -257,7 +257,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 
 	itemName := ""
 	if isFolder {
-		h.db.QueryRow(`SELECT name FROM folders WHERE id = $1`, folderID).Scan(&itemName)
+		h.db.QueryRow(`SELECT filename FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&itemName)
 	} else {
 		h.db.QueryRow(`SELECT COALESCE(filename, '') FROM file_items WHERE id = $1`, fileID).Scan(&itemName)
 	}
@@ -344,7 +344,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	if isFolder {
 		// Return folder info + file listing
 		var folderName string
-		h.db.QueryRow(`SELECT name FROM folders WHERE id = $1`, folderID).Scan(&folderName)
+		h.db.QueryRow(`SELECT filename FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&folderName)
 
 		type FolderFileItem struct {
 			ID       int64  `json:"id"`
@@ -375,7 +375,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 			Name string `json:"name"`
 		}
 		subFolders := make([]SubFolder, 0)
-		drows, err := h.db.Query(`SELECT id, name FROM folders WHERE parent_id = $1 ORDER BY name`, folderID)
+		drows, err := h.db.Query(`SELECT id, filename FROM file_items WHERE folder_id = $1 AND is_folder = true AND deleted_at IS NULL ORDER BY filename`, folderID)
 		if err == nil {
 			defer drows.Close()
 			for drows.Next() {
@@ -537,7 +537,7 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 
 		// Stream ZIP
 		var folderName string
-		h.db.QueryRow(`SELECT name FROM folders WHERE id = $1`, folderID).Scan(&folderName)
+		h.db.QueryRow(`SELECT filename FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&folderName)
 
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, folderName))
@@ -718,7 +718,7 @@ func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 		        CASE WHEN s.folder_id IS NOT NULL THEN true ELSE false END
 		 FROM share_links s
 		 LEFT JOIN file_items f ON s.file_id = f.id
-		 LEFT JOIN folders d ON s.folder_id = d.id
+		 LEFT JOIN file_items d ON s.folder_id = d.id AND d.is_folder = true
 		 WHERE s.user_id = $1 ORDER BY s.created_at DESC LIMIT $2 OFFSET $3`,
 		userID, pageSize, offset,
 	)
@@ -1121,7 +1121,7 @@ func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
 	// Allow drill-down only if the requested folder is the root shared folder or a descendant
 	// For simplicity, verify the requested folder exists and belongs to the same user as the share
 	var ownerID int64
-	err = h.db.QueryRow(`SELECT user_id FROM folders WHERE id = $1`, folderID).Scan(&ownerID)
+	err = h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&ownerID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "folder not found")
 		return
@@ -1133,7 +1133,7 @@ func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
 		Name string `json:"name"`
 	}
 	subFolders := make([]subFolderJSON, 0)
-	drows, err := h.db.Query(`SELECT id, name FROM folders WHERE parent_id = $1 ORDER BY name`, folderID)
+	drows, err := h.db.Query(`SELECT id, filename FROM file_items WHERE folder_id = $1 AND is_folder = true AND deleted_at IS NULL ORDER BY filename`, folderID)
 	if err == nil {
 		defer drows.Close()
 		for drows.Next() {
