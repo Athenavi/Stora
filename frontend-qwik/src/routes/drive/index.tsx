@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, listUserTags, type PathChildrenResponse, type FileItem } from "~/lib/api";
+import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, uploadFile, batchDownload, createShare, api, listUserTags, listVaults, copyFileToVault, type PathChildrenResponse, type FileItem } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button, Input } from "~/components/ui/Button";
 import PreviewPanel from "~/components/drive/PreviewPanel";
@@ -104,6 +104,12 @@ export default component$(() => {
   const allUserTags = useSignal<{ id: number; name: string; color: string | null }[]>([]);
   const batchTagIds = useSignal<number[]>([]);
   const batchCategoryName = useSignal("");
+  const showVaultPicker = useSignal(false);
+  const vaultAction = useSignal<"copy" | "move">("copy");
+  const vaultList = useSignal<{ id: number; name: string }[]>([]);
+  const targetVaultId = useSignal<number>(0);
+  const showVaultConfirm = useSignal(false);
+  const vaultFileId = useSignal<number>(0);
 
   const onPreview = $((item: any) => { previewFile.value = item; });
 
@@ -421,6 +427,19 @@ export default component$(() => {
                   try { const d = await api.get(`/files/${id}`); showProperties.value = d; } catch {}
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">ℹ 属性</button>
                 <div class="h-px bg-stora-border my-1" />
+                <button onClick$={async () => {
+                  vaultFileId.value = ctxItem.value!.id;
+                  vaultAction.value = "copy";
+                  ctxItem.value = null;
+                  try { vaultList.value = await listVaults(); showVaultPicker.value = true; } catch {}
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">🔐 复制到加密空间</button>
+                <button onClick$={async () => {
+                  vaultFileId.value = ctxItem.value!.id;
+                  vaultAction.value = "move";
+                  ctxItem.value = null;
+                  try { vaultList.value = await listVaults(); showVaultPicker.value = true; } catch {}
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">🔐 移动到加密空间</button>
+                <div class="h-px bg-stora-border my-1" />
                 {clipboard.value && (
                   <button onClick$={async () => { ctxItem.value = null; alert(`已复制: ${clipboard.value.name}\n粘贴功能需要后端支持。`); }}
                     class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.name}</button>
@@ -475,6 +494,10 @@ export default component$(() => {
                 <button onClick$={async () => { await updateFile(ctxItem.value!.id, { is_favorite: true }).catch(() => {}); ctxItem.value = null; showActionSheet.value = false; }}
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">⭐ 收藏</button>
                 <div class="h-px bg-slate-100 my-1" />
+                <button onClick$={async () => { vaultFileId.value = ctxItem.value!.id; vaultAction.value = "copy"; ctxItem.value = null; showActionSheet.value = false; try { vaultList.value = await listVaults(); showVaultPicker.value = true; } catch {} }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">🔐 复制到加密空间</button>
+                <button onClick$={async () => { vaultFileId.value = ctxItem.value!.id; vaultAction.value = "move"; ctxItem.value = null; showActionSheet.value = false; try { vaultList.value = await listVaults(); showVaultPicker.value = true; } catch {} }}
+                  class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-slate-700 hover:bg-slate-50 rounded-lg touch-target">🔐 移动到加密空间</button>
                 <button onClick$={async () => { if (confirm("删除?")) { await deleteFile(ctxItem.value!.id).catch(() => {}); location.reload(); } ctxItem.value = null; showActionSheet.value = false; }}
                   class="w-full text-left px-4 py-3 text-sm flex items-center gap-3 text-red-600 hover:bg-red-50 rounded-lg touch-target">🗑 删除</button>
               </div>
@@ -663,6 +686,52 @@ export default component$(() => {
               try { await api.post('/files/batch/category', { file_ids: [...selIds.value], category: batchCategoryName.value || null }); showBatchCategory.value = false; refresh(); } catch { alert("设置失败"); }
             }} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700">应用分类</button>
             <button onClick$={() => showBatchCategory.value = false}
+              class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50">取消</button>
+          </div>
+        </>
+      )}
+
+      {/* Step 2: Vault picker dialog */}
+      {showVaultPicker.value && (
+        <>
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => showVaultPicker.value = false} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col p-5">
+            <h3 class="text-sm font-semibold text-stora-foreground mb-3">选择目标加密空间</h3>
+            <p class="text-xs text-stora-muted-foreground mb-3">操作: {vaultAction.value === "copy" ? "复制" : "移动"}文件到</p>
+            <div class="space-y-1 max-h-48 overflow-auto mb-4">
+              {vaultList.value.map(v => (
+                <button key={v.id} onClick$={() => targetVaultId.value = v.id}
+                  class={`w-full text-left px-3 py-2.5 text-sm rounded-lg transition-colors ${targetVaultId.value === v.id ? "bg-indigo-100 text-indigo-700 border border-indigo-300" : "text-stora-foreground hover:bg-stora-muted border border-transparent"}`}>
+                  🔐 {v.name}
+                </button>
+              ))}
+              {vaultList.value.length === 0 && <p class="text-xs text-stora-muted-foreground">暂无加密空间</p>}
+            </div>
+            <button onClick$={() => { if (!targetVaultId.value) return; showVaultPicker.value = false; showVaultConfirm.value = true; }}
+              class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 disabled:opacity-50">下一步</button>
+            <button onClick$={() => showVaultPicker.value = false}
+              class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50">取消</button>
+          </div>
+        </>
+      )}
+
+      {/* Step 3: Vault confirm dialog */}
+      {showVaultConfirm.value && (
+        <>
+          <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => showVaultConfirm.value = false} />
+          <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col p-5">
+            <h3 class="text-sm font-semibold text-stora-foreground mb-3">确认操作</h3>
+            <div class="text-sm text-stora-foreground space-y-2 mb-4">
+              <p>📄 文件: <span class="font-medium">{allItems.find(x => x.id === vaultFileId.value)?.filename || ""}</span></p>
+              <p>操作: <span class="font-medium">{vaultAction.value === "copy" ? "复制" : "移动"}到加密空间</span></p>
+              <p>目标: <span class="font-medium">🔐 {vaultList.value.find(v => v.id === targetVaultId.value)?.name || ""}</span></p>
+            </div>
+            <button onClick$={async () => {
+              try { await copyFileToVault(vaultFileId.value, targetVaultId.value, vaultAction.value); showVaultConfirm.value = false; refresh(); } catch { alert("操作失败"); }
+            }} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700">
+              确认{vaultAction.value === "copy" ? "复制" : "移动"}
+            </button>
+            <button onClick$={() => showVaultConfirm.value = false}
               class="w-full mt-2 touch-target px-4 py-3 text-sm text-slate-500 rounded-xl hover:bg-slate-50">取消</button>
           </div>
         </>

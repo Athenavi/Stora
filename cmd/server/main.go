@@ -165,7 +165,7 @@ func main() {
 	if database.RedisClient != nil {
 		pathCache = cache.NewPathCache(database.RedisClient, 10*time.Second)
 	}
-	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder, pathCache, speedLimiter)
+	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder, cfg.VaultDir(), pathCache, speedLimiter)
 	uploadHandler := fileapi.NewUploadHandler(db, store, cfg.TempFolder)
 	vaultHandler := fileapi.NewVaultHandler(db, cfg.VaultDir())
 	transcodeHandler := fileapi.NewTranscodeHandler(db, store)
@@ -302,6 +302,7 @@ func main() {
 			r.Post("/files/upload/complete", uploadHandler.CompleteUpload) // frontend sends POST with JSON body
 			r.Delete("/files/upload/{uploadId}", uploadHandler.CancelUpload)
 			r.Patch("/files/{id}", fileHandler.UpdateFile)
+			r.Post("/files/{id}/to-vault", fileHandler.CopyFileToVault)
 			r.Put("/files/{id}/content", fileHandler.UpdateFileContent)
 			r.Delete("/files/{id}", fileHandler.DeleteFile)
 			r.Put("/files/{id}/rename", fileHandler.RenameFile)

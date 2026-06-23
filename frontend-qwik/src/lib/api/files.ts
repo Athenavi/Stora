@@ -196,6 +196,14 @@ export const listUserTags = (): Promise<{ id: number; name: string; color: strin
 export const createTag = (name: string, color?: string): Promise<{ id: number }> =>
   api.post('/files/tags', { name, color });
 
+// ─── Vault ───
+
+export const copyFileToVault = (fileId: number, vaultId: number, action: 'copy' | 'move'): Promise<{ vault_item_id: number; action: string }> =>
+  api.post(`/files/${fileId}/to-vault`, { vault_id: vaultId, action });
+
+export const listVaults = (): Promise<{ id: number; name: string }[]> =>
+  api.get('/vaults');
+
 // ─── Download ───
 
 /** 批量下载：将选中文件打包为 ZIP */

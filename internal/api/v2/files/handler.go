@@ -2,11 +2,13 @@ package files
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,6 +21,7 @@ import (
 	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 const (
@@ -38,7 +41,8 @@ type Handler struct {
 	pathCacheMu sync.RWMutex
 	redisCache  *cache.PathCache // optional L2 cache (nil = disabled)
 
-	limiter *middleware.SpeedLimiter // upload/download speed control (nil = no limit)
+	limiter  *middleware.SpeedLimiter // upload/download speed control (nil = no limit)
+	vaultDir string
 }
 
 type pathCacheEntry struct {
@@ -46,7 +50,7 @@ type pathCacheEntry struct {
 	expiresAt time.Time
 }
 
-func NewHandler(db *sql.DB, store storage.Driver, tempDir string, redisCache *cache.PathCache, limiter *middleware.SpeedLimiter) *Handler {
+func NewHandler(db *sql.DB, store storage.Driver, tempDir string, vaultDir string, redisCache *cache.PathCache, limiter *middleware.SpeedLimiter) *Handler {
 	h := &Handler{
 		db:        db,
 		storage:   store,
@@ -54,6 +58,7 @@ func NewHandler(db *sql.DB, store storage.Driver, tempDir string, redisCache *ca
 		pathCache: make(map[string]pathCacheEntry),
 		redisCache: redisCache,
 		limiter:   limiter,
+		vaultDir:  vaultDir,
 	}
 	// Periodic cache cleanup: removes expired entries and evicts oldest if over maxCacheSize
 	go func() {
@@ -414,6 +419,99 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		h.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, deletedSize, userID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+// CopyFileToVault copies or moves a file from the file area to a vault (private space).
+// POST /files/{id}/to-vault  { vault_id, action: "copy"|"move" }
+func (h *Handler) CopyFileToVault(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	var req struct {
+		VaultID int64  `json:"vault_id"`
+		Action  string `json:"action"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.VaultID == 0 {
+		writeError(w, http.StatusBadRequest, "vault_id required")
+		return
+	}
+	if req.Action != "copy" && req.Action != "move" {
+		writeError(w, http.StatusBadRequest, "action must be 'copy' or 'move'")
+		return
+	}
+
+	var filename, filePath, mimeType string
+	var fileSize int64
+	err := h.db.QueryRow(
+		`SELECT filename, file_path, file_size, COALESCE(mime_type, '') FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
+		fileID, userID,
+	).Scan(&filename, &filePath, &fileSize, &mimeType)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+
+	var vaultOwnerID int64
+	err = h.db.QueryRow(`SELECT user_id FROM vaults WHERE id = $1`, req.VaultID).Scan(&vaultOwnerID)
+	if err != nil || vaultOwnerID != userID {
+		writeError(w, http.StatusNotFound, "vault not found")
+		return
+	}
+
+	reader, err := h.storage.Retrieve(filePath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read file")
+		return
+	}
+	defer reader.Close()
+	content, err := io.ReadAll(reader)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read file content")
+		return
+	}
+
+	encrypted, err := encrypt(base64.StdEncoding.EncodeToString(content))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "encryption failed")
+		return
+	}
+
+	vaultStorageDir := filepath.Join(h.vaultDir, fmt.Sprintf("%d", req.VaultID))
+	if err := os.MkdirAll(vaultStorageDir, 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create vault dir")
+		return
+	}
+	itemUUID := uuid.New().String()
+	vaultFilePath := filepath.Join(vaultStorageDir, itemUUID+".enc")
+	if err := os.WriteFile(vaultFilePath, []byte(encrypted), 0600); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write vault file")
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	var vaultItemID int64
+	err = h.db.QueryRow(
+		`INSERT INTO vault_items (vault_id, user_id, name, filename, file_size, mime_type, file_path, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8) RETURNING id`,
+		req.VaultID, userID, filename, filename, fileSize, mimeType, vaultFilePath, now,
+	).Scan(&vaultItemID)
+	if err != nil {
+		os.Remove(vaultFilePath)
+		writeError(w, http.StatusInternalServerError, "failed to save vault item")
+		return
+	}
+
+	if req.Action == "move" {
+		h.db.Exec(`UPDATE file_items SET deleted_at = $1 WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL`, now, fileID, userID)
+		if fileSize > 0 {
+			h.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, fileSize, userID)
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"vault_item_id": vaultItemID,
+		"action":        req.Action,
+	})
 }
 
 // RenameFile renames a file.
