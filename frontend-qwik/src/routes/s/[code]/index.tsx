@@ -29,7 +29,7 @@ export const useShareData = routeLoader$(async ({ params, request }) => {
   const code = params["code"];
   if (!code) return null;
   const srv = createServerApi(request);
-  return await srv.get<ShareAccess>(`/files/shares/access/${code}?page=1&per_page=49`).catch(() => null);
+  return await srv.get<ShareAccess>(`/files/shares/access/${code}?page=1&per_page=50`).catch(() => null);
 });
 
 function fmtSize(bytes: number | undefined): string {
@@ -72,8 +72,8 @@ export default component$(() => {
     folders: FolderEntry[]; items: any[]; total: number; page: number; perPage: number; loading: boolean; loadedRootItems?: any[]; rootTotal?: number; rootPage?: number;
   }>>(new Map());
 
-  const PER_PAGE = 49;
-  const FOLDER_PAGE = 15;
+  const PER_PAGE = 50;
+  const FOLDER_PAGE = 50;
 
   const loadFolder = $(async (folderId: number, pg: number, pPg: number) => {
     const key = folderId;
@@ -121,17 +121,31 @@ export default component$(() => {
     }
   });
 
-  // Auto-expand first 3 folders on load
+  // Auto-expand first 3 folders on load (using preloaded data from API)
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(({ track }) => {
     track(() => shareData.value);
     const s = shareData.value;
     if (!s || s.need_password || !s.folders) return;
+    const preloaded: any[] = (s as any).preloaded_folders || [];
     const folders = s.folders || [];
     for (let i = 0; i < Math.min(3, folders.length); i++) {
       const fid = folders[i].id;
       expandedFolders.value = new Set(expandedFolders.value).add(fid);
-      loadFolder(fid, 1, FOLDER_PAGE);
+      // Use preloaded data if available
+      const pl = preloaded.find((p: any) => p.id === fid);
+      if (pl) {
+        folderContents.value = new Map(folderContents.value).set(fid, {
+          folders: pl.folders || [],
+          items: pl.items || [],
+          total: pl.file_count || 0,
+          page: 1,
+          perPage: FOLDER_PAGE,
+          loading: false,
+        });
+      } else {
+        loadFolder(fid, 1, FOLDER_PAGE);
+      }
     }
   });
 

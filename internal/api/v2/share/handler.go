@@ -357,8 +357,8 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 		if page < 1 {
 			page = 1
 		}
-		if perPage < 1 || perPage > 49 {
-			perPage = 49
+		if perPage < 1 || perPage > 50 {
+			perPage = 50
 		}
 		offset := (page - 1) * perPage
 
@@ -414,6 +414,67 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
+		// Pre-load first 3 folders (their files + sub-folders) for instant expand
+		type PreloadedFolder struct {
+			ID               int64           `json:"id"`
+			Name             string          `json:"name"`
+			FileCount        int             `json:"file_count"`
+			ChildFolderCount int             `json:"child_folder_count"`
+			Items            []FileItemJSON  `json:"items"`
+			Folders           []FolderJSON   `json:"folders"`
+		}
+		preloaded := make([]PreloadedFolder, 0, 3)
+		for i, fj := range folders {
+			if i >= 3 {
+				break
+			}
+			pf := PreloadedFolder{
+				ID:               fj.ID,
+				Name:             fj.Name,
+				FileCount:        fj.FileCount,
+				ChildFolderCount: fj.ChildFolderCount,
+			}
+			// Fetch this folder's files (up to 50)
+			innerLimit := 50
+			if fj.FileCount < innerLimit {
+				innerLimit = fj.FileCount
+			}
+			irows, ierr := h.db.Query(
+				`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other')
+				 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false
+				 ORDER BY filename LIMIT $2`,
+				fj.ID, innerLimit,
+			)
+			if ierr == nil {
+				for irows.Next() {
+					var fi FileItemJSON
+					irows.Scan(&fi.ID, &fi.Filename, &fi.FileSize, &fi.FileType)
+					pf.Items = append(pf.Items, fi)
+				}
+				irows.Close()
+			}
+			// Fetch this folder's sub-folders
+			if fj.ChildFolderCount > 0 {
+				drows2, derr := h.db.Query(
+					`SELECT f.id, f.filename,
+					        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = false),
+					        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = true)
+					 FROM file_items f WHERE f.folder_id = $1 AND f.is_folder = true AND f.deleted_at IS NULL
+					 ORDER BY f.filename LIMIT 50`,
+					fj.ID,
+				)
+				if derr == nil {
+					for drows2.Next() {
+						var fj2 FolderJSON
+						drows2.Scan(&fj2.ID, &fj2.Name, &fj2.FileCount, &fj2.ChildFolderCount)
+						pf.Folders = append(pf.Folders, fj2)
+					}
+					drows2.Close()
+				}
+			}
+			preloaded = append(preloaded, pf)
+		}
+
 		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"share_info": map[string]interface{}{
 				"id":                 linkID,
@@ -429,10 +490,11 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 				"filename":  folderName,
 				"is_folder": true,
 			},
-			"folders": folders,
-			"items":   files,
-			"total":   total,
-			"page":    page,
+			"folders":          folders,
+			"items":            files,
+			"preloaded_folders": preloaded,
+			"total":            total,
+			"page":             page,
 			"per_page": perPage,
 		})
 		return
@@ -1187,7 +1249,7 @@ func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
 		page = 1
 	}
 	if perPage < 1 || perPage > 100 {
-		perPage = 15
+		perPage = 50
 	}
 	offset := (page - 1) * perPage
 
