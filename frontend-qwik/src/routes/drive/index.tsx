@@ -682,6 +682,7 @@ export default component$(() => {
           <div class="fixed inset-0 z-50 bg-black/40" onClick$={() => { showShareDialog.value = false; shareResult.value = []; }} />
           <div class="fixed z-50 bottom-0 sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 w-full sm:w-96 bg-white flex flex-col p-5 max-h-[85vh] overflow-auto">
             <h3 class="text-sm font-semibold text-stora-foreground mb-3">批量分享 ({selIds.value.length} 项)</h3>
+            {selIds.value.length > 49 && <p class="text-xs text-amber-600 mb-2">⚠ 一次最多分享 49 项，当前已选 {selIds.value.length} 项</p>}
             {shareResult.value.length === 0 ? (
               <>
                 {/* Permission */}
@@ -757,7 +758,7 @@ export default component$(() => {
                     shareResult.value = [{ code: link.short_code, url: `${window.location.origin}/s/${link.short_code}` }];
                   } catch { alert("创建分享链接失败"); }
                   shareCreating.value = false;
-                }} disabled={shareCreating.value} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors text-center disabled:opacity-50">
+                }} disabled={shareCreating.value || selIds.value.length > 49} title={selIds.value.length > 49 ? "一次最多分享 49 项" : ""} class="w-full touch-target px-4 py-3 bg-indigo-600 text-white text-sm font-medium rounded-xl hover:bg-indigo-700 transition-colors text-center disabled:opacity-50">
                   {shareCreating.value ? "创建中..." : "创建分享链接"}
                 </button>
                 <button onClick$={() => { showShareDialog.value = false; shareResult.value = []; }}

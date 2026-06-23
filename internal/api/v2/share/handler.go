@@ -140,6 +140,11 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 
 		// Batch share with mixed files + folders
 		if fileID == 0 && folderID == 0 && (len(req.FileIDs) > 0 || len(req.FolderIDs) > 0) {
+			// Enforce max 49 items at first level
+			if len(req.FileIDs)+len(req.FolderIDs) > 49 {
+				writeError(w, http.StatusBadRequest, "batch share limit: 49 items")
+				return
+			}
 			// Merge file_ids and resolved folder contents into one set
 			seen := make(map[int64]bool)
 			var allIDs []int64
