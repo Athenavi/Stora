@@ -342,39 +342,70 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(`SELECT COUNT(*) FROM share_link_items WHERE share_link_id = $1`, linkID).Scan(&batchCount)
 
 	if isFolder {
-		// Return folder info + recursive file listing (all descendants)
+		// Return folder info with paginated file listing + sub-folder list
 		var folderName string
 		h.db.QueryRow(`SELECT filename FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&folderName)
 
-		// Recursive CTE: get ALL descendant file_items (files and folders) with folder_id
-		type RecursiveItem struct {
+		// Parse pagination
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if page < 1 {
+			page = 1
+		}
+		if perPage < 1 || perPage > 49 {
+			perPage = 49
+		}
+		offset := (page - 1) * perPage
+
+		// Get total count of direct files (for pagination)
+		var total int
+		h.db.QueryRow(`SELECT COUNT(*) FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false`, folderID).Scan(&total)
+
+		// Fetch direct files (paginated)
+		type FileItemJSON struct {
 			ID       int64  `json:"id"`
 			Filename string `json:"filename"`
 			FileSize int64  `json:"file_size"`
 			FileType string `json:"file_type"`
-			IsFolder bool   `json:"is_folder"`
-			FolderID *int64 `json:"folder_id"`
 		}
-		items := make([]RecursiveItem, 0)
+		files := make([]FileItemJSON, 0)
+		frows, err := h.db.Query(
+			`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other')
+			 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false
+			 ORDER BY filename LIMIT $2 OFFSET $3`,
+			folderID, perPage, offset,
+		)
+		if err == nil {
+			defer frows.Close()
+			for frows.Next() {
+				var fi FileItemJSON
+				frows.Scan(&fi.ID, &fi.Filename, &fi.FileSize, &fi.FileType)
+				files = append(files, fi)
+			}
+		}
 
-		rrows, err := h.db.Query(
-			`WITH RECURSIVE tree AS (
-				SELECT id, folder_id, filename, file_size, file_type, is_folder, 1 AS lvl
-				FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL
-				UNION ALL
-				SELECT fi.id, fi.folder_id, fi.filename, fi.file_size, fi.file_type, fi.is_folder, t.lvl + 1
-				FROM file_items fi JOIN tree t ON fi.folder_id = t.id AND fi.deleted_at IS NULL
-			 )
-			 SELECT id, folder_id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other'), is_folder
-			 FROM tree ORDER BY lvl, is_folder DESC, filename`,
+		// Fetch direct sub-folders with file count
+		type FolderJSON struct {
+			ID               int64  `json:"id"`
+			Name             string `json:"name"`
+			FileCount        int    `json:"file_count"`
+			ChildFolderCount int    `json:"child_folder_count"`
+		}
+		folders := make([]FolderJSON, 0)
+		drows, err := h.db.Query(
+			`SELECT f.id, f.filename,
+			        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = false),
+			        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = true)
+			 FROM file_items f WHERE f.folder_id = $1 AND f.is_folder = true AND f.deleted_at IS NULL
+			 ORDER BY f.filename`,
 			folderID,
 		)
 		if err == nil {
-			defer rrows.Close()
-			for rrows.Next() {
-				var ri RecursiveItem
-				rrows.Scan(&ri.ID, &ri.FolderID, &ri.Filename, &ri.FileSize, &ri.FileType, &ri.IsFolder)
-				items = append(items, ri)
+			defer drows.Close()
+			for drows.Next() {
+				var fj FolderJSON
+				drows.Scan(&fj.ID, &fj.Name, &fj.FileCount, &fj.ChildFolderCount)
+				folders = append(folders, fj)
 			}
 		}
 
@@ -386,20 +417,35 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 				"password_protected": hashedPw != nil && *hashedPw != "",
 				"is_folder":          true,
 				"is_batch":           false,
-				"file_count":         len(items),
+				"file_count":         total,
 			},
 			"item": map[string]interface{}{
 				"id":        folderID,
 				"filename":  folderName,
 				"is_folder": true,
 			},
-			"items": items,
+			"folders": folders,
+			"items":   files,
+			"total":   total,
+			"page":    page,
+			"per_page": perPage,
 		})
 		return
 	}
 
 	// Batch share: multiple files via share_link_items
 	if batchCount > 0 {
+		// Pagination
+		batchPage, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		batchPerPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+		if batchPage < 1 {
+			batchPage = 1
+		}
+		if batchPerPage < 1 || batchPerPage > 49 {
+			batchPerPage = 49
+		}
+		batchOffset := (batchPage - 1) * batchPerPage
+
 		type BatchFileItem struct {
 			ID       int64  `json:"id"`
 			Filename string `json:"filename"`
@@ -409,15 +455,15 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 			FolderID *int64 `json:"folder_id"`
 			FolderName string `json:"folder_name,omitempty"`
 		}
-		items := make([]BatchFileItem, 0, batchCount)
+		items := make([]BatchFileItem, 0)
 		brows, err := h.db.Query(
 			`SELECT fi.id, COALESCE(fi.filename,''), COALESCE(fi.file_size,0), COALESCE(fi.file_type,'other'),
 			        fi.is_folder, fi.folder_id, COALESCE(p.filename, '')
 			 FROM share_link_items sli
 			 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL
 			 LEFT JOIN file_items p ON fi.folder_id = p.id AND p.is_folder = true
-			 WHERE sli.share_link_id = $1 ORDER BY fi.filename`,
-			linkID,
+			 WHERE sli.share_link_id = $1 ORDER BY fi.filename LIMIT $2 OFFSET $3`,
+			linkID, batchPerPage, batchOffset,
 		)
 		if err == nil {
 			defer brows.Close()
@@ -438,7 +484,11 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 				"is_batch":           true,
 				"file_count":         batchCount,
 			},
-			"items": items,
+			"folders":   []interface{}{},
+			"items":     items,
+			"total":     batchCount,
+			"page":      batchPage,
+			"per_page":  batchPerPage,
 		})
 		return
 	}
@@ -1117,8 +1167,7 @@ func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Allow drill-down only if the requested folder is the root shared folder or a descendant
-	// For simplicity, verify the requested folder exists and belongs to the same user as the share
+	// Verify folder exists
 	var ownerID int64
 	err = h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&ownerID)
 	if err != nil {
@@ -1126,23 +1175,50 @@ func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch child folders
+	// Pagination
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 15
+	}
+	offset := (page - 1) * perPage
+
+	// Get total file count in this folder
+	var total int
+	h.db.QueryRow(
+		`SELECT COUNT(*) FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false`,
+		folderID,
+	).Scan(&total)
+
+	// Fetch child folders (no pagination — folders are usually few)
 	type subFolderJSON struct {
-		ID   int64  `json:"id"`
-		Name string `json:"name"`
+		ID               int64  `json:"id"`
+		Name             string `json:"name"`
+		FileCount        int    `json:"file_count"`
+		ChildFolderCount int    `json:"child_folder_count"`
 	}
 	subFolders := make([]subFolderJSON, 0)
-	drows, err := h.db.Query(`SELECT id, filename FROM file_items WHERE folder_id = $1 AND is_folder = true AND deleted_at IS NULL ORDER BY filename`, folderID)
+	drows, err := h.db.Query(
+		`SELECT f.id, f.filename,
+		        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = false),
+		        (SELECT COUNT(*) FROM file_items WHERE folder_id = f.id AND deleted_at IS NULL AND is_folder = true)
+		 FROM file_items f WHERE f.folder_id = $1 AND f.is_folder = true AND f.deleted_at IS NULL
+		 ORDER BY f.filename`,
+		folderID,
+	)
 	if err == nil {
 		defer drows.Close()
 		for drows.Next() {
 			var sf subFolderJSON
-			drows.Scan(&sf.ID, &sf.Name)
+			drows.Scan(&sf.ID, &sf.Name, &sf.FileCount, &sf.ChildFolderCount)
 			subFolders = append(subFolders, sf)
 		}
 	}
 
-	// Fetch child files
+	// Fetch child files (paginated)
 	type fileItemJSON struct {
 		ID       int64  `json:"id"`
 		Filename string `json:"filename"`
@@ -1152,8 +1228,9 @@ func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
 	files := make([]fileItemJSON, 0)
 	frows, err := h.db.Query(
 		`SELECT id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other')
-		 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false ORDER BY filename`,
-		folderID,
+		 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false
+		 ORDER BY filename LIMIT $2 OFFSET $3`,
+		folderID, perPage, offset,
 	)
 	if err == nil {
 		defer frows.Close()
@@ -1168,6 +1245,9 @@ func (h *Handler) ShareFolderChildren(w http.ResponseWriter, r *http.Request) {
 		"folder_id": folderID,
 		"folders":   subFolders,
 		"items":     files,
+		"total":     total,
+		"page":      page,
+		"per_page":  perPage,
 	})
 }
 
