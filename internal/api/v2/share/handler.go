@@ -462,44 +462,116 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 
 	// Batch share: multiple files via share_link_items
 	if batchCount > 0 {
-		// Pagination
+		// Pagination for top-level items (folder_id = null)
 		batchPage, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		batchPerPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
 		if batchPage < 1 {
 			batchPage = 1
 		}
-		if batchPerPage < 1 || batchPerPage > 49 {
-			batchPerPage = 49
+		if batchPerPage < 1 || batchPerPage > 50 {
+			batchPerPage = 50
 		}
 		batchOffset := (batchPage - 1) * batchPerPage
 
-		type BatchFileItem struct {
-			ID       int64  `json:"id"`
-			Filename string `json:"filename"`
-			FileSize int64  `json:"file_size"`
-			FileType string `json:"file_type"`
-			IsFolder bool   `json:"is_folder"`
-			FolderID *int64 `json:"folder_id"`
-			FolderName string `json:"folder_name,omitempty"`
+		type BatchItem struct {
+			ID               int64  `json:"id"`
+			Filename         string `json:"filename"`
+			FileSize         int64  `json:"file_size"`
+			FileType         string `json:"file_type"`
+			IsFolder         bool   `json:"is_folder"`
+			FolderID         *int64 `json:"folder_id"`
+			FolderName       string `json:"folder_name,omitempty"`
+			FileCount        int    `json:"file_count,omitempty"`
+			ChildFolderCount int    `json:"child_folder_count,omitempty"`
 		}
-		items := make([]BatchFileItem, 0)
-		brows, err := h.db.Query(
-			`SELECT fi.id, COALESCE(fi.filename,''), COALESCE(fi.file_size,0), COALESCE(fi.file_type,'other'),
-			        fi.is_folder, fi.folder_id, COALESCE(p.filename, '')
+
+		// 1. Get unique parent folders from shared files, with counts
+		folderItems := make([]BatchItem, 0)
+		frows, ferr := h.db.Query(
+			`SELECT p.id, p.filename,
+			        (SELECT COUNT(*) FROM file_items WHERE folder_id = p.id AND deleted_at IS NULL AND is_folder = false),
+			        (SELECT COUNT(*) FROM file_items WHERE folder_id = p.id AND deleted_at IS NULL AND is_folder = true)
 			 FROM share_link_items sli
-			 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL
-			 LEFT JOIN file_items p ON fi.folder_id = p.id AND p.is_folder = true
+			 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL AND fi.is_folder = false
+			 JOIN file_items p ON fi.folder_id = p.id AND p.is_folder = true AND p.deleted_at IS NULL
+			 WHERE sli.share_link_id = $1
+			 GROUP BY p.id, p.filename ORDER BY p.filename`,
+			linkID,
+		)
+		if ferr == nil {
+			defer frows.Close()
+			for frows.Next() {
+				var bi BatchItem
+				bi.IsFolder = true
+				bi.FolderID = nil
+				frows.Scan(&bi.ID, &bi.Filename, &bi.FileCount, &bi.ChildFolderCount)
+				folderItems = append(folderItems, bi)
+			}
+		}
+
+		// 2. Get top-level files (folder_id = null) — paginated
+		topFiles := make([]BatchItem, 0)
+		trows, terr := h.db.Query(
+			`SELECT fi.id, COALESCE(fi.filename,''), COALESCE(fi.file_size,0), COALESCE(fi.file_type,'other')
+			 FROM share_link_items sli
+			 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL AND fi.folder_id IS NULL
 			 WHERE sli.share_link_id = $1 ORDER BY fi.filename LIMIT $2 OFFSET $3`,
 			linkID, batchPerPage, batchOffset,
 		)
-		if err == nil {
-			defer brows.Close()
-			for brows.Next() {
-				var bi BatchFileItem
-				brows.Scan(&bi.ID, &bi.Filename, &bi.FileSize, &bi.FileType, &bi.IsFolder, &bi.FolderID, &bi.FolderName)
-				items = append(items, bi)
+		if terr == nil {
+			defer trows.Close()
+			for trows.Next() {
+				var bi BatchItem
+				bi.IsFolder = false
+				trows.Scan(&bi.ID, &bi.Filename, &bi.FileSize, &bi.FileType)
+				topFiles = append(topFiles, bi)
 			}
 		}
+
+		// Count top-level files for pagination
+		var topTotal int
+		h.db.QueryRow(
+			`SELECT COUNT(*) FROM share_link_items sli
+			 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL AND fi.folder_id IS NULL
+			 WHERE sli.share_link_id = $1`, linkID,
+		).Scan(&topTotal)
+
+		// 3. Preload first 3 folders' items
+		type PreloadedFolder struct {
+			ID    int64       `json:"id"`
+			Name  string      `json:"name"`
+			Items []BatchItem `json:"items"`
+		}
+		preloaded := make([]PreloadedFolder, 0, 3)
+		for i, fi := range folderItems {
+			if i >= 3 {
+				break
+			}
+			pf := PreloadedFolder{ID: fi.ID, Name: fi.Filename}
+			prows, perr := h.db.Query(
+				`SELECT fi.id, COALESCE(fi.filename,''), COALESCE(fi.file_size,0), COALESCE(fi.file_type,'other')
+				 FROM share_link_items sli
+				 JOIN file_items fi ON sli.file_id = fi.id AND fi.deleted_at IS NULL
+				 WHERE sli.share_link_id = $1 AND fi.folder_id = $2 ORDER BY fi.filename LIMIT 50`,
+				linkID, fi.ID,
+			)
+			if perr == nil {
+				for prows.Next() {
+					var bi BatchItem
+					prows.Scan(&bi.ID, &bi.Filename, &bi.FileSize, &bi.FileType)
+					bi.IsFolder = false
+					bi.FolderID = &fi.ID
+					pf.Items = append(pf.Items, bi)
+				}
+				prows.Close()
+			}
+			preloaded = append(preloaded, pf)
+		}
+
+		// Merge: folders + top-level files
+		allItems := make([]BatchItem, 0, len(folderItems)+len(topFiles))
+		allItems = append(allItems, folderItems...)
+		allItems = append(allItems, topFiles...)
 
 		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 			"share_info": map[string]interface{}{
@@ -511,11 +583,12 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 				"is_batch":           true,
 				"file_count":         batchCount,
 			},
-			"folders":   []interface{}{},
-			"items":     items,
-			"total":     batchCount,
-			"page":      batchPage,
-			"per_page":  batchPerPage,
+			"items":             allItems,
+			"preloaded_folders":  preloaded,
+			"total":             batchCount,
+			"top_total":         topTotal,
+			"page":              batchPage,
+			"per_page":          batchPerPage,
 		})
 		return
 	}

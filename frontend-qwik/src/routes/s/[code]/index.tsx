@@ -132,19 +132,20 @@ export default component$(() => {
   useVisibleTask$(({ track }) => {
     track(() => shareData.value);
     const s = shareData.value;
-    if (!s || s.need_password || !s.folders) return;
+    if (!s || s.need_password) return;
     const preloaded: any[] = (s as any).preloaded_folders || [];
-    const folders = s.folders || [];
-    for (let i = 0; i < Math.min(3, folders.length); i++) {
-      const fid = folders[i].id;
+    // Find folder items from unified items array
+    const folderItems = (s.items || []).filter((x: any) => x.is_folder);
+    for (let i = 0; i < Math.min(3, folderItems.length); i++) {
+      const fid = folderItems[i].id;
+      const fname = folderItems[i].filename;
       expandedFolders.value = new Set(expandedFolders.value).add(fid);
-      // Use preloaded data if available, show first 3 initially
       const pl = preloaded.find((p: any) => p.id === fid);
       if (pl) {
         folderContents.value = new Map(folderContents.value).set(fid, {
-          folders: pl.folders || [],
+          folders: [],
           items: pl.items || [],
-          total: pl.file_count || 0,
+          total: pl.items?.length || 0,
           page: 1,
           perPage: FOLDER_PAGE,
           loading: false,
@@ -278,21 +279,8 @@ export default component$(() => {
   const allFlatItems: any[] = ((isFolder || isBatch) && s.items) || [];
   const rootTotal = s.total || (allFlatItems.length || rootFiles.length);
 
-  // Build tree from unified flat items — first synthesize folder nodes for batch shares
-  if (isBatch && allFlatItems.length > 0) {
-    const seenFolderIds = new Map<number, string>();
-    const existingIds = new Set(allFlatItems.map((x: any) => x.id));
-    for (const item of allFlatItems) {
-      if (item.folder_id != null && item.folder_name) {
-        seenFolderIds.set(item.folder_id, item.folder_name);
-      }
-    }
-    for (const [fid, fname] of seenFolderIds) {
-      if (!existingIds.has(fid)) {
-        allFlatItems.push({ id: fid, filename: fname, file_size: 0, file_type: 'folder', is_folder: true, folder_id: null, file_count: 0 });
-      }
-    }
-  }
+  // Build tree from unified flat items
+  // (Backend already returns folder entries inline with is_folder=true for batch shares)
   const treeChildrenOf = new Map<string | number, any[]>();
   for (const item of allFlatItems) {
     const pid = item.folder_id ?? "__root__";
