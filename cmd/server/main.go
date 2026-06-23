@@ -323,6 +323,7 @@ func main() {
 			r.Post("/files/folders/by-path", fileHandler.CreateFolderByPath)
 			r.Get("/files/folders/{id}/children", fileHandler.GetFolderChildren)
 			r.Post("/files/folders", fileHandler.CreateFolder)
+			r.Patch("/files/folders/{id}", fileHandler.UpdateFolder)
 			r.Delete("/files/folders/{id}", fileHandler.DeleteFolder)
 
 			// Tags

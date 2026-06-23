@@ -798,6 +798,34 @@ func (h *Handler) DeleteFolder(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
+// UpdateFolder renames a folder
+func (h *Handler) UpdateFolder(w http.ResponseWriter, r *http.Request) {
+	folderID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
+		writeError(w, http.StatusBadRequest, "name required")
+		return
+	}
+
+	result, err := h.db.Exec(
+		`UPDATE folders SET name = $1 WHERE id = $2 AND user_id = $3`,
+		req.Name, folderID, userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		writeError(w, http.StatusNotFound, "folder not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
+}
+
 // GetFolderChildren returns folders and files inside a specific folder, plus breadcrumb path.
 func (h *Handler) GetFolderChildren(w http.ResponseWriter, r *http.Request) {
 	folderID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
