@@ -51,12 +51,12 @@ export default component$(() => {
     try { const data = await api.get<VaultItem[]>(`/vaults/${id}/items`, { headers: { "X-Vault-Token": token } }); items.value = data || []; } catch { items.value = []; }
   };
 
-  const doUnlock = async () => {
+  const doUnlock = $(async () => {
     unlockErr.value = ""; const fd = new FormData(); fd.append("password", unlockPw.value);
     try { const res: any = await api.post(`/vaults/${unlockId.value}/verify-password`, fd); vaultToken.value = res.token; await loadItems(unlockId.value, res.token); } catch (e: any) { unlockErr.value = e.message || "密码错误"; }
   };
 
-  const doLock = () => { vaultToken.value = null; items.value = []; unlockPw.value = ""; };
+  const doLock = $(() => { vaultToken.value = null; items.value = []; unlockPw.value = ""; });
 
   const doCreate = $(async () => {
     if (!newName.value || !newPw.value) { createErr.value = "请填写名称和密码"; return; }
@@ -71,7 +71,7 @@ export default component$(() => {
     try { await api.delete(`/vaults/${id}`); vaultList.value = vaultList.value.filter(v => v.id !== id); } catch {}
   });
 
-  const doUpload = async () => {
+  const doUpload = $(async () => {
     const input = document.createElement("input"); input.type = "file"; input.multiple = true;
     input.onchange = async () => {
       if (!input.files?.length) return;
@@ -88,9 +88,9 @@ export default component$(() => {
     input.click();
   };
 
-  const doDownload = async (itemId: number) => { window.open(`/api/v2/vaults/${unlockId.value}/items/${itemId}`, "_blank"); };
+  const doDownload = $(async (itemId: number) => { window.open(`/api/v2/vaults/${unlockId.value}/items/${itemId}`, "_blank"); });
 
-  const doDeleteItem = async (itemId: number) => {
+  const doDeleteItem = $(async (itemId: number) => {
     if (!confirm("确认删除？")) return;
     try { await fetch(`/api/v2/vaults/${unlockId.value}/items/${itemId}`, { method: "DELETE", headers: { "X-Vault-Token": vaultToken.value! } }); items.value = items.value.filter(i => i.id !== itemId); } catch {}
   };
