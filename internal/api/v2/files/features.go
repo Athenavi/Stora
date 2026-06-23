@@ -81,10 +81,11 @@ func (h *VaultHandler) requireVaultToken(w http.ResponseWriter, r *http.Request,
 func (h *VaultHandler) ListVaults(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 	rows, err := h.db.Query(
-		`SELECT v.id, v.name, v.description, v.created_at,
+		`SELECT v.id, v.name, v.description,
 		        COALESCE((SELECT COUNT(*) FROM vault_items WHERE vault_id = v.id), 0) AS file_count,
 		        COALESCE((SELECT COALESCE(SUM(file_size), 0) FROM vault_items WHERE vault_id = v.id), 0) AS total_size,
-		        CASE WHEN v.password_hash IS NOT NULL AND v.password_hash != '' THEN true ELSE false END AS has_password
+		        CASE WHEN v.password_hash IS NOT NULL AND v.password_hash != '' THEN true ELSE false END AS has_password,
+		        v.created_at
 		 FROM vaults v WHERE v.user_id = $1 ORDER BY v.name`,
 		userID,
 	)
