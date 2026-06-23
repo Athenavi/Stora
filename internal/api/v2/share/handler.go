@@ -182,14 +182,14 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hash password if provided
-	var hashedPw sql.NullString
+	passwordVal := ""
 	if password != nil && *password != "" {
 		v, err := hashPassword(*password)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "password hash failed")
 			return
 		}
-		hashedPw = sql.NullString{String: v, Valid: true}
+		passwordVal = v
 	}
 
 	EnsureCompat(h.db)
@@ -200,7 +200,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 	err := h.db.QueryRow(
 		`INSERT INTO share_links (file_id, folder_id, user_id, short_code, permission, password, expires_at, max_downloads, is_active, created_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, $9) RETURNING id`,
-		nullIfZero(fileID), nullIfZero(folderID), userID, shortCode, permission, hashedPw, expiresAt, maxDownloads, nowStr,
+		nullIfZero(fileID), nullIfZero(folderID), userID, shortCode, permission, passwordVal, expiresAt, maxDownloads, nowStr,
 	).Scan(&linkID)
 
 	if err != nil {
@@ -220,7 +220,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		"id":                 linkID,
 		"short_code":         shortCode,
 		"permission":         permission,
-		"password_protected": hashedPw.Valid,
+		"password_protected": passwordVal != "",
 		"is_folder":          isFolder,
 		"filename":           itemName,
 		"url":                "/s/" + shortCode,
