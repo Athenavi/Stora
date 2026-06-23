@@ -265,6 +265,7 @@ func main() {
 			r.Get("/files/{id}", fileHandler.GetFile)
 			r.Post("/files/upload", fileHandler.UploadFile)
 			r.Post("/files/upload/init", uploadHandler.InitUpload)
+			r.Get("/files/upload/check", uploadHandler.CheckUpload)
 			r.Put("/files/upload/{uploadId}/chunk/{index}", uploadHandler.UploadChunk)
 			r.Post("/files/upload/chunk", uploadHandler.UploadChunk) // frontend sends POST with FormData
 			r.Get("/files/upload/{uploadId}/status", uploadHandler.UploadStatus)

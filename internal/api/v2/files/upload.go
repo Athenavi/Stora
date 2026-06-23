@@ -35,14 +35,69 @@ func NewUploadHandler(db *sql.DB, store storage.Driver, tempDir string) *UploadH
 func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		r.ParseForm()
+	// Accept JSON body or multipart/form-data
+	var filename, fileSizeStr, chunkSizeStr, totalChunksStr string
+	var folderIDStr string
+	var mimeType string
+	var firstChunkHash, lastChunkHash string
+
+	if ct := r.Header.Get("Content-Type"); len(ct) >= 16 && ct[:16] == "application/json" {
+		var body struct {
+			Filename       string `json:"filename"`
+			FileSize       int64  `json:"file_size"`
+			TotalSize      int64  `json:"total_size"`
+			ChunkSize      int    `json:"chunk_size"`
+			TotalChunks    int    `json:"total_chunks"`
+			MimeType       string `json:"mime_type"`
+			FolderID       *int64 `json:"folder_id"`
+			FirstChunkHash string `json:"first_chunk_hash"`
+			LastChunkHash  string `json:"last_chunk_hash"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			utils.WriteError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		filename = body.Filename
+		if body.FileSize > 0 {
+			fileSizeStr = strconv.FormatInt(body.FileSize, 10)
+		} else if body.TotalSize > 0 {
+			fileSizeStr = strconv.FormatInt(body.TotalSize, 10)
+		}
+		if body.ChunkSize > 0 {
+			chunkSizeStr = strconv.Itoa(body.ChunkSize)
+		}
+		totalChunksStr = strconv.Itoa(body.TotalChunks)
+		mimeType = body.MimeType
+		firstChunkHash = body.FirstChunkHash
+		lastChunkHash = body.LastChunkHash
+		if body.FolderID != nil {
+			folderIDStr = strconv.FormatInt(*body.FolderID, 10)
+		}
+	} else {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			r.ParseForm()
+		}
+		filename = r.FormValue("filename")
+		fileSizeStr = r.FormValue("file_size")
+		if fileSizeStr == "" {
+			fileSizeStr = r.FormValue("total_size")
+		}
+		chunkSizeStr = r.FormValue("chunk_size")
+		totalChunksStr = r.FormValue("total_chunks")
+		mimeType = r.FormValue("mime_type")
+		folderIDStr = r.FormValue("folder_id")
+		firstChunkHash = r.FormValue("first_chunk_hash")
+		lastChunkHash = r.FormValue("last_chunk_hash")
 	}
 
-	filename := r.FormValue("filename")
-	fileSizeStr := r.FormValue("file_size")
-	chunkSizeStr := r.FormValue("chunk_size")
-	totalChunksStr := r.FormValue("total_chunks")
+	// Derive chunk_size from total_chunks if not provided
+	if chunkSizeStr == "" && fileSizeStr != "" && totalChunksStr != "" {
+		fs, _ := strconv.ParseInt(fileSizeStr, 10, 64)
+		tc, _ := strconv.Atoi(totalChunksStr)
+		if tc > 0 {
+			chunkSizeStr = strconv.Itoa(int(fs + int64(tc) - 1) / tc) // ceiling division
+		}
+	}
 
 	if filename == "" || fileSizeStr == "" || chunkSizeStr == "" || totalChunksStr == "" {
 		utils.WriteError(w, http.StatusBadRequest, "filename, file_size, chunk_size, total_chunks required")
@@ -52,8 +107,6 @@ func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 	fileSize, _ := strconv.ParseInt(fileSizeStr, 10, 64)
 	chunkSize, _ := strconv.Atoi(chunkSizeStr)
 	totalChunks, _ := strconv.Atoi(totalChunksStr)
-	mimeType := r.FormValue("mime_type")
-	folderIDStr := r.FormValue("folder_id")
 
 	uploadID := uuid.New().String()
 
@@ -72,7 +125,7 @@ func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 		                           first_chunk_hash, last_chunk_hash, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, 0, 'pending', $7, $8, $9, $10, $11, $11)`,
 		uploadID, userID, filename, fileSize, chunkSize, totalChunks,
-		mimeType, folderIDStr, r.FormValue("first_chunk_hash"), r.FormValue("last_chunk_hash"), now,
+		mimeType, folderIDStr, firstChunkHash, lastChunkHash, now,
 	)
 	if err != nil {
 		os.RemoveAll(tmpDir)
@@ -384,6 +437,31 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		"file_id":   fileID,
 		"file_hash": fileHash,
 		"file_size": task.FileSize,
+	})
+}
+
+// CheckUpload checks if a file with the given hash already exists (秒传)
+func (h *UploadHandler) CheckUpload(w http.ResponseWriter, r *http.Request) {
+	fileHash := r.URL.Query().Get("file_hash")
+	if fileHash == "" {
+		utils.WriteError(w, http.StatusBadRequest, "file_hash required")
+		return
+	}
+	var id int64
+	var size int64
+	var mime string
+	err := h.db.QueryRow(
+		`SELECT f.id, f.file_size, f.mime_type FROM file_fingerprints f WHERE f.hash = $1`,
+		fileHash,
+	).Scan(&id, &size, &mime)
+	if err != nil {
+		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{"exists": false})
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"exists":    true,
+		"size":      size,
+		"mime_type": mime,
 	})
 }
 
