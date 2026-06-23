@@ -74,10 +74,10 @@ export default component$(() => {
         <div
           onClick$={() => nav(`/drive?Path=${encodeURIComponent(nodePath)}`)}
           onContextMenu$={(e: any) => {
-            e.preventDefault();
             ctxFolder.value = node;
             ctxPos.value = { x: e.clientX, y: e.clientY };
           }}
+          preventdefault:contextmenu
           preventdefault:drop
           preventdefault:dragover
           onDragOver$={(e: any) => { (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(37,99,235,0.3)'; }}
