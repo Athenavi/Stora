@@ -642,16 +642,21 @@ func (h *BatchHandler) BatchMove(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		FileIDs  []int64 `json:"file_ids"`
 		FolderID *int64  `json:"folder_id"`
+		TargetID *int64  `json:"target_folder_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
 		writeError(w, http.StatusBadRequest, "file_ids required")
 		return
 	}
+	dest := req.FolderID
+	if dest == nil {
+		dest = req.TargetID
+	}
 
 	now := time.Now().Format(time.RFC3339)
 	_, err := h.db.Exec(
 		`UPDATE file_items SET folder_id = $1, updated_at = $2 WHERE id = ANY($3) AND user_id = $4`,
-		req.FolderID, now, pq.Array(req.FileIDs), userID,
+		dest, now, pq.Array(req.FileIDs), userID,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "batch move failed")
