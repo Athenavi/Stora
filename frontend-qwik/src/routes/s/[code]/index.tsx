@@ -278,7 +278,21 @@ export default component$(() => {
   const allFlatItems: any[] = ((isFolder || isBatch) && s.items) || [];
   const rootTotal = s.total || (allFlatItems.length || rootFiles.length);
 
-  // Build tree from unified flat items
+  // Build tree from unified flat items — first synthesize folder nodes for batch shares
+  if (isBatch && allFlatItems.length > 0) {
+    const seenFolderIds = new Map<number, string>();
+    const existingIds = new Set(allFlatItems.map((x: any) => x.id));
+    for (const item of allFlatItems) {
+      if (item.folder_id != null && item.folder_name) {
+        seenFolderIds.set(item.folder_id, item.folder_name);
+      }
+    }
+    for (const [fid, fname] of seenFolderIds) {
+      if (!existingIds.has(fid)) {
+        allFlatItems.push({ id: fid, filename: fname, file_size: 0, file_type: 'folder', is_folder: true, folder_id: null, file_count: 0 });
+      }
+    }
+  }
   const treeChildrenOf = new Map<string | number, any[]>();
   for (const item of allFlatItems) {
     const pid = item.folder_id ?? "__root__";
