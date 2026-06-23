@@ -33,6 +33,7 @@ export default component$(() => {
   const loc = useLocation();
   const path = loc.url.pathname.replace(/\/+$/, "");
   const quota = useSignal<{ max_storage: number; used_storage: number; usage_percent: number } | null>(null);
+  const quotaCalls = useSignal<number[]>([]);
   const userProfile = useSignal<{ username: string; email: string } | null>(null);
   const maintenance = useSignal<{ enabled: boolean; message: string; scheduled_start?: string; scheduled_end?: string; time_until_maintenance?: number } | null>(null);
 
@@ -176,7 +177,19 @@ export default component$(() => {
 
         {/* Storage area — 75px, #1E293B card, padding 12px, margin 24px */}
         <div class="mx-6 mb-2 bg-stora-storage-bg rounded-lg p-3">
-          <p class="text-xs font-medium text-stora-nav-text mb-1.5">存储空间</p>
+          <div class="flex items-center justify-between mb-1.5">
+            <p class="text-xs font-medium text-stora-nav-text">存储空间</p>
+            <button onClick$={async () => {
+              const now = Date.now();
+              const calls = quotaCalls.value.filter((t: number) => now - t < 1800000);
+              if (calls.length >= 6) { return; }
+              quotaCalls.value = [...calls, now];
+              try { quota.value = await api.get<{ max_storage: number; used_storage: number; usage_percent: number }>("/users/me/quota"); } catch {}
+            }} class="text-stora-nav-text hover:text-white transition-colors text-xs p-0.5 touch-target"
+              title="刷新存储空间 (30分钟内限6次)">
+              <span>↻</span>
+            </button>
+          </div>
           <div class="h-1.5 bg-stora-storage-track rounded-sm overflow-hidden mb-1.5">
             <div class="h-full bg-stora-primary rounded-sm transition-all" style={{ width: `${Math.min(quota.value?.usage_percent || 0, 100)}%` }} />
           </div>
