@@ -1,9 +1,10 @@
 ﻿/**
  * Stora Share Management — flat design card layout
  */
-import { component$, useSignal } from "@builder.io/qwik";
+import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi, revokeShare, type ShareLink } from "~/lib/api";
+import InfiniteScroll from "~/components/ui/InfiniteScroll";
 
 interface ShareListResponse {
   items: ShareLink[];
@@ -36,9 +37,29 @@ export default component$(() => {
   const data = useShareList();
   const nav = useNavigate();
   const shares = useSignal(data.value.items);
+  const total = useSignal(data.value.total);
+  const page = useSignal(1);
+  const loading = useSignal(false);
   const selIds = useSignal<number[]>([]);
   const searchQuery = useSignal("");
   const filterStatus = useSignal<"all" | "active" | "expired">("all");
+
+  const loadMore = $(async () => {
+    if (loading.value) return;
+    loading.value = true;
+    try {
+      const next = page.value + 1;
+      const res = await fetch(`/api/v2/files/shares?page=${next}&page_size=50`);
+      const json = await res.json();
+      const d = json.data || json;
+      if (d.items?.length) {
+        shares.value = [...shares.value, ...d.items];
+        total.value = d.total;
+        page.value = next;
+      }
+    } catch {}
+    loading.value = false;
+  });
 
   const filteredShares = () => {
     let list = shares.value;
@@ -152,6 +173,11 @@ export default component$(() => {
             })}
           </div>
         )}
+        <InfiniteScroll
+          hasMore={shares.value.length < total.value}
+          loading={loading.value}
+          onLoadMore$={loadMore}
+        />
       </div>
     </div>
   );

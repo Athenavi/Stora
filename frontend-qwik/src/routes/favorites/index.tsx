@@ -1,9 +1,10 @@
 ﻿/**
  * Stora Favorites — flat design card grid
  */
-import { component$, useSignal } from "@builder.io/qwik";
+import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi, updateFile, batchDownload, api, type FileItem } from "~/lib/api";
+import InfiniteScroll from "~/components/ui/InfiniteScroll";
 
 export const useFavList = routeLoader$(async ({ request }) => {
   const api = createServerApi(request);
@@ -21,7 +22,27 @@ export default component$(() => {
   const data = useFavList();
   const nav = useNavigate();
   const items = useSignal(data.value?.items?.filter(f => f.is_favorite) || []);
+  const total = useSignal(data.value?.total || 0);
+  const page = useSignal(1);
+  const loadingMore = useSignal(false);
   const selIds = useSignal<number[]>([]);
+
+  const loadMore = $(async () => {
+    if (loadingMore.value) return;
+    loadingMore.value = true;
+    try {
+      const next = page.value + 1;
+      const res = await fetch(`/api/v2/files?page=${next}&page_size=200&is_favorite=true`);
+      const json = await res.json();
+      const d = json.data || json;
+      if (d.items?.length) {
+        items.value = [...items.value, ...d.items.filter((f: any) => f.is_favorite)];
+        total.value = d.total;
+        page.value = next;
+      }
+    } catch {}
+    loadingMore.value = false;
+  });
 
   const removeFav = async (id: number) => {
     try { await updateFile(id, { is_favorite: false }); items.value = items.value.filter(f => f.id !== id); selIds.value = selIds.value.filter(sid => sid !== id); } catch {}
@@ -97,6 +118,11 @@ export default component$(() => {
             })}
           </div>
         )}
+        <InfiniteScroll
+          hasMore={items.value.length < total.value}
+          loading={loadingMore.value}
+          onLoadMore$={loadMore}
+        />
       </div>
     </div>
   );

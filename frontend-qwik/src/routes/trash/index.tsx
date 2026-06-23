@@ -1,9 +1,10 @@
 ﻿/**
  * Stora Trash — flat design recycle bin
  */
-import { component$, useSignal } from "@builder.io/qwik";
+import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
 import { api, createServerApi } from "~/lib/api";
+import InfiniteScroll from "~/components/ui/InfiniteScroll";
 
 interface TrashItem {
   id: number;
@@ -16,7 +17,7 @@ interface TrashItem {
 
 export const useTrashList = routeLoader$(async ({ request }) => {
   const srv = createServerApi(request);
-  return await srv.get<{ items: TrashItem[]; total: number }>("/files/trash").catch(() => ({ items: [], total: 0 }));
+  return await srv.get<{ items: TrashItem[]; total: number }>("/files/trash?page=1&per_page=50").catch(() => ({ items: [], total: 0 }));
 });
 
 function fmtSize(bytes: number): string {
@@ -35,8 +36,27 @@ function fmtDate(s: string | null | undefined): string {
 export default component$(() => {
   const data = useTrashList();
   const items = useSignal(data.value.items);
+  const total = useSignal(data.value.total);
+  const page = useSignal(1);
   const selIds = useSignal<number[]>([]);
   const loading = useSignal(false);
+
+  const loadMore = $(async () => {
+    if (loading.value) return;
+    loading.value = true;
+    try {
+      const next = page.value + 1;
+      const res = await fetch(`/api/v2/files/trash?page=${next}&per_page=50`);
+      const json = await res.json();
+      const d = json.data || json;
+      if (d.items?.length) {
+        items.value = [...items.value, ...d.items];
+        total.value = d.total;
+        page.value = next;
+      }
+    } catch {}
+    loading.value = false;
+  });
 
   return (
     <div class="flex flex-col h-full">
@@ -146,6 +166,11 @@ export default component$(() => {
             </div>
           </>
         )}
+        <InfiniteScroll
+          hasMore={items.value.length < total.value}
+          loading={loading.value}
+          onLoadMore$={loadMore}
+        />
       </div>
 
       {/* Mobile bottom action bar for batch ops */}

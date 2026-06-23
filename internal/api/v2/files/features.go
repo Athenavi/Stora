@@ -839,10 +839,26 @@ func NewTrashHandler(db *sql.DB) *TrashHandler {
 func (h *TrashHandler) ListTrash(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 50
+	}
+	offset := (page - 1) * perPage
+
+	var total int
+	h.db.QueryRow(
+		`SELECT COUNT(*) FROM file_items WHERE user_id = $1 AND deleted_at IS NOT NULL`,
+		userID,
+	).Scan(&total)
+
 	rows, err := h.db.Query(
 		`SELECT id, filename, file_type, file_size, deleted_at FROM file_items
-		 WHERE user_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT 100`,
-		userID,
+		 WHERE user_id = $1 AND deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT $2 OFFSET $3`,
+		userID, perPage, offset,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query failed")
@@ -864,8 +880,10 @@ func (h *TrashHandler) ListTrash(w http.ResponseWriter, r *http.Request) {
 		items = append(items, t)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": items,
-		"total": len(items),
+		"items":    items,
+		"total":    total,
+		"page":     page,
+		"per_page": perPage,
 	})
 }
 
