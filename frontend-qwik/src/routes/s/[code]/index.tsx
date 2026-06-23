@@ -106,6 +106,12 @@ export default component$(() => {
     loadFolder(folderId, cached.page + 1, cached.perPage);
   });
 
+  const displayLimit = useSignal<Map<number, number>>(new Map());
+
+  const showMore = $((folderId: number, total: number) => {
+    displayLimit.value = new Map(displayLimit.value).set(folderId, Math.min(total, (displayLimit.value.get(folderId) || 3) + 50));
+  });
+
   const toggleExpand = $((folderId: number) => {
     const s = new Set(expandedFolders.value);
     if (s.has(folderId)) {
@@ -132,7 +138,7 @@ export default component$(() => {
     for (let i = 0; i < Math.min(3, folders.length); i++) {
       const fid = folders[i].id;
       expandedFolders.value = new Set(expandedFolders.value).add(fid);
-      // Use preloaded data if available
+      // Use preloaded data if available, show first 3 initially
       const pl = preloaded.find((p: any) => p.id === fid);
       if (pl) {
         folderContents.value = new Map(folderContents.value).set(fid, {
@@ -143,8 +149,10 @@ export default component$(() => {
           perPage: FOLDER_PAGE,
           loading: false,
         });
+        displayLimit.value = new Map(displayLimit.value).set(fid, 3);
       } else {
         loadFolder(fid, 1, FOLDER_PAGE);
+        displayLimit.value = new Map(displayLimit.value).set(fid, 3);
       }
     }
   });
@@ -328,8 +336,8 @@ export default component$(() => {
                                 <span class="text-xs text-stora-muted-foreground">{sf.file_count} 项</span>
                               </div>
                             ))}
-                            {/* Files */}
-                            {content.items.map((fi: any) => (
+                            {/* Files (limited to display limit, then show more) */}
+                            {(content.items.slice(0, displayLimit.value.get(f.id) || content.items.length) as any[]).map((fi: any) => (
                               <div key={fi.id} onClick$={() => toggleFile(fi.id)}
                                 class={`flex items-center gap-2 px-6 py-2 text-sm cursor-pointer hover:bg-stora-muted ${selFileIds.value.has(fi.id) ? "bg-stora-primary/5" : ""}`}>
                                 <input type="checkbox" checked={selFileIds.value.has(fi.id)}
@@ -340,11 +348,17 @@ export default component$(() => {
                                 <span class="text-xs text-stora-nav-text shrink-0">{fmtSize(fi.file_size)}</span>
                               </div>
                             ))}
-                            {/* Load more (paginated within folder) */}
-                            {content.items.length < content.total && (
+                            {/* Show more / load more */}
+                            {(displayLimit.value.get(f.id) || 3) < content.total && (
+                              <button onClick$={() => showMore(f.id, content.total)}
+                                class="w-full text-left px-6 py-2 text-xs text-stora-primary hover:bg-stora-muted/40">
+                                显示全部 {content.total} 项（已显示 {(displayLimit.value.get(f.id) || 3)} 项）→
+                              </button>
+                            )}
+                            {content.items.length < content.total && (displayLimit.value.get(f.id) || 3) >= content.items.length && (
                               <button onClick$={() => loadMore(f.id)}
                                 class="w-full text-left px-6 py-2 text-xs text-stora-primary hover:bg-stora-muted/40">
-                                展开所有 {content.total} 项（已显示 {content.items.length} 项）→
+                                加载更多（已显示 {content.items.length}，共 {content.total}）→
                               </button>
                             )}
                           </>
