@@ -106,7 +106,14 @@ export default component$(() => {
     } catch {}
   });
 
-  const saveClipboard = $((data: { fileIds: number[]; action: "copy" | "cut" } | null) => {
+  // clipboard helpers: read/write directly to sessionStorage for reliability
+  const getClipboard = $((): { fileIds: number[]; action: "copy" | "cut" } | null => {
+    try {
+      const saved = sessionStorage.getItem("stora_clipboard");
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const setClipboard = $((data: { fileIds: number[]; action: "copy" | "cut" } | null) => {
     clipboard.value = data;
     try {
       if (data) sessionStorage.setItem("stora_clipboard", JSON.stringify(data));
@@ -449,14 +456,16 @@ export default component$(() => {
                 <div class="px-4 py-3 text-xs text-stora-muted-foreground border-b border-stora-border">粘贴到当前目录</div>
                 {clipboard.value && (
                   <button onClick$={async () => {
-                    const ids = [...clipboard.value.fileIds];
-                    saveClipboard(null);
+                    const cb = await getClipboard();
+                    if (!cb) return;
+                    const ids = [...cb.fileIds];
+                    setClipboard(null);
                     ctxItem.value = null;
                     try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch { alert("粘贴失败"); }
-                  }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.fileIds.length} 项</button>
+                  }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴</button>
                 )}
                 {clipboard.value && (
-                  <button onClick$={() => { saveClipboard(null); ctxItem.value = null; }}
+                  <button onClick$={() => { setClipboard(null); ctxItem.value = null; }}
                     class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-muted-foreground hover:bg-stora-muted touch-target">✕ 取消粘贴</button>
                 )}
               </>
@@ -469,7 +478,7 @@ export default component$(() => {
                 <button onClick$={async () => {
                   const id = ctxItem.value!.id;
                   ctxItem.value = null;
-                  saveClipboard({ fileIds: [id], action: "copy" });
+                  setClipboard({ fileIds: [id], action: "copy" });
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制文件</button>
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
@@ -507,11 +516,13 @@ export default component$(() => {
                 <div class="h-px bg-stora-border my-1" />
                 {clipboard.value && (
                   <button onClick$={async () => {
-                    const ids = [...clipboard.value.fileIds];
-                    saveClipboard(null);
+                    const cb = await getClipboard();
+                    if (!cb) return;
+                    const ids = [...cb.fileIds];
+                    setClipboard(null);
                     ctxItem.value = null;
                     try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: resolvedFolderId.value || null }); refresh(); } catch { alert("粘贴失败"); }
-                  }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.fileIds.length} 项</button>
+                  }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴</button>
                 )}
                 <button onClick$={async () => {
                   if (confirm("删除?")) { await deleteFile(ctxItem.value!.id).catch(() => {}); location.reload(); }
@@ -522,7 +533,7 @@ export default component$(() => {
               <>
                 <button onClick$={() => { nav(`/drive?Path=${encodeURIComponent((ctxItem.value as any)?.path || ctxItem.value!.name)}`); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📂 打开</button>
-                <button onClick$={() => { saveClipboard({ fileIds: [ctxItem.value!.id], action: "cut" }); ctxItem.value = null; }}
+                <button onClick$={() => { setClipboard({ fileIds: [ctxItem.value!.id], action: "cut" }); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制文件夹</button>
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
@@ -540,9 +551,11 @@ export default component$(() => {
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-destructive hover:bg-red-50 touch-target">🗑 删除</button>
                 {clipboard.value && (
                   <button onClick$={async () => {
-                    const ids = [...clipboard.value.fileIds];
+                    const cb = await getClipboard();
+                    if (!cb) return;
+                    const ids = [...cb.fileIds];
                     const folderId = ctxItem.value!.id;
-                    saveClipboard(null);
+                    setClipboard(null);
                     ctxItem.value = null;
                     try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: folderId }); refresh(); } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴到此文件夹</button>
