@@ -190,6 +190,22 @@ export default component$(() => {
   const rootFiles: FolderItem[] = !isFolder && !isBatch ? (s.items && s.items.length > 0 ? s.items : (s.item?.id ? [{ id: s.item.id, filename: s.item.filename || s.item.name || "", file_size: s.item.file_size || 0, file_type: s.item.file_type || "other" }] : [])) : [];
   const rootSubs: SubFolder[] = s.folders || [];
 
+  // Synthesize folder nodes from folder_id/folder_name pairs (batch shares)
+  if (isBatch && allFlatItems.length > 0) {
+    const seenFolderIds = new Map<number, string>();
+    const existingIds = new Set(allFlatItems.map((x: any) => x.id));
+    for (const item of allFlatItems) {
+      if (item.folder_id != null && item.folder_name) {
+        seenFolderIds.set(item.folder_id, item.folder_name);
+      }
+    }
+    for (const [fid, fname] of seenFolderIds) {
+      if (!existingIds.has(fid)) {
+        allFlatItems.push({ id: fid, filename: fname, file_size: 0, file_type: 'folder', is_folder: true, folder_id: null });
+      }
+    }
+  }
+
   // Build tree: group items by folder_id
   const childrenOf = new Map<number | null, any[]>();
   for (const item of allFlatItems) {
@@ -197,14 +213,12 @@ export default component$(() => {
     if (!childrenOf.has(pid)) childrenOf.set(pid, []);
     childrenOf.get(pid)!.push(item);
   }
-  // Root-level items (folder_id = null)
+  // Root-level items
   const treeItems = childrenOf.get(null) || [];
-  // For batch shares, also check for items whose folder_id is not null (orphaned at root)
-  if (treeItems.length === 0 && allFlatItems.length > 0) {
-    // Put items with no matching parent at root
-    for (const item of allFlatItems) {
-      if (!item.is_folder) treeItems.push(item);
-    }
+  // For folder shares, also check against the shared folder's ID
+  if (treeItems.length === 0 && isFolder && s.item?.id != null) {
+    const fromFolder = childrenOf.get(s.item.id) || [];
+    treeItems.push(...fromFolder);
   }
 
   // Recursive renderer — plain function, not $(), since it's only called during render
