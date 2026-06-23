@@ -64,7 +64,14 @@ export default component$(() => {
   const allItems: ({ t: "f" } & { id: number; name: string; path?: string } | { t: "d" } & FileItem)[] = [];
   if (data.value) {
     for (const f of data.value.folders || []) allItems.push({ t: "f" as const, ...f });
-    for (const f of data.value.files || []) allItems.push({ t: "d" as const, ...f });
+    for (const f of data.value.files || []) {
+      // Folders stored as file_items with is_folder=true also appear in the files array
+      if ((f as any).is_folder) {
+        allItems.push({ t: "f" as const, id: f.id, name: (f as any).filename || (f as any).name || "", path: (f as any).path });
+      } else {
+        allItems.push({ t: "d" as const, ...f });
+      }
+    }
     // Extract folder_id from the path-based response
     const pathData = data.value as any;
     if (pathData.folder_id !== undefined) {

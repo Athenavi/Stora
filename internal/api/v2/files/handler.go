@@ -1249,10 +1249,10 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.db.Query(
-		`SELECT id, filename, file_type, file_size, created_at FROM file_items
+		`SELECT id, filename, file_type, file_size, is_folder, created_at FROM file_items
 		 WHERE user_id = $1 AND deleted_at IS NULL AND
 		       (filename ILIKE $2 OR original_filename ILIKE $2)
-		 ORDER BY created_at DESC LIMIT 50`,
+		 ORDER BY is_folder DESC, created_at DESC LIMIT 50`,
 		userID, "%"+q+"%",
 	)
 	if err != nil {
@@ -1266,13 +1266,14 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		Filename  *string `json:"filename"`
 		FileType  string  `json:"file_type"`
 		FileSize  int64   `json:"file_size"`
+		IsFolder  bool    `json:"is_folder"`
 		CreatedAt *string `json:"created_at"`
 	}
 
 	var hits []Hit
 	for rows.Next() {
 		var h Hit
-		rows.Scan(&h.ID, &h.Filename, &h.FileType, &h.FileSize, &h.CreatedAt)
+		rows.Scan(&h.ID, &h.Filename, &h.FileType, &h.FileSize, &h.IsFolder, &h.CreatedAt)
 		hits = append(hits, h)
 	}
 
