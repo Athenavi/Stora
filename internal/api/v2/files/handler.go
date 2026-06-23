@@ -857,6 +857,17 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for duplicate folder name at the same level
+	var existing int64
+	h.db.QueryRow(
+		`SELECT id FROM folders WHERE user_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND name = $3`,
+		userID, req.ParentID, req.Name,
+	).Scan(&existing)
+	if existing > 0 {
+		writeError(w, http.StatusConflict, "同层级已存在同名文件夹")
+		return
+	}
+
 	now := time.Now().Format(time.RFC3339)
 	var folderID int64
 	err := h.db.QueryRow(
@@ -1780,6 +1791,17 @@ func (h *Handler) CreateFolderByPath(w http.ResponseWriter, r *http.Request) {
 	if parentID > 0 {
 		parentPtr = &parentID
 	}
+
+	// Check for duplicate folder name at the same level
+	var dupID int64
+	tx.QueryRow(`SELECT id FROM folders WHERE user_id = $1 AND parent_id IS NOT DISTINCT FROM $2 AND name = $3`,
+		userID, parentPtr, req.Name,
+	).Scan(&dupID)
+	if dupID > 0 {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": "同层级已存在同名文件夹"})
+		return
+	}
+
 	err = tx.QueryRow(
 		`INSERT INTO folders (user_id, parent_id, name, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $4) RETURNING id`,

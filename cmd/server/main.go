@@ -100,6 +100,7 @@ func main() {
 			updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)`,
 		`ALTER TABLE file_items ADD COLUMN IF NOT EXISTS category VARCHAR(255) NULL`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_folders_uniq_name ON folders (user_id, COALESCE(parent_id, 0), name)`,
 	}
 	for _, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
