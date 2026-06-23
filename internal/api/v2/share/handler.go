@@ -121,6 +121,7 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 			FileID         int64   `json:"file_id"`
 			FolderID       int64   `json:"folder_id"`
 			FileIDs        []int64 `json:"file_ids"`
+			FolderIDs      []int64 `json:"folder_ids"`
 			Permission     string  `json:"permission"`
 			Password       *string `json:"password"`
 			ExpiresInHours int     `json:"expires_in_hours"`
@@ -137,10 +138,37 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		expiresInHours = req.ExpiresInHours
 		maxDownloads = req.MaxDownloads
 
-		// Batch share: use file_ids when no single file_id/folder_id
-		if fileID == 0 && folderID == 0 && len(req.FileIDs) > 0 {
-			// Validate all files belong to the user
+		// Batch share with mixed files + folders
+		if fileID == 0 && folderID == 0 && (len(req.FileIDs) > 0 || len(req.FolderIDs) > 0) {
+			// Merge file_ids and resolved folder contents into one set
+			seen := make(map[int64]bool)
+			var allIDs []int64
 			for _, fid := range req.FileIDs {
+				if !seen[fid] {
+					seen[fid] = true
+					allIDs = append(allIDs, fid)
+				}
+			}
+			// Resolve folders: collect all file_items inside each folder
+			for _, fid := range req.FolderIDs {
+				rows, err := h.db.Query(
+					`SELECT id FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL`, fid,
+				)
+				if err != nil {
+					continue
+				}
+				for rows.Next() {
+					var innerID int64
+					rows.Scan(&innerID)
+					if !seen[innerID] {
+						seen[innerID] = true
+						allIDs = append(allIDs, innerID)
+					}
+				}
+				rows.Close()
+			}
+			// Validate all files belong to the user
+			for _, fid := range allIDs {
 				var ownerID int64
 				err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND deleted_at IS NULL`, fid).Scan(&ownerID)
 				if err != nil || ownerID != userID {
@@ -148,8 +176,10 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			batchFileIDs = req.FileIDs
-			fileID = req.FileIDs[0] // first file for backward compat display
+			if len(allIDs) > 0 {
+				batchFileIDs = allIDs
+				fileID = allIDs[0]
+			}
 		}
 	}
 

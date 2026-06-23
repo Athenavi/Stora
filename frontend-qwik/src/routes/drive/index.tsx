@@ -710,33 +710,41 @@ export default component$(() => {
                   const params: any = { permission: sharePermission.value };
                   if (sharePassword.value) params.password = sharePassword.value;
                   if (shareExpiry.value) params.expires_in_hours = shareExpiry.value;
-                  // Detect if all selected items are folders or files
-                  const allFolders = selIds.value.every(id => {
+                  // Detect selection types
+                  const folderIds = selIds.value.filter(id => {
                     const item = allItems.find(x => x.id === id);
                     return item && (item as any).t === "f";
                   });
-                  const allFiles = selIds.value.every(id => {
+                  const fileIds = selIds.value.filter(id => {
                     const item = allItems.find(x => x.id === id);
                     return item && (item as any).t !== "f";
                   });
                   try {
                     let link;
-                    if (allFolders && selIds.value.length === 1) {
-                      // Single folder share — use existing folder_id path
-                      params.folder_id = selIds.value[0];
+                    if (folderIds.length > 0 && fileIds.length === 0 && folderIds.length === 1) {
+                      // Single folder share
+                      params.folder_id = folderIds[0];
                       link = await createShare(params);
-                    } else if (allFiles && selIds.value.length > 1) {
-                      // Batch file share — send all file IDs
-                      params.file_ids = selIds.value;
+                    } else if (folderIds.length > 0 && fileIds.length > 0) {
+                      // Mixed selection: send both file_ids and folder_ids — backend resolves folders
+                      params.file_ids = fileIds;
+                      params.folder_ids = folderIds;
+                      link = await createShare(params);
+                    } else if (fileIds.length > 1) {
+                      // Batch file share
+                      params.file_ids = fileIds;
+                      link = await createShare(params);
+                    } else if (fileIds.length === 1) {
+                      // Single file
+                      params.file_id = fileIds[0];
+                      link = await createShare(params);
+                    } else if (folderIds.length > 1) {
+                      // Multiple folders — send as folder_ids for backend to resolve
+                      params.folder_ids = folderIds;
                       link = await createShare(params);
                     } else {
-                      // Single file share (or mixed — fallback to first item)
-                      const item = allItems.find(x => x.id === selIds.value[0]);
-                      if (item && (item as any).t === "f") {
-                        params.folder_id = selIds.value[0];
-                      } else {
-                        params.file_id = selIds.value[0];
-                      }
+                      // Fallback: single folder (already handled above but safety net)
+                      params.folder_id = folderIds[0];
                       link = await createShare(params);
                     }
                     shareResult.value = [{ code: link.short_code, url: `${window.location.origin}/s/${link.short_code}` }];
