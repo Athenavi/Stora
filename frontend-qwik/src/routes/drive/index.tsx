@@ -97,6 +97,22 @@ export default component$(() => {
   const moveTreeLoading = useSignal(false);
   const previewFile = useSignal<FileItem | null>(null);
   const clipboard = useSignal<{ fileIds: number[]; action: "copy" | "cut" } | null>(null);
+
+  // Persist clipboard in sessionStorage so it survives folder navigation
+  useVisibleTask$(() => {
+    try {
+      const saved = sessionStorage.getItem("stora_clipboard");
+      if (saved) clipboard.value = JSON.parse(saved);
+    } catch {}
+  });
+
+  const saveClipboard = $((data: { fileIds: number[]; action: "copy" | "cut" } | null) => {
+    clipboard.value = data;
+    try {
+      if (data) sessionStorage.setItem("stora_clipboard", JSON.stringify(data));
+      else sessionStorage.removeItem("stora_clipboard");
+    } catch {}
+  });
   const showProperties = useSignal<FileItem | null>(null);
   const groupBy = useSignal<string | null>(null);
   const showBatchTags = useSignal(false);
@@ -526,7 +542,7 @@ export default component$(() => {
                   <button onClick$={async () => {
                     const ids = [...clipboard.value.fileIds];
                     const folderId = ctxItem.value!.id;
-                    clipboard.value = null;
+                    saveClipboard(null);
                     ctxItem.value = null;
                     try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: folderId }); refresh(); } catch { alert("粘贴失败"); }
                   }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴到此文件夹</button>
