@@ -342,46 +342,39 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(`SELECT COUNT(*) FROM share_link_items WHERE share_link_id = $1`, linkID).Scan(&batchCount)
 
 	if isFolder {
-		// Return folder info + file listing
+		// Return folder info + recursive file listing (all descendants)
 		var folderName string
 		h.db.QueryRow(`SELECT filename FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&folderName)
 
-		type FolderFileItem struct {
+		// Recursive CTE: get ALL descendant file_items (files and folders) with folder_id
+		type RecursiveItem struct {
 			ID       int64  `json:"id"`
 			Filename string `json:"filename"`
 			FileSize int64  `json:"file_size"`
 			FileType string `json:"file_type"`
+			IsFolder bool   `json:"is_folder"`
+			FolderID *int64 `json:"folder_id"`
 		}
-		items := make([]FolderFileItem, 0)
+		items := make([]RecursiveItem, 0)
 
-		// Get child files
-		frows, err := h.db.Query(
-			`SELECT id, COALESCE(filename, ''), COALESCE(file_size, 0), COALESCE(file_type, 'other')
-			 FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL AND is_folder = false ORDER BY filename`,
+		rrows, err := h.db.Query(
+			`WITH RECURSIVE tree AS (
+				SELECT id, folder_id, filename, file_size, file_type, is_folder, 1 AS lvl
+				FROM file_items WHERE folder_id = $1 AND deleted_at IS NULL
+				UNION ALL
+				SELECT fi.id, fi.folder_id, fi.filename, fi.file_size, fi.file_type, fi.is_folder, t.lvl + 1
+				FROM file_items fi JOIN tree t ON fi.folder_id = t.id AND fi.deleted_at IS NULL
+			 )
+			 SELECT id, folder_id, COALESCE(filename,''), COALESCE(file_size,0), COALESCE(file_type,'other'), is_folder
+			 FROM tree ORDER BY lvl, is_folder DESC, filename`,
 			folderID,
 		)
 		if err == nil {
-			defer frows.Close()
-			for frows.Next() {
-				var fi FolderFileItem
-				frows.Scan(&fi.ID, &fi.Filename, &fi.FileSize, &fi.FileType)
-				items = append(items, fi)
-			}
-		}
-
-		// Get child folders
-		type SubFolder struct {
-			ID   int64  `json:"id"`
-			Name string `json:"name"`
-		}
-		subFolders := make([]SubFolder, 0)
-		drows, err := h.db.Query(`SELECT id, filename FROM file_items WHERE folder_id = $1 AND is_folder = true AND deleted_at IS NULL ORDER BY filename`, folderID)
-		if err == nil {
-			defer drows.Close()
-			for drows.Next() {
-				var sf SubFolder
-				drows.Scan(&sf.ID, &sf.Name)
-				subFolders = append(subFolders, sf)
+			defer rrows.Close()
+			for rrows.Next() {
+				var ri RecursiveItem
+				rrows.Scan(&ri.ID, &ri.FolderID, &ri.Filename, &ri.FileSize, &ri.FileType, &ri.IsFolder)
+				items = append(items, ri)
 			}
 		}
 
@@ -392,14 +385,15 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 				"permission":         "read",
 				"password_protected": hashedPw != nil && *hashedPw != "",
 				"is_folder":          true,
+				"is_batch":           false,
+				"file_count":         len(items),
 			},
 			"item": map[string]interface{}{
-				"id":       folderID,
-				"filename": folderName,
+				"id":        folderID,
+				"filename":  folderName,
 				"is_folder": true,
 			},
-			"folders": subFolders,
-			"items":   items,
+			"items": items,
 		})
 		return
 	}
