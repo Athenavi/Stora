@@ -265,10 +265,23 @@ func (h *VaultHandler) ListVaultItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	perPage, _ := strconv.Atoi(r.URL.Query().Get("per_page"))
+	if page < 1 {
+		page = 1
+	}
+	if perPage < 1 || perPage > 100 {
+		perPage = 50
+	}
+	offset := (page - 1) * perPage
+
+	var total int
+	h.db.QueryRow(`SELECT COUNT(*) FROM vault_items WHERE vault_id = $1 AND user_id = $2`, vaultID, userID).Scan(&total)
+
 	rows, err := h.db.Query(
 		`SELECT id, COALESCE(filename, name), COALESCE(file_size, 0), COALESCE(mime_type, 'application/octet-stream'), created_at
-		 FROM vault_items WHERE vault_id = $1 AND user_id = $2 ORDER BY created_at DESC`,
-		vaultID, userID,
+		 FROM vault_items WHERE vault_id = $1 AND user_id = $2 ORDER BY created_at DESC LIMIT $3 OFFSET $4`,
+		vaultID, userID, perPage, offset,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "query failed")
@@ -289,7 +302,12 @@ func (h *VaultHandler) ListVaultItems(w http.ResponseWriter, r *http.Request) {
 		rows.Scan(&it.ID, &it.Filename, &it.FileSize, &it.MimeType, &it.CreatedAt)
 		items = append(items, it)
 	}
-	writeJSON(w, http.StatusOK, items)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"items":    items,
+		"total":    total,
+		"page":     page,
+		"per_page": perPage,
+	})
 }
 
 // ---------- Download Vault Item ----------

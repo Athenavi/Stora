@@ -5,6 +5,7 @@ import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
 import { api, createServerApi } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
+import InfiniteScroll from "~/components/ui/InfiniteScroll";
 
 interface VaultInfo {
   id: number; name: string; file_count: number; total_size: number;
@@ -32,6 +33,9 @@ export default component$(() => {
   const unlockPw = useSignal("");
   const unlockErr = useSignal("");
   const items = useSignal<VaultItem[]>([]);
+  const itemsTotal = useSignal(0);
+  const itemsPage = useSignal(1);
+  const itemsLoading = useSignal(false);
   const showCreate = useSignal(false);
   const newName = useSignal("");
   const newPw = useSignal("");
@@ -47,8 +51,25 @@ export default component$(() => {
     if (t && id) { vaultToken.value = t; unlockId.value = Number(id); loadItems(Number(id), t); }
   });
 
-  const loadItems = $(async (id: number, token: string) => {
-    try { const data = await api.get<VaultItem[]>(`/vaults/${id}/items`, { headers: { "X-Vault-Token": token } }); items.value = data || []; } catch { items.value = []; }
+  const loadItems = $(async (id: number, token: string, pg?: number) => {
+    const p = pg || 1;
+    try {
+      const data = await api.get<{ items: VaultItem[]; total: number }>(`/vaults/${id}/items?page=${p}&per_page=50`, { headers: { "X-Vault-Token": token } });
+      if (p === 1) {
+        items.value = data.items || [];
+      } else {
+        items.value = [...items.value, ...(data.items || [])];
+      }
+      itemsTotal.value = data.total || 0;
+      itemsPage.value = p;
+    } catch { if (p === 1) items.value = []; }
+  });
+
+  const loadMoreItems = $(async () => {
+    if (itemsLoading.value || !vaultToken.value) return;
+    itemsLoading.value = true;
+    await loadItems(unlockId.value, vaultToken.value, itemsPage.value + 1);
+    itemsLoading.value = false;
   });
 
   const doUnlock = $(async () => {
@@ -159,6 +180,11 @@ export default component$(() => {
               })}
             </div>
           )}
+          <InfiniteScroll
+            hasMore={items.value.length < itemsTotal.value}
+            loading={itemsLoading.value}
+            onLoadMore$={loadMoreItems}
+          />
         </div>
       </div>
     );
