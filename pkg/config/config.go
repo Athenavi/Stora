@@ -139,7 +139,10 @@ func (c *Config) RedisAddr() string {
 	return fmt.Sprintf("%s:%d", c.RedisHost, c.RedisPort)
 }
 
-func getEnv(key, fallback string) string {
+// VaultDir returns the directory for storing encrypted vault files.
+func (c *Config) VaultDir() string {
+	return getEnv("VAULT_DIR", "storage/vaults")
+}
 	if val := os.Getenv(key); val != "" {
 		return val
 	}

@@ -166,7 +166,7 @@ func main() {
 	}
 	fileHandler := fileapi.NewHandler(db, store, cfg.TempFolder, pathCache, speedLimiter)
 	uploadHandler := fileapi.NewUploadHandler(db, store, cfg.TempFolder)
-	vaultHandler := fileapi.NewVaultHandler(db)
+	vaultHandler := fileapi.NewVaultHandler(db, cfg.VaultDir())
 	transcodeHandler := fileapi.NewTranscodeHandler(db, store)
 	transcribeHandler := fileapi.NewTranscribeHandler(db)
 	versionHandler := fileapi.NewVersionHandler(db)

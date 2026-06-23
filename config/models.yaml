@@ -225,7 +225,7 @@ models:
       file_size:    { type: bigint, default: "0" }
       mime_type:    { type: varchar, length: 128, default: "''" }
       content_type: { type: varchar, length: 64, default: "'file'" }
-      content:      { type: text, nullable: true }
+      file_path:    { type: text, nullable: true }
       created_at:   { type: timestamp, default: "now()" }
       updated_at:   { type: timestamp, default: "now()" }
     indexes:

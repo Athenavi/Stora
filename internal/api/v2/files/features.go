@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"io"
 	"log"
 	"net/http"
@@ -30,11 +31,12 @@ import (
 )
 
 type VaultHandler struct {
-	db *sql.DB
+	db       *sql.DB
+	vaultDir string
 }
 
-func NewVaultHandler(db *sql.DB) *VaultHandler {
-	return &VaultHandler{db: db}
+func NewVaultHandler(db *sql.DB, vaultDir string) *VaultHandler {
+	return &VaultHandler{db: db, vaultDir: vaultDir}
 }
 
 // ─── Helpers ───
@@ -249,6 +251,11 @@ func (h *VaultHandler) DeleteVault(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+
+	// Remove the vault's encrypted file storage
+	vaultStorageDir := filepath.Join(h.vaultDir, fmt.Sprintf("%d", vaultID))
+	os.RemoveAll(vaultStorageDir)
+
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
@@ -327,17 +334,31 @@ func (h *VaultHandler) UploadVaultItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Write encrypted content to disk: <vaultDir>/<vaultID>/<uuid>.enc
+	vaultStorageDir := filepath.Join(h.vaultDir, fmt.Sprintf("%d", vaultID))
+	if err := os.MkdirAll(vaultStorageDir, 0700); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create vault storage")
+		return
+	}
+	itemUUID := uuid.New().String()
+	filePath := filepath.Join(vaultStorageDir, itemUUID+".enc")
+	if err := os.WriteFile(filePath, []byte(encrypted), 0600); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to write vault file")
+		return
+	}
+
 	EnsureVaultCompat(h.db)
 
 	now := time.Now().Format(time.RFC3339)
 	var itemID int64
 	err = h.db.QueryRow(
-		`INSERT INTO vault_items (vault_id, user_id, name, filename, file_size, mime_type, content, created_at, updated_at)
+		`INSERT INTO vault_items (vault_id, user_id, name, filename, file_size, mime_type, file_path, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8) RETURNING id`,
-		vaultID, userID, filename, filename, fileSize, mimeType, encrypted, now,
+		vaultID, userID, filename, filename, fileSize, mimeType, filePath, now,
 	).Scan(&itemID)
 
 	if err != nil {
+		os.Remove(filePath)
 		writeError(w, http.StatusInternalServerError, "insert failed")
 		return
 	}
@@ -354,14 +375,14 @@ func (h *VaultHandler) DownloadVaultItem(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	var filename, mimeType, encrypted string
+	var filename, mimeType, filePath string
 	var fileSize int64
 	err := h.db.QueryRow(
 		`SELECT COALESCE(filename, name), COALESCE(mime_type, 'application/octet-stream'),
-		        COALESCE(content, ''), COALESCE(file_size, 0)
+		        COALESCE(file_path, ''), COALESCE(file_size, 0)
 		 FROM vault_items WHERE id = $1 AND vault_id = $2 AND user_id = $3`,
 		itemID, vaultID, userID,
-	).Scan(&filename, &mimeType, &encrypted, &fileSize)
+	).Scan(&filename, &mimeType, &filePath, &fileSize)
 
 	if err == sql.ErrNoRows {
 		writeError(w, http.StatusNotFound, "item not found")
@@ -371,6 +392,18 @@ func (h *VaultHandler) DownloadVaultItem(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "query failed")
 		return
 	}
+	if filePath == "" {
+		writeError(w, http.StatusNotFound, "file not found on disk")
+		return
+	}
+
+	// Read encrypted content from disk
+	encryptedBytes, err := os.ReadFile(filePath)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to read vault file")
+		return
+	}
+	encrypted := string(encryptedBytes)
 
 	// Decrypt
 	decoded, err := decrypt(encrypted)
@@ -401,6 +434,13 @@ func (h *VaultHandler) DeleteVaultItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get file_path before deleting the record
+	var filePath string
+	h.db.QueryRow(
+		`SELECT COALESCE(file_path, '') FROM vault_items WHERE id = $1 AND vault_id = $2 AND user_id = $3`,
+		itemID, vaultID, userID,
+	).Scan(&filePath)
+
 	result, err := h.db.Exec(
 		`DELETE FROM vault_items WHERE id = $1 AND vault_id = $2 AND user_id = $3`, itemID, vaultID, userID,
 	)
@@ -412,6 +452,12 @@ func (h *VaultHandler) DeleteVaultItem(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+
+	// Remove the encrypted file from disk
+	if filePath != "" {
+		os.Remove(filePath)
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
@@ -423,6 +469,7 @@ func EnsureVaultCompat(db *sql.DB) {
 		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS file_size BIGINT DEFAULT 0`,
 		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS mime_type VARCHAR(128) DEFAULT ''`,
 		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS content_type VARCHAR(64) DEFAULT 'file'`,
+		`ALTER TABLE vault_items ADD COLUMN IF NOT EXISTS file_path TEXT`,
 	} {
 		db.Exec(m)
 	}
