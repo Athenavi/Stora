@@ -96,7 +96,7 @@ export default component$(() => {
   const moveTree = useSignal<any[]>([]);
   const moveTreeLoading = useSignal(false);
   const previewFile = useSignal<FileItem | null>(null);
-  const clipboard = useSignal<{ id: number; name: string; type: string } | null>(null);
+  const clipboard = useSignal<{ fileIds: number[]; action: "copy" | "cut" } | null>(null);
   const showProperties = useSignal<FileItem | null>(null);
   const groupBy = useSignal<string | null>(null);
   const showBatchTags = useSignal(false);
@@ -404,8 +404,11 @@ export default component$(() => {
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">👁 预览</button>
                 <button onClick$={() => { window.open(`/api/v2/files/download/${ctxItem.value!.id}`, "_blank"); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">⬇ 下载</button>
-                <button onClick$={async () => { const id = ctxItem.value!.id; const name = ctxItem.value!.name; try { await navigator.clipboard.writeText(window.location.origin + '/api/v2/files/download/' + id); } catch { prompt('复制链接:', window.location.origin + '/api/v2/files/download/' + id); } ctxItem.value = null; }}
-                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制</button>
+                <button onClick$={async () => {
+                  const id = ctxItem.value!.id;
+                  ctxItem.value = null;
+                  clipboard.value = { fileIds: [id], action: "copy" };
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制文件</button>
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">✏ 重命名</button>
@@ -441,8 +444,12 @@ export default component$(() => {
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">🔐 移动到加密空间</button>
                 <div class="h-px bg-stora-border my-1" />
                 {clipboard.value && (
-                  <button onClick$={async () => { ctxItem.value = null; alert(`已复制: ${clipboard.value.name}\n粘贴功能需要后端支持。`); }}
-                    class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.name}</button>
+                  <button onClick$={async () => {
+                    const ids = [...clipboard.value.fileIds];
+                    clipboard.value = null;
+                    ctxItem.value = null;
+                    try { await api.post('/files/batch/move', { file_ids: ids }); refresh(); } catch { alert("粘贴失败"); }
+                  }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.fileIds.length} 项</button>
                 )}
                 <button onClick$={async () => {
                   if (confirm("删除?")) { await deleteFile(ctxItem.value!.id).catch(() => {}); location.reload(); }
@@ -453,7 +460,7 @@ export default component$(() => {
               <>
                 <button onClick$={() => { nav(`/drive?Path=${encodeURIComponent((ctxItem.value as any)?.path || ctxItem.value!.name)}`); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📂 打开</button>
-                <button onClick$={() => { clipboard.value = { id: ctxItem.value!.id, name: ctxItem.value!.name, type: "folder" }; ctxItem.value = null; }}
+                <button onClick$={() => { clipboard.value = { fileIds: [ctxItem.value!.id], action: "cut" }; ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制文件夹</button>
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
@@ -469,6 +476,15 @@ export default component$(() => {
                   if (confirm("删除?")) { await deleteFolder(ctxItem.value!.id).catch(() => {}); location.reload(); }
                   ctxItem.value = null;
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-destructive hover:bg-red-50 touch-target">🗑 删除</button>
+                {clipboard.value && (
+                  <button onClick$={async () => {
+                    const ids = [...clipboard.value.fileIds];
+                    const folderId = ctxItem.value!.id;
+                    clipboard.value = null;
+                    ctxItem.value = null;
+                    try { await api.post('/files/batch/move', { file_ids: ids, target_folder_id: folderId }); refresh(); } catch { alert("粘贴失败"); }
+                  }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴到此文件夹</button>
+                )}
               </>
             )}
           </div>

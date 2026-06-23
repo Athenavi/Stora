@@ -176,6 +176,7 @@ func main() {
 
 	// Initialize offline download handler
 	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
+	fileapi.EnsureDownloadTable(db)
 
 	// Initialize webhook handler
 	webhookHandler := fileapi.NewWebhookHandler(db)
@@ -360,6 +361,8 @@ func main() {
 			// Offline download
 			r.Post("/files/offline-download", offlineDownloadHandler.CreateDownloadTask)
 			r.Get("/files/offline-download", offlineDownloadHandler.ListDownloadTasks)
+			r.Get("/files/offline-download/{id}", offlineDownloadHandler.GetDownloadTask)
+			r.Post("/files/offline-download/{id}/retry", offlineDownloadHandler.RetryDownloadTask)
 
 			// Webhooks
 			r.Get("/webhooks", webhookHandler.ListWebhooks)
