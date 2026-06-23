@@ -276,7 +276,11 @@ func main() {
 					return
 				}
 				db.QueryRow(
-					`SELECT COALESCE(SUM(file_size), 0) FROM file_items WHERE user_id = $1 AND deleted_at IS NULL`,
+					`SELECT COALESCE(SUM(file_size), 0) FROM (
+						SELECT file_size FROM file_items WHERE user_id = $1 AND deleted_at IS NULL
+						UNION ALL
+						SELECT file_size FROM vault_items WHERE user_id = $1
+					) AS all_files`,
 					userID,
 				).Scan(&actual)
 				db.Exec(`UPDATE users SET used_storage = $1 WHERE id = $2`, actual, userID)
