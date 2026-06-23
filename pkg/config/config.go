@@ -12,13 +12,13 @@ import (
 // Config holds all application configuration.
 type Config struct {
 	// Server
-	ServerPort  int
-	ServerHost  string
-	SecretKey   string
-	Debug       bool
-	TimeZone    string
-	SiteName    string
-	Domain      string
+	ServerPort int
+	ServerHost string
+	SecretKey  string
+	Debug      bool
+	TimeZone   string
+	SiteName   string
+	Domain     string
 
 	// Database
 	DBHost     string
@@ -39,9 +39,9 @@ type Config struct {
 
 	// Upload
 	UploadExpireHours int    // hours before incomplete uploads are cleaned up
-	StorageDriver   string       // "local" or "s3"
-	StorageObjectsDir string     // content-addressed objects root, e.g. "storage/objects"
-	TempFolder      string       // temp dir for chunked upload assembly
+	StorageDriver     string // "local" or "s3"
+	StorageObjectsDir string // content-addressed objects root, e.g. "storage/objects"
+	TempFolder        string // temp dir for chunked upload assembly
 
 	// S3
 	S3Endpoint  string
@@ -71,13 +71,13 @@ func Load() *Config {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		ServerPort:           getEnvInt("PORT", 9421),
-		ServerHost:           getEnv("HOST", "0.0.0.0"),
-		SecretKey:            getEnv("SECRET_KEY", ""),
-		Debug:                getEnv("DEBUG", "false") == "true",
-		TimeZone:             getEnv("TIME_ZONE", "Asia/Shanghai"),
-		SiteName:             getEnv("TITLE", "Stora"),
-		Domain:               getEnv("DOMAIN", "/"),
+		ServerPort: getEnvInt("PORT", 9421),
+		ServerHost: getEnv("HOST", "0.0.0.0"),
+		SecretKey:  getEnv("SECRET_KEY", ""),
+		Debug:      getEnv("DEBUG", "false") == "true",
+		TimeZone:   getEnv("TIME_ZONE", "Asia/Shanghai"),
+		SiteName:   getEnv("TITLE", "Stora"),
+		Domain:     getEnv("DOMAIN", "/"),
 
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnvInt("DB_PORT", 5432),
@@ -93,10 +93,10 @@ func Load() *Config {
 		JWTExpiration:        time.Duration(getEnvInt("JWT_EXPIRATION_DELTA", 7200)) * time.Second,
 		JWTRefreshExpiration: time.Duration(getEnvInt("REFRESH_TOKEN_EXPIRATION_DELTA", 64800)) * time.Second,
 
-		StorageDriver:      getEnv("STORAGE_DRIVER", "local"),
-		StorageObjectsDir:  getEnv("STORAGE_OBJECTS_DIR", "storage/objects"),
-		UploadExpireHours:  getEnvInt("UPLOAD_EXPIRE_HOURS", 144),
-		TempFolder:         getEnv("TEMP_FOLDER", "temp/upload"),
+		StorageDriver:     getEnv("STORAGE_DRIVER", "local"),
+		StorageObjectsDir: getEnv("STORAGE_OBJECTS_DIR", "storage/objects"),
+		UploadExpireHours: getEnvInt("UPLOAD_EXPIRE_HOURS", 144),
+		TempFolder:        getEnv("TEMP_FOLDER", "temp/upload"),
 
 		S3Endpoint:  getEnv("S3_ENDPOINT", ""),
 		S3Region:    getEnv("S3_REGION", "us-east-1"),
@@ -143,6 +143,8 @@ func (c *Config) RedisAddr() string {
 func (c *Config) VaultDir() string {
 	return getEnv("VAULT_DIR", "storage/vaults")
 }
+
+func getEnv(key, fallback string) string { // ← 补上这一行
 	if val := os.Getenv(key); val != "" {
 		return val
 	}
