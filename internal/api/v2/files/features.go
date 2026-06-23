@@ -748,15 +748,6 @@ func (h *BatchHandler) BatchCopy(w http.ResponseWriter, r *http.Request) {
 	copied := 0
 
 	for _, sf := range srcFiles {
-		// Apply "(copy)" suffix to avoid filename collision in the target folder
-		copyName := sf.filename
-		ext := ""
-		if dot := strings.LastIndex(copyName, "."); dot >= 0 {
-			ext = copyName[dot:]
-			copyName = copyName[:dot]
-		}
-		copyName = copyName + " (copy)" + ext
-
 		var newID int64
 		err := tx.QueryRow(
 			`INSERT INTO file_items
@@ -766,7 +757,7 @@ func (h *BatchHandler) BatchCopy(w http.ResponseWriter, r *http.Request) {
 				 category, sort_order, download_count, created_at, updated_at)
 			 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,$11,false,$12,$13,$14,$15,$16,$17,$18,$19,0,$20,$20)
 			 RETURNING id`,
-			userID, dest, copyName, sf.origFilename, sf.filePath, sf.fileSize,
+			userID, dest, sf.filename, sf.origFilename, sf.filePath, sf.fileSize,
 			sf.mimeType, sf.fileType, sf.storageDriver, sf.fileHash, sf.isEncrypted,
 			sf.description, sf.fileURL, sf.duration, sf.thumbnailURL, sf.width, sf.height,
 			sf.category, sf.sortOrder, now,
