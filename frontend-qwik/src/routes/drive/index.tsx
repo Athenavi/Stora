@@ -94,6 +94,8 @@ export default component$(() => {
   const moveTree = useSignal<any[]>([]);
   const moveTreeLoading = useSignal(false);
   const previewFile = useSignal<FileItem | null>(null);
+  const clipboard = useSignal<{ id: number; name: string; type: string } | null>(null);
+  const showProperties = useSignal<FileItem | null>(null);
 
   const onPreview = $((item: any) => { previewFile.value = item; });
 
@@ -335,8 +337,10 @@ export default component$(() => {
       {/* Desktop context menu overlay */}
       {ctxItem.value && !showActionSheet.value && (
         <>
-          <div class="fixed inset-0 z-50" onClick$={() => ctxItem.value = null} onContextMenu$={(e: any) => { e.preventDefault(); ctxItem.value = null; }} />
-          <div class="fixed z-50 min-w-[180px] bg-white border border-stora-border"
+          <div class="fixed inset-0 z-50" onClick$={() => ctxItem.value = null}
+            preventdefault:contextmenu
+            onContextMenu$={() => { ctxItem.value = null; }} />
+          <div class="fixed z-50 min-w-[200px] bg-white border border-stora-border"
             style={{ left: `${ctxPos.value.x}px`, top: `${ctxPos.value.y}px` }}>
             {ctxItem.value.type === "file" ? (
               <>
@@ -344,6 +348,8 @@ export default component$(() => {
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">👁 预览</button>
                 <button onClick$={() => { window.open(`/api/v2/files/download/${ctxItem.value!.id}`, "_blank"); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">⬇ 下载</button>
+                <button onClick$={async () => { const id = ctxItem.value!.id; const name = ctxItem.value!.name; try { await navigator.clipboard.writeText(window.location.origin + '/api/v2/files/download/' + id); } catch { prompt('复制链接:', window.location.origin + '/api/v2/files/download/' + id); } ctxItem.value = null; }}
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制</button>
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">✏ 重命名</button>
@@ -354,14 +360,33 @@ export default component$(() => {
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">⭐ 收藏</button>
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={async () => {
+                  const id = ctxItem.value!.id;
+                  const sel = ctxItem.value!.name;
+                  ctxItem.value = null;
+                  nav(`/tags?file_id=${id}`);
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">🏷 分组</button>
+                <button onClick$={async () => {
+                  const id = ctxItem.value!.id;
+                  ctxItem.value = null;
+                  try { const d = await api.get(`/files/${id}`); showProperties.value = d; } catch {}
+                }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">ℹ 属性</button>
+                <div class="h-px bg-stora-border my-1" />
+                {clipboard.value && (
+                  <button onClick$={async () => { ctxItem.value = null; alert(`已复制: ${clipboard.value.name}\n粘贴功能需要后端支持。`); }}
+                    class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📌 粘贴 {clipboard.value.name}</button>
+                )}
+                <button onClick$={async () => {
                   if (confirm("删除?")) { await deleteFile(ctxItem.value!.id).catch(() => {}); location.reload(); }
                   ctxItem.value = null;
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-destructive hover:bg-red-50 touch-target">🗑 删除</button>
               </>
             ) : (
               <>
-                <button onClick$={() => { nav(`/drive?Path=${encodeURIComponent(item.path || ctxItem.value!.name)}`); ctxItem.value = null; }}
+                <button onClick$={() => { nav(`/drive?Path=${encodeURIComponent((ctxItem.value as any)?.path || ctxItem.value!.name)}`); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📂 打开</button>
+                <button onClick$={() => { clipboard.value = { id: ctxItem.value!.id, name: ctxItem.value!.name, type: "folder" }; ctxItem.value = null; }}
+                  class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">📋 复制文件夹</button>
+                <div class="h-px bg-stora-border my-1" />
                 <button onClick$={() => { doRename(ctxItem.value! as any); ctxItem.value = null; }}
                   class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">✏ 重命名</button>
                 <button onClick$={async () => {
@@ -596,7 +621,8 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
           return (
             <tr key={`f-${item.id}`} draggable class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}
               onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-              onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}>
+              preventdefault:contextmenu
+              onContextMenu$={(e: any) => { onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}>
               <td class="px-4" onClick$={(e: any) => e.stopPropagation()}>
                 <input type="checkbox" checked={sel}
                   onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" />
@@ -610,7 +636,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
               <td class="px-2 text-sm text-stora-muted-foreground">—</td>
               <td class="px-2"><span class="text-xs text-stora-muted-foreground">文件夹</span></td>
               <td class="px-2 text-sm text-stora-muted-foreground">{item.created_at?.split("T")[0] || "—"}</td>
-              <td class="px-2 text-stora-muted-foreground text-base font-semibold">⋯</td>
+              <td class="px-2 text-stora-muted-foreground text-base font-semibold cursor-pointer select-none hover:text-stora-foreground" onClick$={(e: any) => { e.stopPropagation(); onContextItem$?.({ id: item.id, type: "folder", name: item.name }, e); }}>⋯</td>
             </tr>
           );
         }
@@ -619,7 +645,8 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
         return (
           <tr key={item.id} draggable class={`group text-sm h-12 ${sel ? "bg-stora-muted" : "hover:bg-stora-muted"}`}
             onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-            onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>
+            preventdefault:contextmenu
+            onContextMenu$={(e: any) => { onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>
             <td class="px-4"><input type="checkbox" checked={sel}
               onChange$={() => { const i = selIds.value.indexOf(item.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(item.id); selIds.value = [...selIds.value]; }} class="border-stora-border" /></td>
             <td class="px-2 cursor-pointer" onClick$={() => onPreview$ ? onPreview$(item) : nav(`/view?id=${item.id}`)}>
@@ -631,7 +658,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
             <td class="px-2 text-sm text-stora-muted-foreground">{fmtSize(item.file_size)}</td>
             <td class="px-2 text-sm text-stora-muted-foreground">{item.file_type || "未知"}</td>
             <td class="px-2 text-sm text-stora-muted-foreground">{item.created_at?.split("T")[0] || "—"}</td>
-            <td class="px-2 text-stora-muted-foreground text-base font-semibold">⋯</td>
+            <td class="px-2 text-stora-muted-foreground text-base font-semibold cursor-pointer select-none hover:text-stora-foreground" onClick$={(e: any) => { e.stopPropagation(); onContextItem$?.({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}>⋯</td>
           </tr>
         );
       })}
@@ -649,7 +676,8 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; curren
       if (item.t === "f") return (
         <div key={`f-${item.id}`} draggable onClick$={() => nav(`/drive?Path=${encodeURIComponent(item.path || item.name)}`)}
           onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-          onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}
+          onContextMenu$={(e: any) => { onContextItem$({ id: item.id, type: "folder", name: item.name }, e); }}
+          preventdefault:contextmenu
           class="bg-stora-card border border-stora-border hover:border-stora-accent cursor-pointer p-3">
           <div class="aspect-square bg-stora-muted flex items-center justify-center text-5xl mb-2.5">📁</div>
           <p class="text-xs font-medium text-stora-foreground truncate text-center">{item.name}</p>
@@ -660,7 +688,8 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; curren
       return (
         <div key={item.id} draggable onClick$={() => onPreview$ ? onPreview$(item) : nav(`/view?id=${item.id}`)}
           onDragStart$={(e: DragEvent) => { e.dataTransfer?.setData('text/plain', JSON.stringify({ fileIds: [item.id] })); }}
-          onContextMenu$={(e: any) => { e.preventDefault(); onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}
+          onContextMenu$={(e: any) => { onContextItem$({ id: item.id, type: "file", name: item.filename, fileType: item.file_type }, e); }}
+          preventdefault:contextmenu
           class={`bg-stora-card border cursor-pointer p-3 relative ${sel ? "border-stora-primary" : "border-stora-border hover:border-stora-muted-foreground"}`}>
           <div class={`aspect-square flex items-center justify-center text-4xl mb-2.5 overflow-hidden`}>
             {item.file_type === "image" ? (
