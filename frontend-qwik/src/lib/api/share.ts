@@ -41,7 +41,18 @@ export interface ShareAccessResponse {
   password_protected: boolean;
 }
 
-export const createShare = (params: CreateShareParams): Promise<ShareLink> => {
+export const createShare = (params: CreateShareParams & { file_ids?: number[] }): Promise<ShareLink> => {
+  if (params.file_ids && params.file_ids.length > 0) {
+    // Batch share — use JSON so file_ids array is preserved
+    return api.post('/files/shares', {
+      file_ids: params.file_ids,
+      permission: params.permission || 'read',
+      password: params.password || undefined,
+      expires_in_hours: params.expires_in_hours || undefined,
+      max_downloads: params.max_downloads || 0,
+    });
+  }
+  // Single share — use FormData for backward compat
   const fd = new FormData();
   if (params.file_id !== undefined) fd.append('file_id', String(params.file_id));
   if (params.folder_id !== undefined) fd.append('folder_id', String(params.folder_id));
