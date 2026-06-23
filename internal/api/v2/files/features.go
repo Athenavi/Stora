@@ -908,6 +908,7 @@ func (h *TrashHandler) RestoreFile(w http.ResponseWriter, r *http.Request) {
 
 func (h *TrashHandler) EmptyTrash(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
+	h.clearTrashByUser(userID)
 	h.db.Exec(`DELETE FROM file_items WHERE user_id = $1 AND deleted_at IS NOT NULL`, userID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "trash emptied"})
 }
@@ -917,16 +918,30 @@ func (h *TrashHandler) DestroyFile(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 
-	result, err := h.db.Exec(
+	var fileHash string
+	var fileSize int64
+	err := h.db.QueryRow(
+		`SELECT COALESCE(file_hash,''), COALESCE(file_size,0) FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL`,
+		fileID, userID,
+	).Scan(&fileHash, &fileSize)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	if fileHash != "" {
+		h.db.Exec(`UPDATE file_fingerprints SET reference_count = GREATEST(0, reference_count - 1) WHERE hash = $1`, fileHash)
+	}
+	if fileSize > 0 {
+		h.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, fileSize, userID)
+	}
+
+	_, err = h.db.Exec(
 		`DELETE FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NOT NULL`,
 		fileID, userID,
 	)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "destroy failed")
-		return
-	}
-	if affected, _ := result.RowsAffected(); affected == 0 {
-		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "destroyed"})
@@ -942,6 +957,36 @@ func (h *TrashHandler) BatchDestroy(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.FileIDs) == 0 {
 		writeError(w, http.StatusBadRequest, "file_ids required")
 		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+
+	// Collect hashes and total size before deletion
+	rows, err := h.db.Query(
+		`SELECT COALESCE(file_hash,''), COALESCE(file_size,0) FROM file_items WHERE id = ANY($1) AND user_id = $2 AND deleted_at IS NOT NULL`,
+		pq.Array(req.FileIDs), userID,
+	)
+	if err == nil {
+		defer rows.Close()
+		var totalSize int64
+		var hashes []string
+		for rows.Next() {
+			var hash string
+			var size int64
+			if err := rows.Scan(&hash, &size); err == nil {
+				if hash != "" {
+					hashes = append(hashes, hash)
+				}
+				totalSize += size
+			}
+		}
+		// Decrement fingerprint refcounts
+		for _, hash := range hashes {
+			h.db.Exec(`UPDATE file_fingerprints SET reference_count = GREATEST(0, reference_count - 1), updated_at = $1 WHERE hash = $2`, now, hash)
+		}
+		if totalSize > 0 {
+			h.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, totalSize, userID)
+		}
 	}
 
 	destroyed := int64(0)
@@ -981,8 +1026,41 @@ func (h *TrashHandler) BatchRestore(w http.ResponseWriter, r *http.Request) {
 // ClearTrash permanently deletes all trash items for the user.
 func (h *TrashHandler) ClearTrash(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
+	h.clearTrashByUser(userID)
 	h.db.Exec(`DELETE FROM file_items WHERE user_id = $1 AND deleted_at IS NOT NULL`, userID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "trash cleared"})
+}
+
+// clearTrashByUser decrements fingerprint refcounts and releases storage quota
+// for all of a user's trash items. Called before DELETE FROM file_items.
+func (h *TrashHandler) clearTrashByUser(userID int64) {
+	now := time.Now().Format(time.RFC3339)
+	rows, err := h.db.Query(
+		`SELECT COALESCE(file_hash,''), COALESCE(file_size,0) FROM file_items WHERE user_id = $1 AND deleted_at IS NOT NULL`,
+		userID,
+	)
+	if err != nil {
+		return
+	}
+	defer rows.Close()
+	var totalSize int64
+	var hashes []string
+	for rows.Next() {
+		var hash string
+		var size int64
+		if err := rows.Scan(&hash, &size); err == nil {
+			if hash != "" {
+				hashes = append(hashes, hash)
+			}
+			totalSize += size
+		}
+	}
+	for _, hash := range hashes {
+		h.db.Exec(`UPDATE file_fingerprints SET reference_count = GREATEST(0, reference_count - 1), updated_at = $1 WHERE hash = $2`, now, hash)
+	}
+	if totalSize > 0 {
+		h.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, totalSize, userID)
+	}
 }
 
 // ---------- Encryption utilities ----------

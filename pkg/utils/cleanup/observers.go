@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 )
 
 // ─── Observer 1: UploadChunkCleaner ─────────────────────────────────────────
@@ -38,6 +39,34 @@ func (o *OrphanFileItemCleaner) OnCleanup(event CleanupEvent) error {
 	if o.ExpireHours <= 0 {
 		o.ExpireHours = 144
 	}
+
+	// Collect fingerprints and total size before deletion
+	rows, err := o.DB.Query(
+		`SELECT COALESCE(file_hash,''), COALESCE(file_size,0) FROM file_items WHERE deleted_at IS NOT NULL
+		 AND deleted_at < NOW() - CAST($1 AS INTERVAL)`,
+		fmt.Sprintf("%d hours", o.ExpireHours),
+	)
+	if err != nil {
+		return err
+	}
+	now := time.Now().Format(time.RFC3339)
+	var totalSize int64
+	var hashes []string
+	for rows.Next() {
+		var hash string
+		var size int64
+		if err := rows.Scan(&hash, &size); err == nil {
+			if hash != "" {
+				hashes = append(hashes, hash)
+			}
+			totalSize += size
+		}
+	}
+	rows.Close()
+	for _, hash := range hashes {
+		o.DB.Exec(`UPDATE file_fingerprints SET reference_count = GREATEST(0, reference_count - 1), updated_at = $1 WHERE hash = $2`, now, hash)
+	}
+
 	result, err := o.DB.Exec(
 		`DELETE FROM file_items WHERE deleted_at IS NOT NULL
 		 AND deleted_at < NOW() - CAST($1 AS INTERVAL)`,
@@ -48,7 +77,7 @@ func (o *OrphanFileItemCleaner) OnCleanup(event CleanupEvent) error {
 	}
 	n, _ := result.RowsAffected()
 	if n > 0 {
-		log.Printf("[Cleanup] Permanently deleted %d orphan file_items", n)
+		log.Printf("[Cleanup] Permanently deleted %d orphan file_items (released %d bytes, updated %d fingerprints)", n, totalSize, len(hashes))
 	}
 	return nil
 }
