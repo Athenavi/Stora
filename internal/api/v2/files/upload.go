@@ -343,8 +343,8 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	var fileID int64
 	err = h.db.QueryRow(
 		`INSERT INTO file_items (user_id, filename, original_filename, file_path, file_size,
-		                         mime_type, file_type, storage_driver, file_hash, is_folder, deleted_at, description, duration, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'local', $8, false, NULL, NULL, 0, $9, $9) RETURNING id`,
+		                         mime_type, file_type, storage_driver, file_hash, is_folder, deleted_at, description, file_url, duration, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'local', $8, false, NULL, NULL, '', 0, $9, $9) RETURNING id`,
 		task.UserID, task.Filename, task.Filename, storagePath, task.FileSize,
 		task.MimeType, fileType, fileHash, now,
 	).Scan(&fileID)
