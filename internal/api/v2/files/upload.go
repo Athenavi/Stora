@@ -366,6 +366,9 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update user storage quota
+	h.db.Exec(`UPDATE users SET used_storage = used_storage + $1 WHERE id = $2`, task.FileSize, task.UserID)
+
 	// Mark upload as completed and schedule cleanup
 	h.db.Exec(`UPDATE upload_tasks SET status = 'completed', final_hash = $1, storage_path = $2, updated_at = $3 WHERE upload_id = $4`,
 		fileHash, storagePath, now, uploadID)

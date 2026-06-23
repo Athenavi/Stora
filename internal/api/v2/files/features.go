@@ -620,6 +620,9 @@ func (h *BatchHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().Format(time.RFC3339)
+	// Sum file sizes for quota update
+	var deletedBytes int64
+	h.db.QueryRow(`SELECT COALESCE(SUM(file_size), 0) FROM file_items WHERE id = ANY($1) AND user_id = $2 AND deleted_at IS NULL`, pq.Array(req.FileIDs), userID).Scan(&deletedBytes)
 	result, err := h.db.Exec(
 		`UPDATE file_items SET deleted_at = $1 WHERE id = ANY($2) AND user_id = $3 AND deleted_at IS NULL`,
 		now, pq.Array(req.FileIDs), userID,
@@ -629,6 +632,9 @@ func (h *BatchHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n, _ := result.RowsAffected()
+	if deletedBytes > 0 {
+		h.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, deletedBytes, userID)
+	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"deleted": len(req.FileIDs),
 		"affected": n,

@@ -346,6 +346,9 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Update user storage quota
+	h.db.Exec(`UPDATE users SET used_storage = used_storage + $1 WHERE id = $2`, fileSize, userID)
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"id":        fileID,
 		"filename":  filename,
@@ -365,6 +368,9 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 
 	now := time.Now().Format(time.RFC3339)
+	// Get file size before soft-delete so we can subtract from quota
+	var deletedSize int64
+	h.db.QueryRow(`SELECT file_size FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`, fileID, userID).Scan(&deletedSize)
 	result, err := h.db.Exec(
 		`UPDATE file_items SET deleted_at = $1 WHERE id = $2 AND user_id = $3 AND deleted_at IS NULL`,
 		now, fileID, userID,
@@ -377,6 +383,10 @@ func (h *Handler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	if affected == 0 {
 		writeError(w, http.StatusNotFound, "file not found")
 		return
+	}
+	// Subtract from user storage quota
+	if deletedSize > 0 {
+		h.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, deletedSize, userID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
