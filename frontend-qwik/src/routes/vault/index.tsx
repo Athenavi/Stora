@@ -47,9 +47,9 @@ export default component$(() => {
     if (t && id) { vaultToken.value = t; unlockId.value = Number(id); loadItems(Number(id), t); }
   });
 
-  const loadItems = async (id: number, token: string) => {
+  const loadItems = $(async (id: number, token: string) => {
     try { const data = await api.get<VaultItem[]>(`/vaults/${id}/items`, { headers: { "X-Vault-Token": token } }); items.value = data || []; } catch { items.value = []; }
-  };
+  });
 
   const doUnlock = $(async () => {
     unlockErr.value = ""; const fd = new FormData(); fd.append("password", unlockPw.value);
