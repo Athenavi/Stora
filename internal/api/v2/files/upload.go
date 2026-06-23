@@ -262,6 +262,7 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	uploadID := chi.URLParam(r, "uploadId")
 
 	// Fallback: read from JSON body (frontend sends POST /files/upload/complete)
+	var reqFolderID *int64
 	if uploadID == "" {
 		var req struct {
 			UploadID string `json:"upload_id"`
@@ -272,6 +273,7 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		uploadID = req.UploadID
+		reqFolderID = req.FolderID
 	}
 
 	// Get upload task
@@ -338,14 +340,38 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
+	// Resolve folder_id: JSON body > upload task > root folder
+	var folderID *int64
+	if reqFolderID != nil {
+		folderID = reqFolderID
+	} else if task.FolderID.Valid && task.FolderID.String != "" {
+		if fid, err := strconv.ParseInt(task.FolderID.String, 10, 64); err == nil {
+			folderID = &fid
+		}
+	}
+	if folderID == nil {
+		var rootID int64
+		if err := h.db.QueryRow(`SELECT id FROM folders WHERE user_id = $1 AND parent_id IS NULL LIMIT 1`, task.UserID).Scan(&rootID); err != nil {
+			err = h.db.QueryRow(
+				`INSERT INTO folders (user_id, name, parent_id, created_at, updated_at) VALUES ($1, '我的文件', NULL, $2, $2) RETURNING id`,
+				task.UserID, now,
+			).Scan(&rootID)
+			if err != nil {
+				utils.WriteError(w, http.StatusInternalServerError, "failed to create root folder")
+				return
+			}
+		}
+		folderID = &rootID
+	}
+
 	// Create file item
 	fileType := detectFileType(task.MimeType, task.Filename)
 	var fileID int64
 	err = h.db.QueryRow(
-		`INSERT INTO file_items (user_id, filename, original_filename, file_path, file_size,
+		`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
 		                         mime_type, file_type, storage_driver, file_hash, is_folder, deleted_at, description, file_url, duration, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, 'local', $8, false, NULL, NULL, '', 0, $9, $9) RETURNING id`,
-		task.UserID, task.Filename, task.Filename, storagePath, task.FileSize,
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'local', $9, false, NULL, NULL, '', 0, $10, $10) RETURNING id`,
+		task.UserID, folderID, task.Filename, task.Filename, storagePath, task.FileSize,
 		task.MimeType, fileType, fileHash, now,
 	).Scan(&fileID)
 

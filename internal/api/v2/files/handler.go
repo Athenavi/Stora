@@ -279,6 +279,21 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			folderID = &fid
 		}
 	}
+	if folderID == nil {
+		// Fall back to user's root folder; create one if it doesn't exist
+		var rootID int64
+		if err := h.db.QueryRow(`SELECT id FROM folders WHERE user_id = $1 AND parent_id IS NULL LIMIT 1`, userID).Scan(&rootID); err != nil {
+			err = h.db.QueryRow(
+				`INSERT INTO folders (user_id, name, parent_id, created_at, updated_at) VALUES ($1, '我的文件', NULL, $2, $2) RETURNING id`,
+				userID, time.Now().Format(time.RFC3339),
+			).Scan(&rootID)
+			if err != nil {
+				utils.WriteError(w, http.StatusInternalServerError, "failed to create root folder")
+				return
+			}
+		}
+		folderID = &rootID
+	}
 
 	filename := header.Filename
 	mimeType := header.Header.Get("Content-Type")
