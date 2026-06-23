@@ -341,6 +341,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	).Scan(&fileID)
 
 	if err != nil {
+		log.Printf("[UploadFile] INSERT error: %v", err)
 		utils.WriteError(w, http.StatusInternalServerError, "database insert failed")
 		return
 	}
