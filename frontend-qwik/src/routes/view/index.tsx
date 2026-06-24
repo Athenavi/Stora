@@ -114,7 +114,7 @@ export default component$(() => {
   return (
     <div class="flex flex-col h-full bg-slate-900">
       {/* Top bar */}
-      <div class="flex items-center gap-3 px-6 py-3 bg-slate-800 border-b border-slate-700 shrink-0">
+      <div class="flex items-center gap-3 px-3 md:px-6 py-3 bg-slate-800 border-b border-slate-700 shrink-0">
         <a href="/drive" class="p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
           <Icon name="chevronLeft" size={20} />
         </a>
@@ -194,14 +194,14 @@ export default component$(() => {
 
       {/* 预览/编辑容器 */}
       {isVideo ? (
-        <div class="flex-1 flex items-center justify-center bg-black">
+        <div class="flex-1 flex items-center justify-center bg-black min-h-0">
           <video controls autoplay class="max-w-full max-h-full" preload="metadata">
             <source src={previewUrl} type={f.mime_type || "video/mp4"} />
             {subtitleAvailable.value && <track kind="subtitles" src={`/api/v2/files/transcribe/${f.id}/subtitle`} srclang="zh" label="中文" default />}
           </video>
         </div>
       ) : isAudio ? (
-        <div class="flex-1 flex flex-col items-center justify-center bg-slate-800 gap-6">
+        <div class="flex-1 flex flex-col items-center justify-center bg-slate-800 gap-6 min-h-0">
           <div class="w-32 h-32 rounded-full bg-indigo-600/20 flex items-center justify-center">
             <Icon name="music" size={48} class="text-indigo-400" />
           </div>
@@ -212,15 +212,15 @@ export default component$(() => {
           </div>
         </div>
       ) : editing.value ? (
-        <textarea class="flex-1 bg-slate-900 text-slate-100 font-mono text-sm p-6 resize-none focus:outline-none scrollbar-thin"
+        <textarea class="flex-1 bg-slate-900 text-slate-100 font-mono text-sm p-6 resize-none focus:outline-none scrollbar-thin min-h-0"
           bind:value={editContent}
           onKeyDown$={(e: any) => { if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveContent(); } }} />
       ) : (
-        <div ref={viewerRef} class="flex-1 overflow-hidden" />
+        <div ref={viewerRef} class="flex-1 overflow-hidden min-h-0" />
       )}
 
       {/* Info panel */}
-      <div class="flex items-center gap-6 px-6 py-3 bg-slate-800 border-t border-slate-700 text-xs text-slate-400 shrink-0">
+      <div class="flex items-center gap-3 md:gap-6 px-3 md:px-6 py-3 bg-slate-800 border-t border-slate-700 text-xs text-slate-400 shrink-0">
         <span>大小: {(f.file_size / 1024).toFixed(1)} KB</span>
         <span>类型: {f.file_type}</span>
         {f.mime_type && <span>MIME: {f.mime_type}</span>}
