@@ -310,18 +310,6 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Check: forbid same-name folder+file at the same level
-	var existingFolder int64
-	h.db.QueryRow(
-		`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
-		 AND filename = $3 AND is_folder = true AND deleted_at IS NULL`,
-		userID, folderID, header.Filename,
-	).Scan(&existingFolder)
-	if existingFolder > 0 {
-		utils.WriteError(w, http.StatusConflict, "同层级已存在同名文件夹，不能上传同名文件")
-		return
-	}
-
 	filename := header.Filename
 	mimeType := header.Header.Get("Content-Type")
 	fileType := detectFileType(mimeType, filename)
@@ -879,18 +867,6 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 	).Scan(&existing)
 	if existing > 0 {
 		writeError(w, http.StatusConflict, "同层级已存在同名文件夹")
-		return
-	}
-
-	// Also check: forbid same-name file+folder at the same level
-	var existingFile int64
-	h.db.QueryRow(
-		`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
-		 AND filename = $3 AND is_folder = false AND deleted_at IS NULL`,
-		userID, req.ParentID, req.Name,
-	).Scan(&existingFile)
-	if existingFile > 0 {
-		writeError(w, http.StatusConflict, "同层级已存在同名文件，不能创建同名文件夹")
 		return
 	}
 
