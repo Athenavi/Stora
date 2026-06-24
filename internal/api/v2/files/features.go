@@ -187,7 +187,7 @@ func (h *VaultHandler) VerifyVaultPassword(w http.ResponseWriter, r *http.Reques
 	userID, _ := middleware.GetUserID(r.Context())
 	vaultID, _ := strconv.ParseInt(chi.URLParam(r, "vaultId"), 10, 64)
 
-	// Accept both FormData and query param
+	// Accept password from form data, query param, or JSON body
 	pw := r.URL.Query().Get("password")
 	if pw == "" {
 		ct := r.Header.Get("Content-Type")
@@ -197,6 +197,13 @@ func (h *VaultHandler) VerifyVaultPassword(w http.ResponseWriter, r *http.Reques
 		} else if strings.HasPrefix(ct, "application/x-www-form-urlencoded") {
 			r.ParseForm()
 			pw = r.FormValue("password")
+		} else if strings.HasPrefix(ct, "application/json") {
+			var body struct {
+				Password string `json:"password"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+				pw = body.Password
+			}
 		}
 	}
 
