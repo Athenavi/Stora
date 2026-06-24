@@ -283,8 +283,8 @@ export default component$(() => {
       </div>
     </div>
 
-      {/* 可滚动内容区 */}
-      <div class="flex-1 overflow-auto scrollbar-thin">
+      {/* 非滚动区 — 批量操作、上传、筛选标签 */}
+      <div class="shrink-0">
 
       {/* Mobile bottom action bar for batch operations */}
       {selIds.value.length > 0 && (
@@ -422,9 +422,10 @@ export default component$(() => {
           </button>
         ))}
       </div>
+    </div>
 
       {/* Content */}
-      <div class="pb-20 lg:pb-0"
+      <div class="flex-1 overflow-auto scrollbar-thin pb-20 lg:pb-0"
         preventdefault:contextmenu
         onContextMenu$={(e: any) => {
           if (clipboard.value) {
@@ -457,7 +458,6 @@ export default component$(() => {
             onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)} />
         )}
       </div>
-    </div>
 
       {/* Desktop context menu overlay */}
       {ctxItem.value && !showActionSheet.value && (
@@ -998,7 +998,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
   <div class="overflow-x-auto">
   <table class="w-full">
     <thead>
-      <tr class="text-left text-xs font-semibold text-stora-muted-foreground bg-stora-muted">
+      <tr class="text-left text-xs font-semibold text-stora-muted-foreground bg-stora-muted sticky top-0 z-10">
         <th class="w-10 px-4 py-3 font-semibold"><input type="checkbox" checked={selIds.value.length === items.length && items.length > 0}
           onChange$={() => selIds.value = selIds.value.length === items.length ? [] : items.map((x: any) => x.id)} class="border-stora-border" /></th>
         <th class="px-2 py-3 font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("filename"))}>名称 {sortIcon("filename")}</th>
