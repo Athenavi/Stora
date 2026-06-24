@@ -21,7 +21,7 @@ models:
       last_login_at: { type: timestamp, nullable: true }
       last_login_ip: { type: varchar, length: 45, nullable: true }
       register_ip:   { type: varchar, length: 45, nullable: true }
-      locale:        { type: varchar, length: 10, default: "''zh_CN''" }
+      locale:        { type: varchar, length: 10, default: "'zh_CN'" }
       is_2fa_enabled:  { type: boolean, default: "false" }
       totp_secret:   { type: text, nullable: true }
       backup_codes:  { type: text, nullable: true }
@@ -57,8 +57,8 @@ models:
       file_url:          { type: text, nullable: true }
       file_size:         { type: bigint, default: "0" }
       mime_type:         { type: varchar, length: 255, nullable: true }
-      file_type:         { type: varchar, length: 50, default: "''other''" }
-      storage_driver:    { type: varchar, length: 50, default: "''local''" }
+      file_type:         { type: varchar, length: 50, default: "'other'" }
+      storage_driver:    { type: varchar, length: 50, default: "'local'" }
       storage_bucket:    { type: text, nullable: true }
       storage_key:       { type: text, nullable: true }
       file_hash:         { type: varchar, length: 64, nullable: true }
@@ -108,7 +108,7 @@ models:
       file_path:   { type: text, nullable: true }
       file_size:   { type: bigint, default: "0" }
       file_hash:   { type: varchar, length: 64, nullable: true }
-      storage_driver: { type: varchar, length: 50, default: "''local''" }
+      storage_driver: { type: varchar, length: 50, default: "'local'" }
       created_by:  { type: bigint, foreign_key: "users(id)", nullable: true }
       created_at:  { type: timestamp, default: "now()" }
 
@@ -163,10 +163,10 @@ models:
       file_id:         { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", nullable: true }
       folder_id:       { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", nullable: true }
       user_id:         { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      token:           { type: varchar, length: 64, default: "''''''" }
-      short_code:      { type: varchar, length: 32, default: "''''''" }
-      permission:      { type: varchar, length: 20, default: "''read''" }
-      password:        { type: varchar, length: 128, default: "''''''" }
+      token:           { type: varchar, length: 64, default: "''" }
+      short_code:      { type: varchar, length: 32, default: "''" }
+      permission:      { type: varchar, length: 20, default: "'read'" }
+      password:        { type: varchar, length: 128, default: "''" }
       is_active:       { type: boolean, default: "true" }
       view_count:      { type: integer, default: "0" }
       download_count:  { type: integer, default: "0" }
@@ -174,7 +174,7 @@ models:
       expires_at:      { type: timestamp, nullable: true }
       created_at:      { type: timestamp, default: "now()" }
     indexes:
-      - { columns: [short_code], where: "short_code != ''''" }
+      - { columns: [short_code], where: "short_code != ''" }
       - { columns: [user_id, created_at], order: desc }
 
   ShareLinkItem:
@@ -194,7 +194,7 @@ models:
       file_id:     { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
       owner_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       shared_with: { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      permission:  { type: varchar, length: 20, default: "''view''" }
+      permission:  { type: varchar, length: 20, default: "'view'" }
       created_at:  { type: timestamp, default: "now()" }
       expires_at:  { type: timestamp, nullable: true }
 
@@ -206,7 +206,7 @@ models:
       user_id:       { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       name:          { type: varchar, length: 255 }
       description:   { type: text, nullable: true }
-      password_hash: { type: varchar, length: 128, default: "''''''" }
+      password_hash: { type: varchar, length: 128, default: "''" }
       created_at:    { type: timestamp, default: "now()" }
       updated_at:    { type: timestamp, default: "now()" }
 
@@ -218,10 +218,10 @@ models:
       vault_id:     { type: bigint, foreign_key: "vaults(id)", on_delete: cascade }
       user_id:      { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       name:         { type: varchar, length: 255 }
-      filename:     { type: varchar, length: 512, default: "''''''" }
+      filename:     { type: varchar, length: 512, default: "''" }
       file_size:    { type: bigint, default: "0" }
-      mime_type:    { type: varchar, length: 128, default: "''''''" }
-      content_type: { type: varchar, length: 64, default: "''file''" }
+      mime_type:    { type: varchar, length: 128, default: "''" }
+      content_type: { type: varchar, length: 64, default: "'file'" }
       file_path:    { type: text, nullable: true }
       created_at:   { type: timestamp, default: "now()" }
       updated_at:   { type: timestamp, default: "now()" }
@@ -240,7 +240,7 @@ models:
       chunk_size:       { type: integer, default: "0" }
       total_chunks:     { type: integer, default: "0" }
       received_chunks:  { type: integer, default: "0" }
-      status:           { type: varchar, length: 20, default: "''pending''" }
+      status:           { type: varchar, length: 20, default: "'pending'" }
       mime_type:        { type: varchar, length: 255, nullable: true }
       folder_id:        { type: varchar, length: 50, nullable: true }
       first_chunk_hash: { type: varchar, length: 64, nullable: true }
@@ -272,7 +272,7 @@ models:
       user_id:        { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       url:            { type: text }
       filename:       { type: varchar, length: 255, nullable: true }
-      status:         { type: varchar, length: 20, default: "''pending''" }
+      status:         { type: varchar, length: 20, default: "'pending'" }
       progress:       { type: integer, default: "0" }
       retry_count:    { type: integer, default: "0" }
       manual_retries: { type: integer, default: "0" }
@@ -360,7 +360,7 @@ models:
       id:        { type: bigint, primary_key: true, autoincrement: true }
       team_id:   { type: bigint, foreign_key: "teams(id)", on_delete: cascade }
       user_id:   { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      role:      { type: varchar, length: 20, default: "''member''" }
+      role:      { type: varchar, length: 20, default: "'member'" }
       created_at: { type: timestamp, default: "now()" }
 
   TeamFolder:
@@ -370,7 +370,7 @@ models:
       id:        { type: bigint, primary_key: true, autoincrement: true }
       team_id:   { type: bigint, foreign_key: "teams(id)", on_delete: cascade }
       folder_id: { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
-      permission: { type: varchar, length: 20, default: "''read''" }
+      permission: { type: varchar, length: 20, default: "'read'" }
       created_at: { type: timestamp, default: "now()" }
 
   FileComment:
@@ -391,7 +391,7 @@ models:
       id:         { type: bigint, primary_key: true, autoincrement: true }
       user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       file_id:    { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
-      status:     { type: varchar, length: 20, default: "''pending''" }
+      status:     { type: varchar, length: 20, default: "'pending'" }
       progress:   { type: integer, default: "0" }
       result_url: { type: text, nullable: true }
       error_msg:  { type: text, nullable: true }
@@ -419,6 +419,6 @@ models:
       webhook_id: { type: bigint, foreign_key: "webhooks(id)", on_delete: cascade }
       event:      { type: varchar, length: 50 }
       payload:    { type: text, nullable: true }
-      status:     { type: varchar, length: 20, default: "''pending''" }
+      status:     { type: varchar, length: 20, default: "'pending'" }
       response:   { type: text, nullable: true }
       created_at: { type: timestamp, default: "now()" }
