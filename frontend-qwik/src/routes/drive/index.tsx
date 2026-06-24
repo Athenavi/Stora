@@ -232,8 +232,8 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col overflow-hidden h-dvh">
-      {/* === 上 1/6：操作栏（搜索 + 功能按钮）=== */}
-      <div class="h-[16.67dvh] shrink-0 overflow-hidden bg-white border-b border-stora-border">
+      {/* === 上：操作栏（搜索 + 功能按钮）=== */}
+      <div class="shrink-0 bg-white border-b border-stora-border">
         <div class="flex items-center gap-4 px-6 py-3">
         {/* Search — 320x40 per spec */}
         <div class="relative flex-1 max-w-[320px]">
