@@ -173,7 +173,41 @@ func (h *BlockHandler) GetFileManifest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SyncChanges returns incremental changes since a cursor.
+
+// ListSnapshots returns version snapshots for a file.
+// GET /api/v2/files/{id}/snapshots
+func (h *BlockHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	rows, err := h.db.Query(
+		`SELECT id, version_num, file_size, file_hash, created_at FROM file_versions
+		 WHERE file_id = $1 AND created_by = $2 ORDER BY version_num DESC LIMIT 100`,
+		fileID, userID,
+	)
+	if err != nil {
+		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{"snapshots": []interface{}{}})
+		return
+	}
+	defer rows.Close()
+
+	type Snap struct {
+		ID        int64  `json:"id"`
+		Version   int    `json:"version"`
+		Size      int64  `json:"size"`
+		Hash      string `json:"hash,omitempty"`
+		CreatedAt string `json:"created_at"`
+	}
+	snaps := make([]Snap, 0)
+	for rows.Next() {
+		var s Snap
+		var h *string
+		rows.Scan(&s.ID, &s.Version, &s.Size, &h, &s.CreatedAt)
+		if h != nil { s.Hash = *h }
+		snaps = append(snaps, s)
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{"snapshots": snaps})
+}// SyncChanges returns incremental changes since a cursor.
 // GET /api/v2/sync/changes?since={cursor}&limit=100
 func (h *BlockHandler) SyncChanges(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())

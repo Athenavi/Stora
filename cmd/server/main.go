@@ -349,6 +349,7 @@ func main() {
 			r.Post("/blocks/upload", blockHandler.UploadBlock)
 			r.Get("/blocks/{hash}", blockHandler.DownloadBlock)
 			r.Get("/files/{id}/manifest", blockHandler.GetFileManifest)
+			r.Get("/files/{id}/snapshots", blockHandler.ListSnapshots)
 			r.Get("/sync/changes", blockHandler.SyncChanges)
 			// Legacy paths
 			r.Get("/trash", trashHandler.ListTrash)

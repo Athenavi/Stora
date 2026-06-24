@@ -1313,7 +1313,32 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	defer reader.Close()
 
 	w.Header().Set("Content-Type", mimeType)
+	w.Header().Set("Accept-Ranges", "bytes")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+
+	// Phase 4: Byte-range support for streaming
+	var fileSize int64
+	h.db.QueryRow(`SELECT file_size FROM file_items WHERE id = $1`, fileID).Scan(&fileSize)
+
+	if rangeHeader := r.Header.Get("Range"); rangeHeader != "" && fileSize > 0 {
+		var start, end int64
+		if _, err := fmt.Sscanf(rangeHeader, "bytes=%d-%d", &start, &end); err != nil {
+			end = fileSize - 1
+		}
+		if end == 0 || end >= fileSize {
+			end = fileSize - 1
+		}
+		if start > end || start < 0 {
+			http.Error(w, "range not satisfiable", http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
+		w.Header().Set("Content-Length", fmt.Sprintf("%d", end-start+1))
+		w.WriteHeader(http.StatusPartialContent)
+		io.CopyN(w, reader, end-start+1)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
 	limited := h.wrapDownloadReader(userID, reader)
 	io.Copy(w, limited)
