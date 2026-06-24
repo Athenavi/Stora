@@ -996,9 +996,9 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
 
   return (
   <div class="overflow-x-auto">
-  <table class="w-full">
-    <thead>
-      <tr class="text-left text-xs font-semibold text-stora-muted-foreground bg-stora-muted sticky top-0 z-10">
+  <table class="w-full border-separate border-0">
+    <thead class="sticky top-0 z-10">
+      <tr class="text-left text-xs font-semibold text-stora-muted-foreground bg-stora-muted">
         <th class="w-10 px-4 py-3 font-semibold"><input type="checkbox" checked={selIds.value.length === items.length && items.length > 0}
           onChange$={() => selIds.value = selIds.value.length === items.length ? [] : items.map((x: any) => x.id)} class="border-stora-border" /></th>
         <th class="px-2 py-3 font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("filename"))}>名称 {sortIcon("filename")}</th>
