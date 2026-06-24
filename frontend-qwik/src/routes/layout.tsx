@@ -42,6 +42,9 @@ export default component$(() => {
     path === "/register" ||
     path.startsWith("/s/");
 
+  // Full-screen routes that skip sidebar/topbar but keep auth
+  const isFullscreen = path.startsWith("/view");
+
   // Auth guard
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
@@ -100,6 +103,28 @@ export default component$(() => {
           </div>
         )}
         <Slot />
+      </>
+    );
+  }
+
+  // Full-screen preview: no sidebar/topbar, full viewport
+  if (isFullscreen) {
+    return (
+      <>
+        {maintenance.value?.enabled && (
+          <div class="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800 flex items-center justify-center gap-2">
+            <Icon name="setting" size={16} class="shrink-0" />
+            <span>{maintenance.value.message || '系统正在维护中'}</span>
+            {maintenance.value.time_until_maintenance !== undefined && maintenance.value.time_until_maintenance > 0 && (
+              <span class="text-amber-600 font-mono">
+                即将于 {Math.ceil(maintenance.value.time_until_maintenance / 60)} 分钟后开始
+              </span>
+            )}
+          </div>
+        )}
+        <div class="flex min-h-dvh">
+          <Slot />
+        </div>
       </>
     );
   }

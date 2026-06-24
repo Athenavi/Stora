@@ -112,7 +112,7 @@ export default component$(() => {
   };
 
   return (
-    <div class="flex flex-col h-full bg-slate-900">
+    <div class="flex flex-col min-h-dvh bg-slate-900">
       {/* Top bar */}
       <div class="flex items-center gap-3 px-3 md:px-6 py-3 bg-slate-800 border-b border-slate-700 shrink-0">
         <a href="/drive" class="p-1.5 rounded text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
