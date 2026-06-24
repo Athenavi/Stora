@@ -32,7 +32,7 @@ export default component$(() => {
   const color = useSignal(TAG_COLORS[0]);
   const loading = useSignal(false);
 
-  const refresh = async () => { try { items.value = await api.get<Tag[]>("/files/tags") || []; } catch {} };
+  const refresh = $(async () => { try { items.value = await api.get<Tag[]>("/files/tags") || []; } catch {} });
 
   const createOrUpdate = $(async () => {
     if (!name.value.trim()) return;
@@ -48,12 +48,12 @@ export default component$(() => {
     loading.value = false;
   });
 
-  const startEdit = (tag: Tag) => { editId.value = tag.id; name.value = tag.name; color.value = tag.color; showCreate.value = true; };
+  const startEdit = $((tag: Tag) => { editId.value = tag.id; name.value = tag.name; color.value = tag.color; showCreate.value = true; });
 
-  const doDelete = async (id: number) => {
+  const doDelete = $(async (id: number) => {
     if (!confirm("确认删除此标签？此操作不可恢复。")) return;
     try { await api.delete(`/files/tags/${id}`); await refresh(); } catch {}
-  };
+  });
 
   // Compute tag display color
   const tagStyle = (tag: Tag) => ({
