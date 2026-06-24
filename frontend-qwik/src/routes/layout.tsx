@@ -155,7 +155,7 @@ export default component$(() => {
       <aside
         class={`${mobileMenuOpen.value ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}
           w-[260px] transition-transform duration-200 bg-stora-sidebar text-white flex flex-col shrink-0
-          fixed lg:static inset-y-0 left-0 z-40 lg:z-auto`}
+          fixed lg:sticky lg:top-0 lg:h-dvh inset-y-0 left-0 z-40 lg:z-auto`}
       >
         {/* Logo — 48px height, padding 24px */}
         <div class="flex items-center gap-3 px-6 h-12 shrink-0 mt-6">
@@ -227,8 +227,8 @@ export default component$(() => {
         </div>
 
         {/* User area — clickable dropdown */}
-        <div class="relative" onClick$={() => userMenuOpen.value = !userMenuOpen.value}>
-          <div class="flex items-center gap-3 px-6 h-[52px] mb-6 cursor-pointer hover:bg-stora-nav-hover transition-colors">
+        <div class="relative">
+          <div class="flex items-center gap-3 px-6 h-[52px] mb-6 cursor-pointer hover:bg-stora-nav-hover transition-colors" onClick$={() => userMenuOpen.value = !userMenuOpen.value}>
             <div class="w-9 h-9 rounded-full bg-stora-accent flex items-center justify-center text-white text-sm font-bold shrink-0">
               {userProfile.value ? userProfile.value.username.charAt(0).toUpperCase() : "?"}
             </div>
