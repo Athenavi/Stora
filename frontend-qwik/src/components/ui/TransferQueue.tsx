@@ -57,7 +57,7 @@ export default component$(() => {
   const activeCount = tasks.value.filter(t => t.status === "active" || t.status === "pending").length;
 
   return (
-    <div>
+    <div class="h-full">
       {/* Trigger button — floating in bottom-right corner */}
       {activeCount > 0 && (
         <button onClick$={() => open.value = !open.value}
