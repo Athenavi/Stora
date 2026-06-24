@@ -231,7 +231,7 @@ export default component$(() => {
   });
 
   return (
-    <div class="flex flex-col h-full">
+    <div class="flex-1 min-h-0 flex flex-col">
       {/* Sticky 操作栏 — 搜索 + 功能按钮，滚动到顶部时固定 */}
       <div class="sticky top-0 z-10 bg-white border-b border-stora-border shrink-0">
         <div class="flex items-center gap-4 px-6 py-3">
