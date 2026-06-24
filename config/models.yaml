@@ -1,4 +1,4 @@
-# Stora 数据模型定义
+﻿# Stora 数据模型定义
 # 声明式 schema — 类似 Alembic 的工作流
 # 修改此文件后运行: stora-cli migrate generate && stora-cli migrate up
 ---
@@ -84,7 +84,32 @@ models:
       - { columns: [user_id, created_at, deleted_at], order: desc }
       - { columns: [user_id, is_favorite, deleted_at], where: "is_favorite = true" }
 
-  FileFingerprint:
+  
+  BlockStore:
+    table: block_store
+    description: 块存储（4MB blocks）
+    columns:
+      id:           { type: bigint, primary_key: true, autoincrement: true }
+      hash:         { type: varchar, length: 64, unique: true }
+      size:         { type: integer, default: "0" }
+      storage_path: { type: text }
+      mime_type:    { type: varchar, length: 100, nullable: true }
+      ref_count:    { type: integer, default: "1" }
+      created_at:   { type: timestamp, default: "now()" }
+      updated_at:   { type: timestamp, default: "now()" }
+
+  FileBlock:
+    table: file_blocks
+    description: 文件-块映射
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      file_hash:   { type: varchar, length: 64, foreign_key: "file_fingerprints(hash)", on_delete: cascade }
+      block_index: { type: integer }
+      block_hash:  { type: varchar, length: 64, foreign_key: "block_store(hash)" }
+      block_offset:{ type: bigint, default: "0" }
+      block_size:  { type: integer, default: "0" }
+      created_at:  { type: timestamp, default: "now()" }
+FileFingerprint:
     table: file_fingerprints
     description: 文件去重指纹
     columns:

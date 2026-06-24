@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"context"
@@ -126,6 +126,7 @@ func main() {
 	versionHandler := fileapi.NewVersionHandler(db, store)
 	batchHandler := fileapi.NewBatchHandler(db, store)
 	trashHandler := fileapi.NewTrashHandler(db)
+	blockHandler := fileapi.NewBlockHandler(db, store)
 
 	// Initialize offline download handler
 	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
@@ -343,6 +344,12 @@ func main() {
 			r.Post("/files/trash/batch-destroy", trashHandler.BatchDestroy)
 			r.Post("/files/trash/batch-restore", trashHandler.BatchRestore)
 			r.Post("/files/trash/clear", trashHandler.ClearTrash)
+
+			// Block storage (.Stora sync engine)
+			r.Post("/blocks/upload", blockHandler.UploadBlock)
+			r.Get("/blocks/{hash}", blockHandler.DownloadBlock)
+			r.Get("/files/{id}/manifest", blockHandler.GetFileManifest)
+			r.Get("/sync/changes", blockHandler.SyncChanges)
 			// Legacy paths
 			r.Get("/trash", trashHandler.ListTrash)
 			r.Post("/trash/{id}/restore", trashHandler.RestoreFile)

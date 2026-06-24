@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 上传工具函数 — 与 Qwik 组件分离，避免优化器分析问题
  */
 import { uploadFile, checkUpload, initChunkedUpload, uploadChunk, completeUpload } from "~/lib/api";
@@ -45,17 +45,17 @@ export async function processUploadTask(
   if (!file) { t.status = "error"; t.error = "文件丢失"; onProgress?.(); return; }
   try {
     t.status = "checking"; onProgress?.();
-    if (file.size <= 524288000) {
+    if (file.size <= 419430400) {
       const hash = await sha256Full(file);
       await checkUpload(hash, file.name, file.size).catch(() => null);
     }
     t.status = "uploading"; onProgress?.();
     if (file.size > 10485760) {
-      const totalChunks = Math.ceil(file.size / 5242880);
+      const totalChunks = Math.ceil(file.size / 4194304);
       const init = await initChunkedUpload({ filename: file.name, total_size: file.size, total_chunks: totalChunks, folder_id: folderId });
       for (let ci = 0; ci < totalChunks; ci++) {
-        const start = ci * 5242880;
-        await uploadChunk(init.upload_id, ci, file.slice(start, Math.min(start + 5242880, file.size)));
+        const start = ci * 4194304;
+        await uploadChunk(init.upload_id, ci, file.slice(start, Math.min(start + 4194304, file.size)));
         t.progress = Math.round(((ci + 1) / totalChunks) * 90);
         onProgress?.();
       }
