@@ -296,7 +296,7 @@ export default component$(() => {
         )}
 
         {/* Page content */}
-        <main class="flex-1 overflow-auto flex flex-col">
+        <main class="flex-1 overflow-hidden flex flex-col">
           <TransferQueue>
             <Slot />
           </TransferQueue>
