@@ -215,6 +215,21 @@ export default component$(() => {
 
   const refresh = () => { location.href = `/drive${currentPath ? `?Path=${encodeURIComponent(currentPath)}` : ""}`; };
 
+  // Sort state for list view (shared between non-scroll header and scrollable body)
+  const sortBy = useSignal(loc.url.searchParams.get("sort_by") || "created_at");
+  const sortOrder = useSignal(loc.url.searchParams.get("sort_order") || "desc");
+  const sortIcon = (field: string) => {
+    if (sortBy.value !== field) return "↕";
+    return sortOrder.value === "asc" ? "↑" : "↓";
+  };
+  const sortUrl = $((field: string) => {
+    const order = sortBy.value === field && sortOrder.value === "desc" ? "asc" : "desc";
+    const params = new URLSearchParams(loc.url.search);
+    params.set("sort_by", field);
+    params.set("sort_order", order);
+    return `/drive?${params.toString()}`;
+  });
+
   return (
     <div class="flex flex-col h-full">
       {/* Sticky 操作栏 — 搜索 + 功能按钮，滚动到顶部时固定 */}
@@ -424,6 +439,24 @@ export default component$(() => {
       </div>
     </div>
 
+      {/* 列表视图表头 — 在非滚动区，滚动时固定 */}
+      {viewMode.value === "list" && (
+        <div class="overflow-x-auto border-b border-stora-border bg-stora-muted shrink-0">
+          <table class="w-full border-separate border-0">
+            <thead>
+              <tr class="text-left text-xs font-semibold text-stora-muted-foreground">
+                <th class="w-10 px-4 py-3 font-semibold">&nbsp;</th>
+                <th class="px-2 py-3 font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("filename"))}>名称 {sortIcon("filename")}</th>
+                <th class="px-2 py-3 w-[100px] font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("file_size"))}>大小 {sortIcon("file_size")}</th>
+                <th class="px-2 py-3 w-[100px] font-semibold">类型</th>
+                <th class="px-2 py-3 w-[140px] font-semibold">修改时间</th>
+                <th class="px-2 py-3 w-[80px] font-semibold">操作</th>
+              </tr>
+            </thead>
+          </table>
+        </div>
+      )}
+
       {/* Content */}
       <div class="flex-1 overflow-auto scrollbar-thin pb-20 lg:pb-0"
         preventdefault:contextmenu
@@ -452,7 +485,7 @@ export default component$(() => {
         ) : (viewMode.value === "list") ? (
           <ListView items={allItems} selIds={selIds} renameId={renameId} renameVal={renameVal} nav={nav} currentPath={currentPath}
             onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)}
-            groupBy={groupBy.value} />
+            groupBy={groupBy.value} hideHeader={true} />
         ) : (
           <GridView items={allItems} selIds={selIds} nav={nav} currentPath={currentPath}
             onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)} />
@@ -961,7 +994,7 @@ export default component$(() => {
 
 // ─── List View ───
 
-export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any; groupBy?: string | null }>(({ items, selIds, renameId, renameVal, nav, currentPath, onContextItem$, onPreview$, groupBy }) => {
+export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any; groupBy?: string | null; hideHeader?: boolean }>(({ items, selIds, renameId, renameVal, nav, currentPath, onContextItem$, onPreview$, groupBy, hideHeader }) => {
   const sortBy = useSignal("");
   const sortOrder = useSignal("");
   const loc = useLocation();
@@ -997,7 +1030,8 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
   return (
   <div class="overflow-x-auto">
   <table class="w-full border-separate border-0">
-    <thead class="sticky top-0 z-10">
+    {!hideHeader && (
+    <thead>
       <tr class="text-left text-xs font-semibold text-stora-muted-foreground bg-stora-muted">
         <th class="w-10 px-4 py-3 font-semibold"><input type="checkbox" checked={selIds.value.length === items.length && items.length > 0}
           onChange$={() => selIds.value = selIds.value.length === items.length ? [] : items.map((x: any) => x.id)} class="border-stora-border" /></th>
@@ -1008,6 +1042,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
         <th class="px-2 py-3 w-[80px] font-semibold">操作</th>
       </tr>
     </thead>
+    )}
     <tbody class="divide-y divide-stora-muted">
       {(groupBy === "category" ? groups : [{ label: "", items }]).map((grp) => (
         <>{grp.label ? (
