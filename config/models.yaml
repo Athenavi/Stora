@@ -3,7 +3,7 @@
 # 修改此文件后运行: stora-cli migrate generate && stora-cli migrate up
 ---
 models:
-  # ── 用户与认证 ──────────────────────────────────
+
   User:
     table: users
     description: 用户账户
@@ -21,7 +21,7 @@ models:
       last_login_at: { type: timestamp, nullable: true }
       last_login_ip: { type: varchar, length: 45, nullable: true }
       register_ip:   { type: varchar, length: 45, nullable: true }
-      locale:        { type: varchar, length: 10, default: "'zh_CN'" }
+      locale:        { type: varchar, length: 10, default: "''zh_CN''" }
       is_2fa_enabled:  { type: boolean, default: "false" }
       totp_secret:   { type: text, nullable: true }
       backup_codes:  { type: text, nullable: true }
@@ -44,10 +44,9 @@ models:
       created_at: { type: timestamp, default: "now()" }
       expires_at: { type: timestamp, nullable: true }
 
-  # ── 文件管理 ────────────────────────────────────
   FileItem:
     table: file_items
-    description: 文件条目（万物皆文件 — is_folder=true 表示目录）
+    description: 文件条目（is_folder=true 表示目录）
     columns:
       id:                { type: bigint, primary_key: true, autoincrement: true }
       user_id:           { type: bigint, foreign_key: "users(id)", on_delete: cascade }
@@ -58,8 +57,8 @@ models:
       file_url:          { type: text, nullable: true }
       file_size:         { type: bigint, default: "0" }
       mime_type:         { type: varchar, length: 255, nullable: true }
-      file_type:         { type: varchar, length: 50, default: "'other'" }
-      storage_driver:    { type: varchar, length: 50, default: "'local'" }
+      file_type:         { type: varchar, length: 50, default: "''other''" }
+      storage_driver:    { type: varchar, length: 50, default: "''local''" }
       storage_bucket:    { type: text, nullable: true }
       storage_key:       { type: text, nullable: true }
       file_hash:         { type: varchar, length: 64, nullable: true }
@@ -84,32 +83,7 @@ models:
       - { columns: [user_id, created_at, deleted_at], order: desc }
       - { columns: [user_id, is_favorite, deleted_at], where: "is_favorite = true" }
 
-  
-  BlockStore:
-    table: block_store
-    description: 块存储（4MB blocks）
-    columns:
-      id:           { type: bigint, primary_key: true, autoincrement: true }
-      hash:         { type: varchar, length: 64, unique: true }
-      size:         { type: integer, default: "0" }
-      storage_path: { type: text }
-      mime_type:    { type: varchar, length: 100, nullable: true }
-      ref_count:    { type: integer, default: "1" }
-      created_at:   { type: timestamp, default: "now()" }
-      updated_at:   { type: timestamp, default: "now()" }
-
-  FileBlock:
-    table: file_blocks
-    description: 文件-块映射
-    columns:
-      id:          { type: bigint, primary_key: true, autoincrement: true }
-      file_hash:   { type: varchar, length: 64, foreign_key: "file_fingerprints(hash)", on_delete: cascade }
-      block_index: { type: integer }
-      block_hash:  { type: varchar, length: 64, foreign_key: "block_store(hash)" }
-      block_offset:{ type: bigint, default: "0" }
-      block_size:  { type: integer, default: "0" }
-      created_at:  { type: timestamp, default: "now()" }
-FileFingerprint:
+  FileFingerprint:
     table: file_fingerprints
     description: 文件去重指纹
     columns:
@@ -134,8 +108,33 @@ FileFingerprint:
       file_path:   { type: text, nullable: true }
       file_size:   { type: bigint, default: "0" }
       file_hash:   { type: varchar, length: 64, nullable: true }
-      storage_driver: { type: varchar, length: 50, default: "'local'" }
+      storage_driver: { type: varchar, length: 50, default: "''local''" }
       created_by:  { type: bigint, foreign_key: "users(id)", nullable: true }
+      created_at:  { type: timestamp, default: "now()" }
+
+  BlockStore:
+    table: block_store
+    description: 4MB 块存储
+    columns:
+      id:           { type: bigint, primary_key: true, autoincrement: true }
+      hash:         { type: varchar, length: 64, unique: true }
+      size:         { type: integer, default: "0" }
+      storage_path: { type: text }
+      mime_type:    { type: varchar, length: 100, nullable: true }
+      ref_count:    { type: integer, default: "1" }
+      created_at:   { type: timestamp, default: "now()" }
+      updated_at:   { type: timestamp, default: "now()" }
+
+  FileBlock:
+    table: file_blocks
+    description: 文件-块映射
+    columns:
+      id:          { type: bigint, primary_key: true, autoincrement: true }
+      file_hash:   { type: varchar, length: 64, foreign_key: "file_fingerprints(hash)", on_delete: cascade }
+      block_index: { type: integer }
+      block_hash:  { type: varchar, length: 64, foreign_key: "block_store(hash)" }
+      block_offset: { type: bigint, default: "0" }
+      block_size:  { type: integer, default: "0" }
       created_at:  { type: timestamp, default: "now()" }
 
   FileTag:
@@ -156,7 +155,6 @@ FileFingerprint:
       file_id: { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
       tag_id:  { type: bigint, foreign_key: "file_tags(id)", on_delete: cascade }
 
-  # ── 分享 ────────────────────────────────────────
   ShareLink:
     table: share_links
     description: 分享链接
@@ -165,10 +163,10 @@ FileFingerprint:
       file_id:         { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", nullable: true }
       folder_id:       { type: bigint, foreign_key: "file_items(id)", on_delete: "set null", nullable: true }
       user_id:         { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      token:           { type: varchar, length: 64, default: "''" }
-      short_code:      { type: varchar, length: 32, default: "''" }
-      permission:      { type: varchar, length: 20, default: "'read'" }
-      password:        { type: varchar, length: 128, default: "''" }
+      token:           { type: varchar, length: 64, default: "''''''" }
+      short_code:      { type: varchar, length: 32, default: "''''''" }
+      permission:      { type: varchar, length: 20, default: "''read''" }
+      password:        { type: varchar, length: 128, default: "''''''" }
       is_active:       { type: boolean, default: "true" }
       view_count:      { type: integer, default: "0" }
       download_count:  { type: integer, default: "0" }
@@ -176,20 +174,17 @@ FileFingerprint:
       expires_at:      { type: timestamp, nullable: true }
       created_at:      { type: timestamp, default: "now()" }
     indexes:
-      - { columns: [short_code], where: "short_code != ''" }
+      - { columns: [short_code], where: "short_code != ''''" }
       - { columns: [user_id, created_at], order: desc }
 
   ShareLinkItem:
     table: share_link_items
-    description: 批量分享的文件关联
+    description: 批量分享的文件
     columns:
       id:            { type: bigint, primary_key: true, autoincrement: true }
       share_link_id: { type: bigint, foreign_key: "share_links(id)", on_delete: cascade }
       file_id:       { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
       created_at:    { type: timestamp, default: "now()" }
-    indexes:
-      - { columns: [share_link_id] }
-      - { columns: [file_id] }
 
   FileShare:
     table: file_shares
@@ -199,11 +194,10 @@ FileFingerprint:
       file_id:     { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
       owner_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       shared_with: { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      permission:  { type: varchar, length: 20, default: "'view'" }
+      permission:  { type: varchar, length: 20, default: "''view''" }
       created_at:  { type: timestamp, default: "now()" }
       expires_at:  { type: timestamp, nullable: true }
 
-  # ── 加密保险箱 ──────────────────────────────────
   Vault:
     table: vaults
     description: 加密保险箱
@@ -212,7 +206,7 @@ FileFingerprint:
       user_id:       { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       name:          { type: varchar, length: 255 }
       description:   { type: text, nullable: true }
-      password_hash: { type: varchar, length: 128, default: "''" }
+      password_hash: { type: varchar, length: 128, default: "''''''" }
       created_at:    { type: timestamp, default: "now()" }
       updated_at:    { type: timestamp, default: "now()" }
 
@@ -224,20 +218,19 @@ FileFingerprint:
       vault_id:     { type: bigint, foreign_key: "vaults(id)", on_delete: cascade }
       user_id:      { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       name:         { type: varchar, length: 255 }
-      filename:     { type: varchar, length: 512, default: "''" }
+      filename:     { type: varchar, length: 512, default: "''''''" }
       file_size:    { type: bigint, default: "0" }
-      mime_type:    { type: varchar, length: 128, default: "''" }
-      content_type: { type: varchar, length: 64, default: "'file'" }
+      mime_type:    { type: varchar, length: 128, default: "''''''" }
+      content_type: { type: varchar, length: 64, default: "''file''" }
       file_path:    { type: text, nullable: true }
       created_at:   { type: timestamp, default: "now()" }
       updated_at:   { type: timestamp, default: "now()" }
     indexes:
       - { columns: [vault_id, user_id] }
 
-  # ── 上传任务 ────────────────────────────────────
   UploadTask:
     table: upload_tasks
-    description: 文件上传任务
+    description: 上传任务
     columns:
       id:               { type: bigint, primary_key: true, autoincrement: true }
       user_id:          { type: bigint, foreign_key: "users(id)", on_delete: cascade }
@@ -247,7 +240,7 @@ FileFingerprint:
       chunk_size:       { type: integer, default: "0" }
       total_chunks:     { type: integer, default: "0" }
       received_chunks:  { type: integer, default: "0" }
-      status:           { type: varchar, length: 20, default: "'pending'" }
+      status:           { type: varchar, length: 20, default: "''pending''" }
       mime_type:        { type: varchar, length: 255, nullable: true }
       folder_id:        { type: varchar, length: 50, nullable: true }
       first_chunk_hash: { type: varchar, length: 64, nullable: true }
@@ -271,7 +264,6 @@ FileFingerprint:
       chunk_path:  { type: text, nullable: true }
       created_at:  { type: timestamp, default: "now()" }
 
-  # ── 离线下载 ───────────────────────────────────
   DownloadTask:
     table: download_tasks
     description: 离线下载任务
@@ -280,7 +272,7 @@ FileFingerprint:
       user_id:        { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       url:            { type: text }
       filename:       { type: varchar, length: 255, nullable: true }
-      status:         { type: varchar, length: 20, default: "'pending'" }
+      status:         { type: varchar, length: 20, default: "''pending''" }
       progress:       { type: integer, default: "0" }
       retry_count:    { type: integer, default: "0" }
       manual_retries: { type: integer, default: "0" }
@@ -288,7 +280,6 @@ FileFingerprint:
       created_at:     { type: timestamp, default: "now()" }
       updated_at:     { type: timestamp, default: "now()" }
 
-  # ── 权限与审计 ──────────────────────────────────
   Role:
     table: roles
     description: 角色定义
@@ -326,15 +317,14 @@ FileFingerprint:
       is_read:    { type: boolean, default: "false" }
       created_at: { type: timestamp, default: "now()" }
 
-  # ── 系统配置 ────────────────────────────────────
   SystemSetting:
     table: system_settings
-    description: 系统设置（键值对）
+    description: 系统设置
     columns:
       id:            { type: bigint, primary_key: true, autoincrement: true }
       setting_key:   { type: varchar, length: 100, unique: true }
       setting_value: { type: text }
-      setting_type:  { type: varchar, length: 50, default: "'string'", nullable: true }
+      setting_type:  { type: varchar, length: 50, nullable: true }
       description:   { type: text, nullable: true }
       is_public:     { type: boolean, default: "false" }
       created_at:    { type: timestamp, default: "now()" }
@@ -342,7 +332,7 @@ FileFingerprint:
 
   SensitiveWord:
     table: sensitive_words
-    description: 敏感词过滤
+    description: 敏感词
     columns:
       id:          { type: bigint, primary_key: true, autoincrement: true }
       word:        { type: varchar, length: 255 }
@@ -352,10 +342,9 @@ FileFingerprint:
       created_at:  { type: timestamp, default: "now()" }
       updated_at:  { type: timestamp, default: "now()" }
 
-  # ── 团队协作 ────────────────────────────────────
   Team:
     table: teams
-    description: 团队/群组
+    description: 团队
     columns:
       id:          { type: bigint, primary_key: true, autoincrement: true }
       name:        { type: varchar, length: 255 }
@@ -371,23 +360,22 @@ FileFingerprint:
       id:        { type: bigint, primary_key: true, autoincrement: true }
       team_id:   { type: bigint, foreign_key: "teams(id)", on_delete: cascade }
       user_id:   { type: bigint, foreign_key: "users(id)", on_delete: cascade }
-      role:      { type: varchar, length: 20, default: "'member'" }
+      role:      { type: varchar, length: 20, default: "''member''" }
       created_at: { type: timestamp, default: "now()" }
 
   TeamFolder:
     table: team_folders
-    description: 团队共享文件夹
+    description: 团队文件夹
     columns:
       id:        { type: bigint, primary_key: true, autoincrement: true }
       team_id:   { type: bigint, foreign_key: "teams(id)", on_delete: cascade }
       folder_id: { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
-      permission: { type: varchar, length: 20, default: "'read'" }
+      permission: { type: varchar, length: 20, default: "''read''" }
       created_at: { type: timestamp, default: "now()" }
 
-  # ── 文件评论 ────────────────────────────────────
   FileComment:
     table: file_comments
-    description: 文件评论/批注
+    description: 文件评论
     columns:
       id:        { type: bigint, primary_key: true, autoincrement: true }
       file_id:   { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
@@ -396,25 +384,23 @@ FileFingerprint:
       created_at: { type: timestamp, default: "now()" }
       updated_at: { type: timestamp, default: "now()" }
 
-  # ── 转写任务 ────────────────────────────────────
   TranscriptionTask:
     table: transcription_tasks
-    description: 音视频转写任务
+    description: 转写任务
     columns:
       id:         { type: bigint, primary_key: true, autoincrement: true }
       user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
       file_id:    { type: bigint, foreign_key: "file_items(id)", on_delete: cascade }
-      status:     { type: varchar, length: 20, default: "'pending'" }
+      status:     { type: varchar, length: 20, default: "''pending''" }
       progress:   { type: integer, default: "0" }
       result_url: { type: text, nullable: true }
       error_msg:  { type: text, nullable: true }
       created_at: { type: timestamp, default: "now()" }
       updated_at: { type: timestamp, default: "now()" }
 
-  # ── Webhook ─────────────────────────────────────
   Webhook:
     table: webhooks
-    description: Webhook 配置
+    description: Webhook
     columns:
       id:         { type: bigint, primary_key: true, autoincrement: true }
       user_id:    { type: bigint, foreign_key: "users(id)", on_delete: cascade }
@@ -433,6 +419,6 @@ FileFingerprint:
       webhook_id: { type: bigint, foreign_key: "webhooks(id)", on_delete: cascade }
       event:      { type: varchar, length: 50 }
       payload:    { type: text, nullable: true }
-      status:     { type: varchar, length: 20, default: "'pending'" }
+      status:     { type: varchar, length: 20, default: "''pending''" }
       response:   { type: text, nullable: true }
       created_at: { type: timestamp, default: "now()" }
