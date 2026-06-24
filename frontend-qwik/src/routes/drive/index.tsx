@@ -7,6 +7,7 @@ import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFil
 import { Icon } from "~/components/ui/Icon";
 import { Button, Input } from "~/components/ui/Button";
 import PreviewPanel from "~/components/drive/PreviewPanel";
+import PreviewModal from "~/components/drive/PreviewModal";
 import UploadZone from "~/components/upload/UploadZone";
 
 export const useFileList = routeLoader$(async ({ url, request }) => {
@@ -103,6 +104,7 @@ export default component$(() => {
   const moveTree = useSignal<any[]>([]);
   const moveTreeLoading = useSignal(false);
   const previewFile = useSignal<FileItem | null>(null);
+  const previewModalFile = useSignal<any>(null);
   const clipboard = useSignal<{ fileIds: number[]; action: "copy" | "cut" } | null>(null);
 
   // Persist clipboard in sessionStorage so it survives folder navigation
@@ -148,6 +150,7 @@ export default component$(() => {
   const offlineTasks = useSignal<import("~/lib/api/files").OfflineTask[]>([]);
 
   const onPreview = $((item: any) => { previewFile.value = item; });
+  const onFullscreen = $((fileId: number) => { previewFile.value = null; previewModalFile.value = { id: fileId }; });
 
   const doRename = (item: { id: number; type: string; name: string }) => {
     renameId.value = item.id;
@@ -940,7 +943,12 @@ export default component$(() => {
       )}
 
       {/* Preview panel */}
-      <PreviewPanel file={previewFile.value} onClose$={() => { previewFile.value = null; }} />
+      <PreviewPanel file={previewFile.value} onClose$={() => { previewFile.value = null; }} onFullscreen$={onFullscreen} />
+
+      {/* Preview modal (全屏查看) */}
+      {previewModalFile.value && (
+        <PreviewModal fileId={previewModalFile.value.id} onClose$={() => previewModalFile.value = null} />
+      )}
     </div>
   );
 });

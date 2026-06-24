@@ -19,7 +19,7 @@ function fmtDuration(s: number): string {
 
 const FILE_TYPES = ["image", "video", "audio", "document", "text", "archive", "other"];
 
-export default component$<{ file: FileItem | null; onClose$: () => void }>(({ file, onClose$ }) => {
+export default component$<{ file: FileItem | null; onClose$: () => void; onFullscreen$?: (fileId: number) => void }>(({ file, onClose$, onFullscreen$ }) => {
   const detail = useSignal<FileItem | null>(null);
   const textContent = useSignal<string | null>(null);
   const fileTags = useSignal<{ id: number; name: string; color: string | null }[]>([]);
@@ -257,10 +257,10 @@ export default component$<{ file: FileItem | null; onClose$: () => void }>(({ fi
           {d.is_favorite ? "⭐ 已收藏" : "☆ 收藏"}
         </button>
         <div class="flex-1" />
-        <a href={`/view?id=${d.id}`} target="_blank"
+        <button onClick$={() => { if (onFullscreen$) onFullscreen$(d.id); else window.open(`/view?id=${d.id}`, '_blank'); }}
           class="touch-target px-4 py-2 text-sm font-medium text-white bg-stora-primary hover:bg-[#1D4ED8] rounded-lg transition-colors">
           全屏查看
-        </a>
+        </button>
         <a href={`/api/v2/files/download/${d.id}`} download
           class="touch-target px-4 py-2 text-sm font-medium text-stora-foreground bg-white border border-stora-border hover:bg-stora-muted rounded-lg transition-colors">
           下载
