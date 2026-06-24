@@ -5,6 +5,7 @@ import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi, updateFile, batchDownload, api, type FileItem } from "~/lib/api";
 import InfiniteScroll from "~/components/ui/InfiniteScroll";
+import PreviewModal from "~/components/drive/PreviewModal";
 
 export const useFavList = routeLoader$(async ({ request }) => {
   const api = createServerApi(request);
@@ -26,6 +27,7 @@ export default component$(() => {
   const page = useSignal(1);
   const loadingMore = useSignal(false);
   const selIds = useSignal<number[]>([]);
+  const previewFile = useSignal<any>(null);
 
   const loadMore = $(async () => {
     if (loadingMore.value) return;
@@ -102,7 +104,7 @@ export default component$(() => {
               const icon = fileIcon(f);
               return (
                 <div key={f.id}
-                  onClick$={() => { if (selIds.value.length > 0) { const i = selIds.value.indexOf(f.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(f.id); selIds.value = [...selIds.value]; } else nav(`/view?id=${f.id}`); }}
+                  onClick$={() => { if (selIds.value.length > 0) { const i = selIds.value.indexOf(f.id); if (i >= 0) selIds.value.splice(i, 1); else selIds.value.push(f.id); selIds.value = [...selIds.value]; } else previewFile.value = f; }}
                   class={`w-[200px] h-[180px] bg-stora-card border border-stora-border flex flex-col items-center justify-center p-4 gap-2.5 cursor-pointer ${sel ? "border-stora-primary" : "hover:border-stora-muted-foreground"}`}>
                   {/* Icon 56x56, border radius 12px per spec */}
                   <div class="w-14 h-14 flex items-center justify-center text-2xl" style={{ backgroundColor: icon.color }}>
@@ -124,6 +126,9 @@ export default component$(() => {
           onLoadMore$={loadMore}
         />
       </div>
+      {previewFile.value && (
+        <PreviewModal fileId={previewFile.value.id} onClose$={() => previewFile.value = null} />
+      )}
     </div>
   );
 });

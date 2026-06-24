@@ -2,10 +2,10 @@
  * Stora Search — file search results page
  */
 import { component$, useSignal } from "@builder.io/qwik";
-import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
+import { routeLoader$, useLocation } from "@builder.io/qwik-city";
 import { createServerApi, type FileItem } from "~/lib/api";
-import { Button, Skeleton } from "~/components/ui/Button";
 import { Icon } from "~/components/ui/Icon";
+import PreviewModal from "~/components/drive/PreviewModal";
 
 export const useSearch = routeLoader$(async ({ url, request }) => {
   const q = url.searchParams.get("q");
@@ -19,7 +19,7 @@ function fmtSize(b: number): string { if (!b) return "0 B"; const k = 1024; cons
 
 export default component$(() => {
   const data = useSearch();
-  const nav = useNavigate();
+  const previewFile = useSignal<any>(null);
   const q = useLocation().url.searchParams.get("q") || "";
 
   return (
@@ -36,7 +36,7 @@ export default component$(() => {
         ) : (
           <div class="space-y-2">
             {data.value.items.map((f: FileItem) => (
-              <div key={f.id} onClick$={() => nav(`/view?id=${f.id}`)}
+              <div key={f.id} onClick$={() => previewFile.value = f}
                 class="flex items-center gap-4 px-4 py-3 bg-white rounded-lg border border-slate-200 hover:shadow-sm transition-all cursor-pointer">
                 <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-lg">📄</div>
                 <div class="flex-1 min-w-0">
@@ -49,6 +49,9 @@ export default component$(() => {
           </div>
         )}
       </div>
+      {previewFile.value && (
+        <PreviewModal fileId={previewFile.value.id} onClose$={() => previewFile.value = null} />
+      )}
     </div>
   );
 });
