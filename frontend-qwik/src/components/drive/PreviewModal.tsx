@@ -15,25 +15,25 @@ export default component$<Props>(({ fileId, onClose$ }) => {
   const file = useSignal<any>(null);
   const viewerRef = useSignal<HTMLDivElement>();
 
-  // 获取文件详情
+  // 获取文件详情 + 挂载 Flyfish viewer（合并为一个任务避免竞态）
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(async () => {
     try {
       file.value = await api.get(`/files/${fileId}`);
-    } catch {}
-  });
+    } catch { return; }
 
-  // 挂载 Flyfish viewer（非视频/音频文件）
-  // eslint-disable-next-line qwik/no-use-visible-task
-  useVisibleTask$(async () => {
-    if (!viewerRef.value || !file.value) return;
-    const type = file.value.file_type;
-    if (type === "video" || type === "audio") return;
+    // 视频/音频由原生标签处理，不需要 Flyfish viewer
+    if (file.value.file_type === "video" || file.value.file_type === "audio") return;
+
+    // 让 DOM 渲染出 viewerRef div
+    await new Promise(r => setTimeout(r, 50));
+    if (!viewerRef.value) return;
+
     try {
       const { mountViewerFrame } = await import('@flyfish-group/file-viewer-web');
-      const previewUrl = `/api/v2/files/preview/${file.value.id}/${encodeURIComponent(file.value.filename)}`;
+      const url = `/api/v2/files/preview/${file.value.id}/${encodeURIComponent(file.value.filename)}`;
       mountViewerFrame(viewerRef.value, {
-        url: previewUrl,
+        url,
         name: file.value.filename,
         options: { theme: 'dark', toolbar: { download: true, print: true } },
       });
