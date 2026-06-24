@@ -231,9 +231,9 @@ export default component$(() => {
   });
 
   return (
-    <div class="flex-1 min-h-0 flex flex-col">
-      {/* Sticky 操作栏 — 搜索 + 功能按钮，滚动到顶部时固定 */}
-      <div class="sticky top-0 z-10 bg-white border-b border-stora-border shrink-0">
+    <div class="flex flex-col overflow-hidden h-dvh">
+      {/* === 上 1/6：操作栏（搜索 + 功能按钮）=== */}
+      <div class="h-[16.67dvh] shrink-0 overflow-hidden bg-white border-b border-stora-border">
         <div class="flex items-center gap-4 px-6 py-3">
         {/* Search — 320x40 per spec */}
         <div class="relative flex-1 max-w-[320px]">
@@ -297,6 +297,9 @@ export default component$(() => {
         </button>
       </div>
     </div>
+
+      {/* === 下 5/6：属性栏 + 文件列表 === */}
+      <div class="flex-1 min-h-0 flex flex-col overflow-hidden">
 
       {/* 非滚动区 — 批量操作、上传、筛选标签 */}
       <div class="shrink-0">
@@ -491,6 +494,7 @@ export default component$(() => {
             onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)} />
         )}
       </div>
+    </div>
 
       {/* Desktop context menu overlay */}
       {ctxItem.value && !showActionSheet.value && (
