@@ -2,6 +2,7 @@ package authapi
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -220,6 +221,116 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 		"used_storage":   user.UsedStorage,
 		"profile_picture": user.ProfilePicture,
 	})
+}
+
+// UpdateMe updates the current user's profile (username, email, bio).
+func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var body struct {
+		Username *string `json:"username"`
+		Email    *string `json:"email"`
+		Bio      *string `json:"bio"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Build dynamic UPDATE — only set non-nil fields
+	fields := []string{}
+	args := []interface{}{}
+	argIdx := 1
+
+	if body.Username != nil {
+		fields = append(fields, fmt.Sprintf("username = $%d", argIdx))
+		args = append(args, *body.Username)
+		argIdx++
+	}
+	if body.Email != nil {
+		fields = append(fields, fmt.Sprintf("email = $%d", argIdx))
+		args = append(args, *body.Email)
+		argIdx++
+	}
+	if body.Bio != nil {
+		fields = append(fields, fmt.Sprintf("bio = $%d", argIdx))
+		args = append(args, *body.Bio)
+		argIdx++
+	}
+
+	if len(fields) == 0 {
+		utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "nothing to update"})
+		return
+	}
+
+	args = append(args, userID)
+	query := fmt.Sprintf("UPDATE users SET %s WHERE id = $%d",
+		strings.Join(fields, ", "), argIdx)
+
+	if _, err := h.db.Exec(query, args...); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "profile updated"})
+}
+
+// ChangePassword updates the current user's password.
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var body struct {
+		CurrentPassword    string `json:"current_password"`
+		NewPassword        string `json:"new_password"`
+		NewPasswordConfirm string `json:"new_password_confirm"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if body.NewPassword != body.NewPasswordConfirm {
+		utils.WriteError(w, http.StatusBadRequest, "passwords do not match")
+		return
+	}
+	if len(body.NewPassword) < 6 {
+		utils.WriteError(w, http.StatusBadRequest, "password too short (min 6)")
+		return
+	}
+
+	// Verify current password
+	var hash string
+	err := h.db.QueryRow(`SELECT password FROM users WHERE id = $1`, userID).Scan(&hash)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(body.CurrentPassword)); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "current password is incorrect")
+		return
+	}
+
+	newHash, err := bcrypt.GenerateFromPassword([]byte(body.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "hash failed")
+		return
+	}
+
+	if _, err := h.db.Exec(`UPDATE users SET password = $1 WHERE id = $2`, string(newHash), userID); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "update failed")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "password changed"})
 }
 
 // ── Session Management ──

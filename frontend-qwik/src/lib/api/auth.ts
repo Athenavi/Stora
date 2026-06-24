@@ -71,5 +71,13 @@ export const logout = (): Promise<void> => api.post('/auth/logout');
 /** 获取当前用户信息 */
 export const getProfile = (): Promise<User> => api.get('/auth/me');
 
+/** 更新用户资料 */
+export const updateProfile = (data: { username?: string; email?: string; bio?: string }): Promise<User> =>
+  api.patch('/auth/me', data);
+
+/** 修改密码 */
+export const changePassword = (data: { current_password: string; new_password: string; new_password_confirm: string }): Promise<void> =>
+  api.post('/auth/change-password', data);
+
 /** 获取存储配额 */
 export const getQuota = () => api.get('/users/me/quota');

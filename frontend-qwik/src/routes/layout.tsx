@@ -6,7 +6,7 @@ import { useLocation, Link } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
 import FolderTree from "~/components/ui/FolderTree";
 import TransferQueue from "~/components/ui/TransferQueue";
-import { api, isAuthenticated, getProfile } from "~/lib/api";
+import { api, isAuthenticated, getProfile, logout } from "~/lib/api";
 import { ToastContainer } from "~/components/ui/index";
 
 type NavIcon = "folder" | "share" | "trash" | "star" | "image" | "lock" | "tag" | "setting";
@@ -22,7 +22,6 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/drive", icon: "folder", label: "我的文件", activeColor: "#2563EB" },
   { href: "/share", icon: "share", label: "我的分享", activeColor: "#2563EB" },
-  { href: "/trash", icon: "trash", label: "回收站", activeColor: "#DC2626" },
   { href: "/favorites", icon: "star", label: "收藏夹", activeColor: "#D97706" },
   { href: "/photos", icon: "image", label: "照片墙", activeColor: "#3B82F6" },
   { href: "/vault", icon: "lock", label: "私密空间", activeColor: "#7C3AED" },
@@ -137,7 +136,9 @@ export default component$(() => {
   const isTags = path.startsWith("/tags");
   const isPhotos = path.startsWith("/photos");
   const isAdmin = path.startsWith("/admin");
+  const isSettings = path.startsWith("/settings");
   const mobileMenuOpen = useSignal(false);
+  const userMenuOpen = useSignal(false);
 
   const toggleSidebar = $(() => {
     mobileMenuOpen.value = !mobileMenuOpen.value;
@@ -225,15 +226,44 @@ export default component$(() => {
           </p>
         </div>
 
-        {/* User area — 52px, horizontal, gap 12px, padding 24px */}
-        <div class="flex items-center gap-3 px-6 h-[52px] mb-6">
-          <div class="w-9 h-9 rounded-full bg-stora-accent flex items-center justify-center text-white text-sm font-bold shrink-0">
-            {userProfile.value ? userProfile.value.username.charAt(0).toUpperCase() : "?"}
+        {/* User area — clickable dropdown */}
+        <div class="relative" onClick$={() => userMenuOpen.value = !userMenuOpen.value}>
+          <div class="flex items-center gap-3 px-6 h-[52px] mb-6 cursor-pointer hover:bg-stora-nav-hover transition-colors">
+            <div class="w-9 h-9 rounded-full bg-stora-accent flex items-center justify-center text-white text-sm font-bold shrink-0">
+              {userProfile.value ? userProfile.value.username.charAt(0).toUpperCase() : "?"}
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium text-stora-muted truncate">{userProfile.value?.username || "用户"}</p>
+              <p class="text-xs text-stora-muted-foreground truncate">{userProfile.value?.email || "加载中..."}</p>
+            </div>
+            <Icon name="chevronUp" size={14} class={`text-stora-nav-text transition-transform ${userMenuOpen.value ? "" : "rotate-180"}`} />
           </div>
-          <div class="flex-1 min-w-0">
-            <p class="text-sm font-medium text-stora-muted truncate">{userProfile.value?.username || "用户"}</p>
-            <p class="text-xs text-stora-muted-foreground truncate">{userProfile.value?.email || "加载中..."}</p>
-          </div>
+
+          {/* Dropdown menu — appears above user area */}
+          {userMenuOpen.value && (
+            <>
+              <div class="fixed inset-0 z-30" onClick$={() => userMenuOpen.value = false} />
+              <div class="absolute bottom-full left-3 right-3 mb-2 z-40 bg-stora-sidebar border border-stora-nav-divider rounded-lg shadow-xl overflow-hidden">
+                <Link href="/settings" onClick$={() => userMenuOpen.value = false}
+                  class="flex items-center gap-3 px-4 py-3 text-sm text-stora-nav-text hover:text-white hover:bg-stora-nav-hover transition-colors">
+                  <Icon name="setting" size={18} />
+                  账号设置
+                </Link>
+                <div class="mx-3 h-px bg-stora-nav-divider" />
+                <Link href="/trash" onClick$={() => userMenuOpen.value = false}
+                  class="flex items-center gap-3 px-4 py-3 text-sm text-stora-nav-text hover:text-white hover:bg-stora-nav-hover transition-colors">
+                  <Icon name="trash" size={18} />
+                  回收站
+                </Link>
+                <div class="mx-3 h-px bg-stora-nav-divider" />
+                <button onClick$={async () => { userMenuOpen.value = false; await logout(); location.href = "/login"; }}
+                  class="flex items-center gap-3 w-full px-4 py-3 text-sm text-red-400 hover:text-red-300 hover:bg-stora-nav-hover transition-colors">
+                  <Icon name="close" size={18} />
+                  退出登录
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </aside>
 

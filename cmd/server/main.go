@@ -185,6 +185,8 @@ func main() {
 			// Auth (authenticated)
 			r.Post("/auth/logout", authHandler.Logout)
 			r.Get("/auth/me", authHandler.Me)
+			r.Patch("/auth/me", authHandler.UpdateMe)
+			r.Post("/auth/change-password", authHandler.ChangePassword)
 			r.Get("/auth/sessions", authHandler.ListSessions)
 			r.Delete("/auth/sessions/{id}", authHandler.RevokeSession)
 
