@@ -859,7 +859,7 @@ func (h *Handler) ListShareLinks(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.db.Query(
 		`SELECT s.id, COALESCE(s.short_code, s.token), COALESCE(s.file_id, 0), COALESCE(s.folder_id, 0),
-		        CASE WHEN s.file_id IS NOT NULL THEN COALESCE(f.filename, '') ELSE COALESCE(d.name, '') END,
+		        CASE WHEN s.file_id IS NOT NULL THEN COALESCE(f.filename, '') ELSE COALESCE(d.filename, '') END,
 		        COALESCE(s.permission, 'read'), s.is_active,
 		        CASE WHEN s.password IS NOT NULL AND s.password != '' THEN true ELSE false END,
 		        s.view_count, s.download_count, COALESCE(s.max_downloads, 0),

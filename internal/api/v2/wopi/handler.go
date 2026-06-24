@@ -100,12 +100,12 @@ func (h *Handler) PutFile(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	now := time.Now().Format(time.RFC3339)
-	var oldPath string
-	h.db.QueryRow(`SELECT file_path FROM file_items WHERE id = $1`, fileID).Scan(&oldPath)
+	var oldPath, oldHash, oldDriver string
+	h.db.QueryRow(`SELECT file_path, file_hash, storage_driver FROM file_items WHERE id = $1`, fileID).Scan(&oldPath, &oldHash, &oldDriver)
 	if oldPath != "" {
-		h.db.Exec(`INSERT INTO file_versions (file_id, version_num, file_path, file_size, created_by, created_at)
+		h.db.Exec(`INSERT INTO file_versions (file_id, version_num, file_path, file_size, file_hash, storage_driver, created_by, created_at)
 			SELECT $1, COALESCE((SELECT MAX(version_num) FROM file_versions WHERE file_id = $1), 0) + 1,
-			       file_path, file_size, 0, $2 FROM file_items WHERE id = $1`,
+			       file_path, file_size, file_hash, storage_driver, created_by, $2 FROM file_items WHERE id = $1`,
 			fileID, now)
 	}
 

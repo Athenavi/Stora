@@ -694,13 +694,13 @@ func (h *Handler) UpdateFileContent(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().Format(time.RFC3339)
 
-	// Save old version
-	var oldPath string
-	h.db.QueryRow(`SELECT file_path FROM file_items WHERE id = $1 AND user_id = $2`, fileID, userID).Scan(&oldPath)
+	// Save old version — 携带 file_hash 和 storage_driver 以支持指纹引用计数和回滚
+	var oldPath, oldHash, oldDriver string
+	h.db.QueryRow(`SELECT file_path, file_hash, storage_driver FROM file_items WHERE id = $1 AND user_id = $2`, fileID, userID).Scan(&oldPath, &oldHash, &oldDriver)
 	if oldPath != "" {
-		h.db.Exec(`INSERT INTO file_versions (file_id, version_num, file_path, file_size, created_by, created_at)
+		h.db.Exec(`INSERT INTO file_versions (file_id, version_num, file_path, file_size, file_hash, storage_driver, created_by, created_at)
 			SELECT $1, COALESCE((SELECT MAX(version_num) FROM file_versions WHERE file_id = $1), 0) + 1,
-			       file_path, file_size, $2, $3 FROM file_items WHERE id = $1`,
+			       file_path, file_size, file_hash, storage_driver, $2, $3 FROM file_items WHERE id = $1`,
 			fileID, userID, now)
 	}
 

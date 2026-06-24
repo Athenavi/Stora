@@ -123,7 +123,7 @@ func main() {
 	vaultHandler := fileapi.NewVaultHandler(db, cfg.VaultDir())
 	transcodeHandler := fileapi.NewTranscodeHandler(db, store)
 	transcribeHandler := fileapi.NewTranscribeHandler(db)
-	versionHandler := fileapi.NewVersionHandler(db)
+	versionHandler := fileapi.NewVersionHandler(db, store)
 	batchHandler := fileapi.NewBatchHandler(db, store)
 	trashHandler := fileapi.NewTrashHandler(db)
 
@@ -315,6 +315,7 @@ func main() {
 
 			// Versions
 			r.Get("/files/{id}/versions", versionHandler.ListVersions)
+			r.Post("/files/{id}/versions/{versionId}/restore", versionHandler.RestoreVersion)
 
 			// Offline download
 			r.Post("/files/offline-download", offlineDownloadHandler.CreateDownloadTask)

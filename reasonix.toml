@@ -47,14 +47,7 @@ paths = [".agents/skills"]   # extra custom skill roots
 # disabled_skills = ["review"]   # hide noisy or unwanted skills
 
 [permissions]
-# Per-call gating. mode = writer fallback when no rule matches: ask|allow|deny.
-# Readers always default to allow. Precedence: deny > ask > allow > fallback.
-# Rules are "Tool" or "Tool(specifier)"; e.g. Bash(go test:*), Edit(src/**).
-mode  = "ask"
-# deny = ["Bash(rm -rf*)", "Bash(git push*)"]   # hard-blocked in every mode
-allow = ["Bash(git stash:*)", "Edit", "Bash(git add -A && git commit -m \"fix: correct jwt_required import path in admin_settings\n\nChange from src.api.v2.auth to src.auth — jwt_required is defined\nin src.auth.auth_handler, not exported by the v2 auth package.\")", "explore", "Bash(cd \"C:\\Users\\athenavi\\AppData\\Roaming\\reasonix\\global-workspace\\Stora\"; go vet ./internal/api/v2/files/...)"]
-# ask = ["Edit(src/**)"]   # force a prompt even if otherwise allowed
-
+allow = ["Bash(git stash:*)", "Edit", "Bash(git add -A && git commit -m \"fix: correct jwt_required import path in admin_settings\n\nChange from src.api.v2.auth to src.auth — jwt_required is defined\nin src.auth.auth_handler, not exported by the v2 auth package.\")", "explore", "Bash(cd \"C:\\Users\\athenavi\\AppData\\Roaming\\reasonix\\global-workspace\\Stora\"; go vet ./internal/api/v2/files/...)", "Bash(Get-ChildItem \"C:\\Users\\athenavi\\AppData\\Roaming\\reasonix\\global-workspace\\Stora\\internal\\api\\v2\\files\" | Select-Object Name)"]
 [sandbox]
 # Confine tool blast radius. File-writers (write_file/edit_file/multi_edit/move_file)
 # may only write under workspace_root (empty = current dir) and allow_write extras.

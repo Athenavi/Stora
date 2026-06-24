@@ -492,11 +492,12 @@ func min(a, b int) int {
 // ---------- Version Management ----------
 
 type VersionHandler struct {
-	db *sql.DB
+	db      *sql.DB
+	storage storage.Driver
 }
 
-func NewVersionHandler(db *sql.DB) *VersionHandler {
-	return &VersionHandler{db: db}
+func NewVersionHandler(db *sql.DB, store storage.Driver) *VersionHandler {
+	return &VersionHandler{db: db, storage: store}
 }
 
 func (h *VersionHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
@@ -504,7 +505,7 @@ func (h *VersionHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 
 	rows, err := h.db.Query(
-		`SELECT id, version_num, file_size, created_at FROM file_versions
+		`SELECT id, version_num, file_size, file_hash, created_at FROM file_versions
 		 WHERE file_id = $1 AND created_by = $2 ORDER BY version_num DESC`,
 		fileID, userID,
 	)
@@ -518,15 +519,81 @@ func (h *VersionHandler) ListVersions(w http.ResponseWriter, r *http.Request) {
 		ID        int64   `json:"id"`
 		Version   int     `json:"version_num"`
 		FileSize  int64   `json:"file_size"`
+		FileHash  *string `json:"file_hash"`
 		CreatedAt *string `json:"created_at"`
 	}
 	var versions = make([]Version, 0)
 	for rows.Next() {
 		var v Version
-		rows.Scan(&v.ID, &v.Version, &v.FileSize, &v.CreatedAt)
+		rows.Scan(&v.ID, &v.Version, &v.FileSize, &v.FileHash, &v.CreatedAt)
 		versions = append(versions, v)
 	}
 	writeJSON(w, http.StatusOK, versions)
+}
+
+// RestoreVersion reverts file content to a previous version with proper fingerprint refcount management.
+// POST /files/{id}/versions/{versionId}/restore
+func (h *VersionHandler) RestoreVersion(w http.ResponseWriter, r *http.Request) {
+	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	versionID, _ := strconv.ParseInt(chi.URLParam(r, "versionId"), 10, 64)
+	userID, _ := middleware.GetUserID(r.Context())
+
+	// 1. Get version to restore
+	var vFileSize int64
+	var vFilePath, vFileHash, vStorageDriver string
+	err := h.db.QueryRow(
+		`SELECT file_path, file_size, file_hash, COALESCE(storage_driver, 'local')
+		 FROM file_versions WHERE id = $1 AND file_id = $2`,
+		versionID, fileID,
+	).Scan(&vFilePath, &vFileSize, &vFileHash, &vStorageDriver)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "version not found")
+		return
+	}
+
+	// 2. Get current file's hash (for refcount management)
+	var curHash, curPath string
+	h.db.QueryRow(`SELECT file_hash, file_path FROM file_items WHERE id = $1 AND user_id = $2`, fileID, userID).Scan(&curHash, &curPath)
+
+	// 3. Save current as a new version first (so user can go back again)
+	now := time.Now().Format(time.RFC3339)
+	h.db.Exec(`INSERT INTO file_versions (file_id, version_num, file_path, file_size, file_hash, storage_driver, created_by, created_at)
+		SELECT $1, COALESCE((SELECT MAX(version_num) FROM file_versions WHERE file_id = $1), 0) + 1,
+		       file_path, file_size, file_hash, storage_driver, $2, $3 FROM file_items WHERE id = $1`,
+		fileID, userID, now)
+
+	// 4. Decrement refcount for current fingerprint
+	if curHash != "" {
+		h.db.Exec(`UPDATE file_fingerprints SET reference_count = GREATEST(reference_count - 1, 0)
+			WHERE hash = $1`, curHash)
+	}
+
+	// 5. Increment refcount for restored fingerprint (create if needed)
+	if vFileHash != "" {
+		h.db.Exec(`INSERT INTO file_fingerprints (hash, file_size, storage_path, reference_count, created_at, updated_at)
+			VALUES ($1, $2, $3, 1, $4, $4)
+			ON CONFLICT (hash) DO UPDATE SET reference_count = file_fingerprints.reference_count + 1, updated_at = $4`,
+			vFileHash, vFileSize, vFilePath, now)
+	}
+
+	// 6. Update file_items with version's data
+	_, err = h.db.Exec(
+		`UPDATE file_items SET file_path = $1, file_hash = $2, file_size = $3, storage_driver = $4, updated_at = $5
+		 WHERE id = $6 AND user_id = $7`,
+		vFilePath, vFileHash, vFileSize, vStorageDriver, now, fileID, userID,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "restore failed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"message":    "restored",
+		"file_id":    fileID,
+		"file_hash":  vFileHash,
+		"file_size":  vFileSize,
+		"file_path":  vFilePath,
+	})
 }
 
 // ---------- Batch Operations ----------
