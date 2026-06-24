@@ -217,8 +217,9 @@ export default component$(() => {
 
   return (
     <div class="flex flex-col h-full">
-      {/* Toolbar — per spec: 40px height, search 320x40, buttons */}
-      <div class="flex items-center gap-4 px-6 py-3 border-b border-stora-border bg-white shrink-0">
+      {/* Sticky 操作栏 — 搜索 + 功能按钮，滚动到顶部时固定 */}
+      <div class="sticky top-0 z-10 bg-white border-b border-stora-border shrink-0">
+        <div class="flex items-center gap-4 px-6 py-3">
         {/* Search — 320x40 per spec */}
         <div class="relative flex-1 max-w-[320px]">
           <span class="absolute left-3 top-1/2 -translate-y-1/2 text-stora-nav-text text-sm pointer-events-none">🔍</span>
@@ -280,6 +281,10 @@ export default component$(() => {
           <span>➕</span>
         </button>
       </div>
+    </div>
+
+      {/* 可滚动内容区 */}
+      <div class="flex-1 overflow-auto scrollbar-thin">
 
       {/* Mobile bottom action bar for batch operations */}
       {selIds.value.length > 0 && (
@@ -419,7 +424,7 @@ export default component$(() => {
       </div>
 
       {/* Content */}
-      <div class={`flex-1 overflow-auto scrollbar-thin ${selIds.value.length > 0 ? 'pb-20 lg:pb-0' : ''}`}
+      <div class="pb-20 lg:pb-0"
         preventdefault:contextmenu
         onContextMenu$={(e: any) => {
           if (clipboard.value) {
@@ -452,6 +457,7 @@ export default component$(() => {
             onContextItem$={(item: any, e: any) => openCtx(item, e)} onPreview$={(item: any) => onPreview(item)} />
         )}
       </div>
+    </div>
 
       {/* Desktop context menu overlay */}
       {ctxItem.value && !showActionSheet.value && (
