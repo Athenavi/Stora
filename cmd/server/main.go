@@ -352,6 +352,7 @@ func main() {
 			r.Get("/files/{id}/snapshots", blockHandler.ListSnapshots)
 			r.Get("/sync/changes", blockHandler.SyncChanges)
 			r.Post("/sync/upload", blockHandler.SyncUpload)
+			r.Post("/sync/upload/assign", blockHandler.SyncUploadAssign)
 			// Legacy paths
 			r.Get("/trash", trashHandler.ListTrash)
 			r.Post("/trash/{id}/restore", trashHandler.RestoreFile)

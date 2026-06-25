@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -319,6 +320,79 @@ func (h *BlockHandler) SyncUpload(w http.ResponseWriter, r *http.Request) {
 		"path":      filePath,
 	})
 }
+
+// SyncUploadAssign assigns a chunk-uploaded file to a target path.
+func (h *BlockHandler) SyncUploadAssign(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	var req struct {
+		UploadID string `json:"upload_id"`
+		Path     string `json:"path"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UploadID == "" || req.Path == "" {
+		utils.WriteError(w, http.StatusBadRequest, "upload_id and path required")
+		return
+	}
+	// Risk 1: Path traversal
+	cleanPath := filepath.Clean(req.Path)
+	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "..") || cleanPath[0] == '/' || cleanPath[0] == '\\' {
+		utils.WriteError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+	req.Path = cleanPath
+	fileName := filepath.Base(req.Path)
+	dirPath := filepath.Dir(req.Path)
+
+	tx, err := h.db.Begin()
+	if err != nil { utils.WriteError(w, http.StatusInternalServerError, "tx failed"); return }
+	defer tx.Rollback()
+
+	// Risk 2+3: Verify ownership + prevent double-assign
+	var uid int64; var status string; var fh, sp string; var sz int64
+	err = tx.QueryRow(`SELECT user_id,status,COALESCE(final_hash,''),COALESCE(storage_path,''),file_size FROM upload_tasks WHERE upload_id=$1 FOR UPDATE`, req.UploadID,
+	).Scan(&uid, &status, &fh, &sp, &sz)
+	if err != nil { utils.WriteError(w, http.StatusNotFound, "upload not found"); return }
+	if uid != userID { utils.WriteError(w, http.StatusForbidden, "not your upload"); return }
+	if status != "pending" && status != "chunking" { utils.WriteError(w, http.StatusConflict, "already assigned"); return }
+	now := time.Now().Format(time.RFC3339)
+	tx.Exec(`UPDATE upload_tasks SET status='completed',updated_at=$1 WHERE upload_id=$2`, now, req.UploadID)
+
+	// Create folder hierarchy
+	var parentID *int64
+	if dirPath != "." {
+		for _, seg := range strings.Split(dirPath, string(filepath.Separator)) {
+			if seg == "" || seg == "." { continue }
+			var fid int64
+			if parentID != nil { tx.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id=$2 AND filename=$3 AND is_folder=true AND deleted_at IS NULL`, userID, *parentID, seg).Scan(&fid) } else { tx.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NULL AND filename=$2 AND is_folder=true AND deleted_at IS NULL`, userID, seg).Scan(&fid) }
+			if fid == 0 { tx.QueryRow(`INSERT INTO file_items (user_id,folder_id,filename,is_folder,created_at,updated_at) VALUES ($1,$2,$3,true,$4,$4) RETURNING id`, userID, parentID, seg, now).Scan(&fid) }
+			parentID = &fid
+		}
+	}
+
+	ext := strings.ToLower(filepath.Ext(fileName))
+	ft := "other"; mt := "application/octet-stream"
+	switch ext { case ".jpg","jpeg": ft="image"; mt="image/jpeg"; case ".png": ft="image"; mt="image/png"; case ".gif": ft="image"; mt="image/gif"; case ".mp4": ft="video"; mt="video/mp4"; case ".pdf": ft="document"; mt="application/pdf"; case ".doc",".docx": ft="document"; mt="application/msword"; case ".mp3": ft="audio"; mt="audio/mpeg" }
+
+	// Create file record
+	var fileID int64
+	err = tx.QueryRow(`INSERT INTO file_items (user_id,folder_id,filename,original_filename,file_path,file_size,mime_type,file_type,file_hash,is_folder,created_at,updated_at) VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,false,$9,$9) RETURNING id`,
+		userID, parentID, fileName, sp, sz, mt, ft, fh, now).Scan(&fileID)
+	if err != nil {
+		// Risk 7: Duplicate filename - update existing
+		var eid int64
+		tx.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NOT DISTINCT FROM $2 AND filename=$3 AND is_folder=false AND deleted_at IS NULL`, userID, parentID, fileName).Scan(&eid)
+		if eid > 0 { tx.Exec(`UPDATE file_items SET file_path=$1,file_hash=$2,file_size=$3,updated_at=$4 WHERE id=$5`, sp, fh, sz, now, eid); fileID = eid }
+	}
+	if fileID == 0 { utils.WriteError(w, http.StatusInternalServerError, "create file failed"); return }
+
+	// Risk 5: Fingerprint refcount
+	tx.Exec(`INSERT INTO file_fingerprints (hash,file_size,mime_type,storage_path,reference_count,created_at,updated_at) VALUES ($1,$2,$3,$4,1,$5,$5) ON CONFLICT (hash) DO UPDATE SET reference_count=file_fingerprints.reference_count+1,updated_at=$5`, fh, sz, mt, sp, now)
+	// Risk 6: Quota
+	tx.Exec(`UPDATE users SET used_storage=used_storage+$1 WHERE id=$2`, sz, userID)
+
+	if err := tx.Commit(); err != nil { utils.WriteError(w, http.StatusInternalServerError, "commit failed"); return }
+	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id":fileID,"file_hash":fh,"file_size":sz,"filename":fileName,"path":req.Path})
+}
+
 
 func (h *BlockHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
