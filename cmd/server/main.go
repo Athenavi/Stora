@@ -127,6 +127,7 @@ func main() {
 	batchHandler := fileapi.NewBatchHandler(db, store)
 	trashHandler := fileapi.NewTrashHandler(db)
 	blockHandler := fileapi.NewBlockHandler(db, store, cfg.TempFolder)
+	sessionHandler := fileapi.NewUploadSessionHandler(db, store, cfg.TempFolder)
 
 	// Initialize offline download handler
 	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
@@ -353,6 +354,9 @@ func main() {
 			r.Get("/sync/changes", blockHandler.SyncChanges)
 			r.Post("/sync/upload", blockHandler.SyncUpload)
 			r.Post("/sync/upload/complete", blockHandler.SyncUploadComplete)
+			r.Post("/sync/upload/session", sessionHandler.CreateSession)
+			r.Put("/sync/upload/session/{sessionId}", sessionHandler.UploadFragment)
+			r.Get("/sync/upload/session/{sessionId}", sessionHandler.GetSessionStatus)
 			r.Post("/sync/upload/assign", blockHandler.SyncUploadAssign)
 			// Legacy paths
 			r.Get("/trash", trashHandler.ListTrash)
