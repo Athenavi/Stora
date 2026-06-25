@@ -126,7 +126,7 @@ func main() {
 	versionHandler := fileapi.NewVersionHandler(db, store)
 	batchHandler := fileapi.NewBatchHandler(db, store)
 	trashHandler := fileapi.NewTrashHandler(db)
-	blockHandler := fileapi.NewBlockHandler(db, store)
+	blockHandler := fileapi.NewBlockHandler(db, store, cfg.TempFolder)
 
 	// Initialize offline download handler
 	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
@@ -352,6 +352,7 @@ func main() {
 			r.Get("/files/{id}/snapshots", blockHandler.ListSnapshots)
 			r.Get("/sync/changes", blockHandler.SyncChanges)
 			r.Post("/sync/upload", blockHandler.SyncUpload)
+			r.Post("/sync/upload/complete", blockHandler.SyncUploadComplete)
 			r.Post("/sync/upload/assign", blockHandler.SyncUploadAssign)
 			// Legacy paths
 			r.Get("/trash", trashHandler.ListTrash)
