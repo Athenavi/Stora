@@ -306,7 +306,12 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	var folderID *int64
 	if folderIDStr != "" {
 		if fid, err := strconv.ParseInt(folderIDStr, 10, 64); err == nil {
-			folderID = &fid
+			// Verify folder belongs to user
+			var ownerID int64
+			err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND is_folder = true AND deleted_at IS NULL`, fid).Scan(&ownerID)
+			if err == nil && ownerID == userID {
+				folderID = &fid
+			}
 		}
 	}
 
