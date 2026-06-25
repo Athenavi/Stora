@@ -366,7 +366,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		)
 	}
 
-	// Save file item
+	// Save file item (handle duplicates by updating content)
 	var fileID int64
 	err = h.db.QueryRow(
 		`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
@@ -376,9 +376,30 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	).Scan(&fileID)
 
 	if err != nil {
-		log.Printf("[UploadFile] INSERT error: %v", err)
-		utils.WriteError(w, http.StatusInternalServerError, "database insert failed")
-		return
+		// Unique violation: file with same name exists
+		var existingID int64
+		h.db.QueryRow(
+			`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
+			 AND filename = $3 AND is_folder = false AND deleted_at IS NULL`,
+			userID, folderID, filename,
+		).Scan(&existingID)
+		if existingID > 0 {
+			// Save old version
+			h.db.Exec(`INSERT INTO file_versions (file_id, version_num, file_path, file_size, file_hash, storage_driver, created_by, created_at)
+				SELECT $1, COALESCE((SELECT MAX(version_num) FROM file_versions WHERE file_id = $1), 0) + 1,
+				       file_path, file_size, file_hash, storage_driver, $2, $3 FROM file_items WHERE id = $1`,
+				existingID, userID, now)
+			// Update content
+			h.db.Exec(
+				`UPDATE file_items SET file_path = $1, file_hash = $2, file_size = $3, updated_at = $4
+				 WHERE id = $5`, storagePath, fileHash, fileSize, now, existingID)
+			h.db.Exec(`UPDATE file_fingerprints SET reference_count = reference_count + 1, updated_at = $1 WHERE hash = $2`, now, fileHash)
+			fileID = existingID
+		} else {
+			log.Printf("[UploadFile] INSERT error: %v", err)
+			utils.WriteError(w, http.StatusInternalServerError, "database insert failed")
+			return
+		}
 	}
 
 	// Update user storage quota

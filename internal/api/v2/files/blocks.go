@@ -279,7 +279,7 @@ func (h *BlockHandler) SyncUpload(w http.ResponseWriter, r *http.Request) {
 		fileType = "archive"
 	}
 
-	// Insert file record
+	// Insert file record (handle duplicates by updating content)
 	var fileID int64
 	err = h.db.QueryRow(
 		`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
@@ -288,8 +288,21 @@ func (h *BlockHandler) SyncUpload(w http.ResponseWriter, r *http.Request) {
 		userID, parentID, fileName, storagePath, fileSize, mimeType, fileType, hashStr, now,
 	).Scan(&fileID)
 	if err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("insert failed: %v", err))
-		return
+		// Unique violation: file with same name exists - update content
+		var existingID int64
+		h.db.QueryRow(
+			`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
+			 AND filename = $3 AND is_folder = false AND deleted_at IS NULL`,
+			userID, parentID, fileName,
+		).Scan(&existingID)
+		if existingID > 0 {
+			h.db.Exec(`UPDATE file_items SET file_path = $1, file_hash = $2, file_size = $3, updated_at = $4
+				WHERE id = $5`, storagePath, hashStr, fileSize, now, existingID)
+			fileID = existingID
+		} else {
+			utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("insert failed: %v", err))
+			return
+		}
 	}
 
 	// Update fingerprint refcount
