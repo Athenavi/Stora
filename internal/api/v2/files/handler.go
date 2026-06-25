@@ -863,18 +863,6 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check for duplicate folder name at the same level
-	var existing int64
-	h.db.QueryRow(
-		`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
-		 AND filename = $3 AND is_folder = true AND deleted_at IS NULL`,
-		userID, req.ParentID, req.Name,
-	).Scan(&existing)
-	if existing > 0 {
-		writeError(w, http.StatusConflict, "同层级已存在同名文件夹")
-		return
-	}
-
 	now := time.Now().Format(time.RFC3339)
 	var folderID int64
 	err := h.db.QueryRow(
@@ -882,6 +870,18 @@ func (h *Handler) CreateFolder(w http.ResponseWriter, r *http.Request) {
 		 VALUES ($1, $2, $3, true, $4, $4) RETURNING id`,
 		userID, req.ParentID, req.Name, now,
 	).Scan(&folderID)
+	if err != nil {
+		// Unique violation or race - find existing folder
+		h.db.QueryRow(
+			`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
+			 AND filename = $3 AND is_folder = true AND deleted_at IS NULL`,
+			userID, req.ParentID, req.Name,
+		).Scan(&folderID)
+		if folderID == 0 {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("create failed: %v", err))
+			return
+		}
+	}
 
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Sprintf("create failed: %v", err))
