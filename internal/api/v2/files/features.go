@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
@@ -41,17 +42,22 @@ func NewVaultHandler(db *sql.DB, vaultDir string) *VaultHandler {
 // ─── Helpers ───
 
 var vaultTokenStore = make(map[string]struct{ VaultID int64; UserID int64 })
+var vaultTokenMu sync.RWMutex
 
 func issueVaultToken(vaultID, userID int64) string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	tok := hex.EncodeToString(b)
+	vaultTokenMu.Lock()
 	vaultTokenStore[tok] = struct{ VaultID int64; UserID int64 }{vaultID, userID}
+	vaultTokenMu.Unlock()
 	return tok
 }
 
 func validateVaultToken(tok string) (int64, int64, bool) {
+	vaultTokenMu.RLock()
 	e, ok := vaultTokenStore[tok]
+	vaultTokenMu.RUnlock()
 	return e.VaultID, e.UserID, ok
 }
 
