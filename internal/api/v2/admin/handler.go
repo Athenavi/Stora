@@ -38,7 +38,7 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 		"total_shares":     totalShares,
 		"total_storage":    totalStorage,
 		"used_storage":     usedStorage,
-		"storage_percent":  totalStorage,
+		"storage_percent":  usedStorage * 100 / max(totalStorage, 1),
 	})
 }
 

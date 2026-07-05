@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -107,8 +108,13 @@ func fireWebhook(db *sql.DB, id int64, url, event, payload string) {
 	resp, err := http.Post(url, "application/json", body)
 	status := "failed"
 	respBody := ""
-	if err == nil {
+	if err != nil {
+		respBody = err.Error()
+	} else {
 		status = "success"
+		if b, readErr := io.ReadAll(resp.Body); readErr == nil {
+			respBody = string(b)
+		}
 		resp.Body.Close()
 	}
 	now := time.Now().Format(time.RFC3339)

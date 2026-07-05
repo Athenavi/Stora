@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/Athenavi/Stora/pkg/database"
 	"github.com/Athenavi/Stora/pkg/utils"
 )
 
@@ -24,8 +25,9 @@ func RequireAdmin(next http.Handler) http.Handler {
 	})
 }
 
-// RequirePermission checks for specific capabilities (stub for now).
-// In production, this would query the role_capabilities table.
+// RequirePermission checks that the authenticated user's roles include the
+// given capability (via role_capabilities + capabilities tables).
+// Admin always passes. Returns 403 if the capability is missing.
 func RequirePermission(capability string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -34,8 +36,28 @@ func RequirePermission(capability string) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			// TODO: query role_capabilities table for the user's roles
-			http.Error(w, `{"error":"forbidden: missing capability `+capability+`"}`, http.StatusForbidden)
+			userID, ok := GetUserID(r.Context())
+			if !ok {
+				utils.WriteError(w, http.StatusUnauthorized, "authentication required")
+				return
+			}
+			if database.DB == nil {
+				http.Error(w, `{"error":"internal: database not available"}`, http.StatusInternalServerError)
+				return
+			}
+			var count int
+			err := database.DB.QueryRow(
+				`SELECT COUNT(*) FROM user_role_assignments ura
+				 JOIN role_capabilities rc ON rc.role_id = ura.role_id
+				 JOIN capabilities c ON c.id = rc.capability_id
+				 WHERE ura.user_id = $1 AND c.codename = $2`,
+				userID, capability,
+			).Scan(&count)
+			if err != nil || count == 0 {
+				utils.WriteError(w, http.StatusForbidden, "forbidden: missing capability")
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }
