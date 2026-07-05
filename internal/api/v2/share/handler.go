@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -689,8 +690,8 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 		h.db.QueryRow(`SELECT filename FROM file_items WHERE id = $1 AND is_folder = true`, folderID).Scan(&folderName)
 
 		w.Header().Set("Content-Type", "application/zip")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, folderName))
-		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": folderName + ".zip"}))
+			w.WriteHeader(http.StatusOK)
 
 		zw := zip.NewWriter(w)
 		for _, f := range files {
@@ -781,7 +782,7 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 	defer reader.Close()
 
 	w.Header().Set("Content-Type", mimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.Header().Set("Content-Length", "")
 	w.WriteHeader(http.StatusOK)
 	io.Copy(w, reader)

@@ -10,7 +10,7 @@ import { api, isAuthenticated, getProfile, logout } from "~/lib/api";
 import { ToastContainer } from "~/components/ui/index";
 
 type NavIcon = "folder" | "share" | "trash" | "star" | "image" | "lock" | "tag" | "setting";
-type NavColor = "#2563EB" | "#2563EB" | "#DC2626" | "#D97706" | "#3B82F6" | "#7C3AED" | "#059669" | "#64748B";
+type NavColor = "#2563EB" | "#2563EB" | "#DC2626" | "#D97706" | "#3B82F6" | "#7C3AED" | "#059669" | "#0891B2" | "#64748B";
 
 interface NavItem {
   href: string;
@@ -22,10 +22,12 @@ interface NavItem {
 const navItems: NavItem[] = [
   { href: "/drive", icon: "folder", label: "我的文件", activeColor: "#2563EB" },
   { href: "/share", icon: "share", label: "我的分享", activeColor: "#2563EB" },
+  { href: "/teams", icon: "share", label: "团队", activeColor: "#0891B2" },
   { href: "/favorites", icon: "star", label: "收藏夹", activeColor: "#D97706" },
   { href: "/photos", icon: "image", label: "照片墙", activeColor: "#3B82F6" },
   { href: "/vault", icon: "lock", label: "私密空间", activeColor: "#7C3AED" },
   { href: "/tags", icon: "tag", label: "标签", activeColor: "#059669" },
+  { href: "/admin", icon: "setting", label: "管理后台", activeColor: "#DC2626" },
 ];
 
 export default component$(() => {
@@ -33,7 +35,7 @@ export default component$(() => {
   const path = loc.url.pathname.replace(/\/+$/, "");
   const quota = useSignal<{ max_storage: number; used_storage: number; usage_percent: number } | null>(null);
   const quotaCalls = useSignal<number[]>([]);
-  const userProfile = useSignal<{ username: string; email: string } | null>(null);
+  const userProfile = useSignal<{ username: string; email: string; is_superuser: boolean } | null>(null);
   const maintenance = useSignal<{ enabled: boolean; message: string; scheduled_start?: string; scheduled_end?: string; time_until_maintenance?: number } | null>(null);
 
   const isPublic =
@@ -134,6 +136,7 @@ export default component$(() => {
   const isFavorites = path.startsWith("/favorites");
   const isVault = path.startsWith("/vault");
   const isTags = path.startsWith("/tags");
+  const isTeams = path.startsWith("/teams");
   const isPhotos = path.startsWith("/photos");
   const isAdmin = path.startsWith("/admin");
   const isSettings = path.startsWith("/settings");
@@ -171,6 +174,8 @@ export default component$(() => {
         {/* Navigation — padding 8px, gap 2px */}
         <nav class="flex-1 overflow-y-auto px-2 py-2 space-y-[2px]">
           {navItems.map((item) => {
+            // Only show admin nav for superusers
+            if (item.href === "/admin" && !userProfile.value?.is_superuser) return null;
             const isActive =
               (item.href === "/drive" && isDrive) ||
               (item.href === "/share" && isShare) ||
@@ -178,6 +183,7 @@ export default component$(() => {
               (item.href === "/favorites" && isFavorites) ||
               (item.href === "/vault" && isVault) ||
               (item.href === "/tags" && isTags) ||
+              (item.href === "/teams" && isTeams) ||
               (item.href === "/photos" && isPhotos) ||
               (item.href === "/admin" && isAdmin);
             return (

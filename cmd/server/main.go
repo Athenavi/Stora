@@ -448,8 +448,8 @@ func main() {
 			db.QueryRow(`SELECT setting_value = 'true' FROM system_settings WHERE setting_key = 'maintenance_mode'`).Scan(&enabled)
 			db.QueryRow(`SELECT COALESCE(setting_value, '') FROM system_settings WHERE setting_key = 'maintenance_message'`).Scan(&message)
 			utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
-				"maintenance_mode": enabled,
-				"message":          message,
+				"enabled": enabled,
+				"message": message,
 			})
 		})
 	})
@@ -485,8 +485,8 @@ func main() {
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  600 * time.Second,
+		WriteTimeout: 600 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 

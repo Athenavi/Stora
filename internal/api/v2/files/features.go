@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"os/exec"
@@ -378,7 +379,7 @@ func (h *VaultHandler) DownloadVaultItem(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", mimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.Header().Set("Content-Length", strconv.Itoa(len(raw)))
 	w.WriteHeader(http.StatusOK)
 	w.Write(raw)

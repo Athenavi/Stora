@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1340,7 +1341,7 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Accept-Ranges", "bytes")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 
 	// Phase 4: Byte-range support for streaming
 	var fileSize int64
@@ -1412,7 +1413,7 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 	defer reader.Close()
 
 	w.Header().Set("Content-Type", mimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": filename}))
 	w.WriteHeader(http.StatusOK)
 	// Speed limit if user is authenticated
 	if uid, ok := middleware.GetUserID(r.Context()); ok {
