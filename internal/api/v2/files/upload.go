@@ -95,7 +95,7 @@ func (h *UploadHandler) InitUpload(w http.ResponseWriter, r *http.Request) {
 		fs, _ := strconv.ParseInt(fileSizeStr, 10, 64)
 		tc, _ := strconv.Atoi(totalChunksStr)
 		if tc > 0 {
-			chunkSizeStr = strconv.Itoa(int(fs + int64(tc) - 1) / tc) // ceiling division
+			chunkSizeStr = strconv.Itoa(int(fs+int64(tc)-1) / tc) // ceiling division
 		}
 	}
 
@@ -194,9 +194,17 @@ func (h *UploadHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify upload task exists
+	userID, _ := middleware.GetUserID(r.Context())
+
+	// uploadID becomes part of a filesystem path — require a server-issued UUID.
+	if _, err := uuid.Parse(uploadID); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "invalid upload id")
+		return
+	}
+
+	// Verify upload task exists and belongs to the caller
 	var status string
-	err = h.db.QueryRow(`SELECT status FROM upload_tasks WHERE upload_id = $1`, uploadID).Scan(&status)
+	err = h.db.QueryRow(`SELECT status FROM upload_tasks WHERE upload_id = $1 AND user_id = $2`, uploadID, userID).Scan(&status)
 	if err == sql.ErrNoRows {
 		utils.WriteError(w, http.StatusNotFound, "upload not found")
 		return
@@ -269,14 +277,19 @@ func (h *UploadHandler) UploadChunk(w http.ResponseWriter, r *http.Request) {
 // ---------- Upload Status ----------
 
 func (h *UploadHandler) UploadStatus(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
 	uploadID := chi.URLParam(r, "uploadId")
+	if _, err := uuid.Parse(uploadID); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "invalid upload id")
+		return
+	}
 
 	var filename string
 	var fileSize, totalChunks, receivedChunks int64
 	err := h.db.QueryRow(
 		`SELECT filename, file_size, total_chunks, received_chunks
-		 FROM upload_tasks WHERE upload_id = $1`,
-		uploadID,
+		 FROM upload_tasks WHERE upload_id = $1 AND user_id = $2`,
+		uploadID, userID,
 	).Scan(&filename, &fileSize, &totalChunks, &receivedChunks)
 
 	if err == sql.ErrNoRows {
@@ -312,6 +325,7 @@ func (h *UploadHandler) UploadStatus(w http.ResponseWriter, r *http.Request) {
 // ---------- Complete Upload ----------
 
 func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
 	uploadID := chi.URLParam(r, "uploadId")
 
 	// Fallback: read from JSON body (frontend sends POST /files/upload/complete)
@@ -329,23 +343,28 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		reqFolderID = req.FolderID
 	}
 
+	if _, err := uuid.Parse(uploadID); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "invalid upload id")
+		return
+	}
+
 	// Get upload task
 	var task struct {
-		UserID             int64
-		Filename           string
-		FileSize           int64
-		TotalChunks       int
-		ReceivedChunks    int
-		ChunkSize         int
-		MimeType          string
-		FolderID          sql.NullString
+		UserID         int64
+		Filename       string
+		FileSize       int64
+		TotalChunks    int
+		ReceivedChunks int
+		ChunkSize      int
+		MimeType       string
+		FolderID       sql.NullString
 	}
 
 	err := h.db.QueryRow(
 		`SELECT user_id, filename, file_size, total_chunks, received_chunks, chunk_size,
 		        COALESCE(mime_type, ''), COALESCE(folder_id, '')
-		 FROM upload_tasks WHERE upload_id = $1 AND status != 'completed'`,
-		uploadID,
+		 FROM upload_tasks WHERE upload_id = $1 AND user_id = $2 AND status != 'completed'`,
+		uploadID, userID,
 	).Scan(&task.UserID, &task.Filename, &task.FileSize, &task.TotalChunks,
 		&task.ReceivedChunks, &task.ChunkSize, &task.MimeType, &task.FolderID)
 
@@ -400,6 +419,19 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	} else if task.FolderID.Valid && task.FolderID.String != "" {
 		if fid, err := strconv.ParseInt(task.FolderID.String, 10, 64); err == nil {
 			folderID = &fid
+		}
+	}
+
+	// The target folder must belong to the caller — otherwise a user could drop
+	// files into someone else's directory by passing an arbitrary folder_id.
+	if folderID != nil {
+		var folderOwner int64
+		if err := h.db.QueryRow(
+			`SELECT user_id FROM file_items WHERE id = $1 AND is_folder = true AND deleted_at IS NULL`,
+			*folderID,
+		).Scan(&folderOwner); err != nil || folderOwner != task.UserID {
+			utils.WriteError(w, http.StatusBadRequest, "invalid folder_id")
+			return
 		}
 	}
 
@@ -468,7 +500,21 @@ func (h *UploadHandler) CheckUpload(w http.ResponseWriter, r *http.Request) {
 // ---------- Cancel Upload ----------
 
 func (h *UploadHandler) CancelUpload(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
 	uploadID := chi.URLParam(r, "uploadId")
+
+	// uploadID is used to build a filesystem path and must be a server-issued
+	// UUID: anything else (e.g. "..") could escape the temp directory.
+	if _, err := uuid.Parse(uploadID); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "invalid upload id")
+		return
+	}
+
+	var ownerID int64
+	if err := h.db.QueryRow(`SELECT user_id FROM upload_tasks WHERE upload_id = $1`, uploadID).Scan(&ownerID); err != nil || ownerID != userID {
+		utils.WriteError(w, http.StatusNotFound, "upload not found")
+		return
+	}
 
 	// Clean up temp dir
 	tmpDir := filepath.Join(h.tempDir, uploadID)
@@ -476,7 +522,7 @@ func (h *UploadHandler) CancelUpload(w http.ResponseWriter, r *http.Request) {
 
 	// Clean up DB records
 	h.db.Exec(`DELETE FROM upload_chunks WHERE upload_id = $1`, uploadID)
-	result, err := h.db.Exec(`DELETE FROM upload_tasks WHERE upload_id = $1`, uploadID)
+	result, err := h.db.Exec(`DELETE FROM upload_tasks WHERE upload_id = $1 AND user_id = $2`, uploadID, userID)
 	if err != nil {
 		utils.WriteError(w, http.StatusInternalServerError, "failed to cancel upload")
 		return

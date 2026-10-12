@@ -53,13 +53,13 @@ type pathCacheEntry struct {
 
 func NewHandler(db *sql.DB, store storage.Driver, tempDir string, vaultDir string, redisCache *cache.PathCache, limiter *middleware.SpeedLimiter) *Handler {
 	h := &Handler{
-		db:        db,
-		storage:   store,
-		tempDir:   tempDir,
-		pathCache: make(map[string]pathCacheEntry),
+		db:         db,
+		storage:    store,
+		tempDir:    tempDir,
+		pathCache:  make(map[string]pathCacheEntry),
 		redisCache: redisCache,
-		limiter:   limiter,
-		vaultDir:  vaultDir,
+		limiter:    limiter,
+		vaultDir:   vaultDir,
 	}
 	// Periodic cache cleanup: removes expired entries and evicts oldest if over maxCacheSize
 	go func() {
@@ -195,27 +195,27 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type FileItem struct {
-		ID           int64   `json:"id"`
-		Filename     *string `json:"filename"`
-		OrigName     *string `json:"original_filename"`
-		FileSize     *int64  `json:"file_size"`
-		MimeType     *string `json:"mime_type"`
-		FileType     *string `json:"file_type"`
-		IsFolder     *bool   `json:"is_folder"`
-		IsFav        *bool   `json:"is_favorite"`
-		ThumbURL     *string `json:"thumbnail_url"`
-		Width        *int    `json:"width"`
-		Height       *int    `json:"height"`
-		Duration     *int    `json:"duration"`
-		FolderID     *int64  `json:"folder_id"`
-		Category     *string `json:"category"`
-		SortOrder    *int64  `json:"sort_order"`
-		Description  *string `json:"description"`
-		FileHash     *string `json:"file_hash"`
-		IsEncrypted  *bool   `json:"is_encrypted"`
-		DownloadCnt  *int64  `json:"download_count"`
-		CreatedAt    *string `json:"created_at"`
-		UpdatedAt    *string `json:"updated_at"`
+		ID          int64   `json:"id"`
+		Filename    *string `json:"filename"`
+		OrigName    *string `json:"original_filename"`
+		FileSize    *int64  `json:"file_size"`
+		MimeType    *string `json:"mime_type"`
+		FileType    *string `json:"file_type"`
+		IsFolder    *bool   `json:"is_folder"`
+		IsFav       *bool   `json:"is_favorite"`
+		ThumbURL    *string `json:"thumbnail_url"`
+		Width       *int    `json:"width"`
+		Height      *int    `json:"height"`
+		Duration    *int    `json:"duration"`
+		FolderID    *int64  `json:"folder_id"`
+		Category    *string `json:"category"`
+		SortOrder   *int64  `json:"sort_order"`
+		Description *string `json:"description"`
+		FileHash    *string `json:"file_hash"`
+		IsEncrypted *bool   `json:"is_encrypted"`
+		DownloadCnt *int64  `json:"download_count"`
+		CreatedAt   *string `json:"created_at"`
+		UpdatedAt   *string `json:"updated_at"`
 	}
 
 	var items = make([]FileItem, 0)
@@ -230,9 +230,9 @@ func (h *Handler) ListFiles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": items,
-		"total": total,
-		"page":  page,
+		"items":    items,
+		"total":    total,
+		"page":     page,
 		"per_page": perPage,
 	})
 }
@@ -243,24 +243,24 @@ func (h *Handler) GetFile(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 
 	var item struct {
-		ID        int64    `json:"id"`
-		Filename  *string  `json:"filename"`
-		OrigName  *string  `json:"original_filename"`
-		FileSize  *int64   `json:"file_size"`
-		MimeType  *string  `json:"mime_type"`
-		FileType  *string  `json:"file_type"`
-		IsFolder  *bool    `json:"is_folder"`
-		IsFav     *bool    `json:"is_favorite"`
-		FilePath  *string  `json:"-"`
-		FileURL   *string  `json:"file_url"`
-		ThumbURL  *string  `json:"thumbnail_url"`
-		Width     *int     `json:"width"`
-		Height    *int     `json:"height"`
-		Duration  *int     `json:"duration"`
-		FolderID  *int64   `json:"folder_id"`
-		CreatedAt *string  `json:"created_at"`
-		UpdatedAt *string  `json:"updated_at"`
-		Desc      *string  `json:"description"`
+		ID        int64   `json:"id"`
+		Filename  *string `json:"filename"`
+		OrigName  *string `json:"original_filename"`
+		FileSize  *int64  `json:"file_size"`
+		MimeType  *string `json:"mime_type"`
+		FileType  *string `json:"file_type"`
+		IsFolder  *bool   `json:"is_folder"`
+		IsFav     *bool   `json:"is_favorite"`
+		FilePath  *string `json:"-"`
+		FileURL   *string `json:"file_url"`
+		ThumbURL  *string `json:"thumbnail_url"`
+		Width     *int    `json:"width"`
+		Height    *int    `json:"height"`
+		Duration  *int    `json:"duration"`
+		FolderID  *int64  `json:"folder_id"`
+		CreatedAt *string `json:"created_at"`
+		UpdatedAt *string `json:"updated_at"`
+		Desc      *string `json:"description"`
 	}
 
 	err := h.db.QueryRow(
@@ -607,6 +607,18 @@ func (h *Handler) MoveFile(w http.ResponseWriter, r *http.Request) {
 		req.FolderID = nil
 	}
 
+	// A file may only be moved into a folder the caller owns.
+	if req.FolderID != nil {
+		var folderOwner int64
+		if err := h.db.QueryRow(
+			`SELECT user_id FROM file_items WHERE id = $1 AND is_folder = true AND deleted_at IS NULL`,
+			*req.FolderID,
+		).Scan(&folderOwner); err != nil || folderOwner != userID {
+			writeError(w, http.StatusBadRequest, "invalid target folder")
+			return
+		}
+	}
+
 	_, err := h.db.Exec(
 		`UPDATE file_items SET folder_id = $1, updated_at = $2 WHERE id = $3 AND user_id = $4 AND deleted_at IS NULL`,
 		req.FolderID, time.Now().Format(time.RFC3339), fileID, userID,
@@ -841,9 +853,9 @@ func (h *Handler) ListFolders(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type Folder struct {
-		ID       int64  `json:"id"`
-		ParentID *int64 `json:"parent_id"`
-		Name     string `json:"name"`
+		ID       int64    `json:"id"`
+		ParentID *int64   `json:"parent_id"`
+		Name     string   `json:"name"`
 		Children []Folder `json:"children,omitempty"`
 	}
 
@@ -1371,27 +1383,22 @@ func (h *Handler) DownloadFile(w http.ResponseWriter, r *http.Request) {
 	io.Copy(w, limited)
 }
 
-// PreviewFile serves a file for inline preview (optional auth, works for <img> tags).
+// PreviewFile serves a file for inline preview (authenticated, works for <img> tags
+// because the browser sends the access_token cookie on same-origin requests).
 func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 
 	var filePath, mimeType, filename string
-	var err error
-
-	// If user is authenticated, check ownership; otherwise serve by ID only
-	if userID, ok := middleware.GetUserID(r.Context()); ok {
-		err = h.db.QueryRow(
-			`SELECT file_path, mime_type, COALESCE(original_filename, filename)
-			 FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`,
-			fileID, userID,
-		).Scan(&filePath, &mimeType, &filename)
-	} else {
-		err = h.db.QueryRow(
-			`SELECT file_path, mime_type, COALESCE(original_filename, filename)
-			 FROM file_items WHERE id = $1 AND deleted_at IS NULL AND is_folder = false`,
-			fileID,
-		).Scan(&filePath, &mimeType, &filename)
-	}
+	err := h.db.QueryRow(
+		`SELECT file_path, mime_type, COALESCE(original_filename, filename)
+		 FROM file_items WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL AND is_folder = false`,
+		fileID, userID,
+	).Scan(&filePath, &mimeType, &filename)
 
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found"})
@@ -1400,14 +1407,8 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 
 	reader, err := h.storage.Retrieve(filePath)
 	if err != nil {
-		// Debug: log the path we tried
-		localDrv, ok := h.storage.(*storage.LocalDriver)
-		if ok {
-			fullPath := filepath.Join(localDrv.ObjectsPath, filePath)
-			utils.WriteError(w, http.StatusNotFound, fmt.Sprintf("file not found at %s", fullPath))
-		} else {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found on storage"})
-		}
+		log.Printf("[PreviewFile] storage retrieve failed for file %d: %v", fileID, err)
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "file not found on storage"})
 		return
 	}
 	defer reader.Close()
@@ -1415,12 +1416,7 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": filename}))
 	w.WriteHeader(http.StatusOK)
-	// Speed limit if user is authenticated
-	if uid, ok := middleware.GetUserID(r.Context()); ok {
-		io.Copy(w, h.wrapDownloadReader(uid, reader))
-	} else {
-		io.Copy(w, reader)
-	}
+	io.Copy(w, h.wrapDownloadReader(userID, reader))
 }
 
 // wrapDownloadReader 如果启用了限速，包装 reader 为限速版本
@@ -1759,10 +1755,10 @@ func (h *Handler) GetFolderChildrenByPath(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"folders":    folders,
-		"files":      files,
-		"path":       breadcrumb,
-		"folder_id":  folderID,
+		"folders":   folders,
+		"files":     files,
+		"path":      breadcrumb,
+		"folder_id": folderID,
 	})
 }
 

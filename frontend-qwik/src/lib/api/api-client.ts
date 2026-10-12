@@ -19,7 +19,8 @@ export function setToken(token: string) {
 /** 清除 token（登出时调用） */
 export function clearToken() {
   authToken = null;
-  // 清除浏览器 cookie
+  // Best-effort cookie cleanup for as long as the cookie stays JS-visible; the
+  // authoritative clearing happens in the backend logout handler.
   if (typeof document !== 'undefined') {
     document.cookie = 'access_token=; Path=/; Max-Age=0; SameSite=Lax;';
   }
@@ -150,21 +151,21 @@ export function createServerApi(request?: Request) {
   }
 
   return {
-    get: <T>(path: string) => serverRequest<T>('GET', path),
-    post: <T>(path: string, body?: any) => serverRequest<T>('POST', path, body),
-    put: <T>(path: string, body?: any) => serverRequest<T>('PUT', path, body),
-    patch: <T>(path: string, body?: any) => serverRequest<T>('PATCH', path, body),
-    delete: <T>(path: string) => serverRequest<T>('DELETE', path),
-    upload: <T>(path: string, formData: FormData) => serverRequest<T>('POST', path, formData),
+    get: <T = any>(path: string) => serverRequest<T>('GET', path),
+    post: <T = any>(path: string, body?: any) => serverRequest<T>('POST', path, body),
+    put: <T = any>(path: string, body?: any) => serverRequest<T>('PUT', path, body),
+    patch: <T = any>(path: string, body?: any) => serverRequest<T>('PATCH', path, body),
+    delete: <T = any>(path: string) => serverRequest<T>('DELETE', path),
+    upload: <T = any>(path: string, formData: FormData) => serverRequest<T>('POST', path, formData),
   };
 }
 
 export const api = {
-  get: <T>(path: string, options?: { headers?: Record<string, string> }) => request<T>('GET', path, undefined, options),
-  post: <T>(path: string, body?: any, options?: { headers?: Record<string, string> }) => request<T>('POST', path, body, options),
-  put: <T>(path: string, body?: any, options?: { headers?: Record<string, string> }) => request<T>('PUT', path, body, options || {}),
-  patch: <T>(path: string, body?: any) => request<T>('PATCH', path, body),
-  delete: <T>(path: string) => request<T>('DELETE', path),
+  get: <T = any>(path: string, options?: { headers?: Record<string, string> }) => request<T>('GET', path, undefined, options),
+  post: <T = any>(path: string, body?: any, options?: { headers?: Record<string, string> }) => request<T>('POST', path, body, options),
+  put: <T = any>(path: string, body?: any, options?: { headers?: Record<string, string> }) => request<T>('PUT', path, body, options || {}),
+  patch: <T = any>(path: string, body?: any) => request<T>('PATCH', path, body),
+  delete: <T = any>(path: string) => request<T>('DELETE', path),
 
   /** 上传文件（FormData）支持进度回调 */
   upload: <T>(path: string, formData: FormData, onProgress?: (pct: number) => void) => {

@@ -3,24 +3,29 @@ package cleanup
 import (
 	"database/sql"
 	"log"
+	"path/filepath"
 	"time"
 )
 
-// CleanupScheduler periodically scans for expired uploads and fires cleanup events.
+// CleanupScheduler periodically scans for expired uploads and expired trash,
+// then fires cleanup events / purges.
 type CleanupScheduler struct {
-	db         *sql.DB
-	notifier   *CleanupNotifier
+	db          *sql.DB
+	notifier    *CleanupNotifier
+	tempDir     string
 	expireAfter time.Duration
 	interval    time.Duration
 	stopCh      chan struct{}
 }
 
 // NewCleanupScheduler creates a new scheduler.
-// expireHours: uploads older than this many hours are considered expired.
-func NewCleanupScheduler(db *sql.DB, notifier *CleanupNotifier, expireHours int) *CleanupScheduler {
+// expireHours: uploads and trash older than this many hours are considered expired.
+// tempDir: the configured upload temp root (e.g. "temp/upload").
+func NewCleanupScheduler(db *sql.DB, notifier *CleanupNotifier, expireHours int, tempDir string) *CleanupScheduler {
 	return &CleanupScheduler{
 		db:          db,
 		notifier:    notifier,
+		tempDir:     tempDir,
 		expireAfter: time.Duration(expireHours) * time.Hour,
 		interval:    30 * time.Minute,
 		stopCh:      make(chan struct{}),
@@ -36,11 +41,13 @@ func (s *CleanupScheduler) Start() {
 
 		// Run once immediately on start
 		s.sweep()
+		s.sweepTrash()
 
 		for {
 			select {
 			case <-ticker.C:
 				s.sweep()
+				s.sweepTrash()
 			case <-s.stopCh:
 				log.Println("[Cleanup] Scheduler stopped")
 				return
@@ -81,7 +88,7 @@ func (s *CleanupScheduler) sweep() {
 		event := CleanupEvent{
 			UploadID: uploadID,
 			UserID:   userID,
-			TempDir:  "temp/upload/" + uploadID,
+			TempDir:  filepath.Join(s.tempDir, uploadID),
 		}
 
 		log.Printf("[Cleanup] Firing event for expired upload %s (user %d)", uploadID, userID)
@@ -99,14 +106,72 @@ func (s *CleanupScheduler) sweep() {
 	}
 }
 
-// FireNow immediately fires a cleanup event for a specific upload and deletes its task record.
-// This is used by the CancelUpload and CompleteUpload handlers.
-func (s *CleanupScheduler) FireNow(uploadID string, userID int64) {
-	event := CleanupEvent{
-		UploadID: uploadID,
-		UserID:   userID,
-		TempDir:  "temp/upload/" + uploadID,
+// sweepTrash permanently removes trash items past their retention window and
+// releases the owners' storage quota.
+//
+// Grouped per user on purpose: the previous implementation ran a single global
+// DELETE, so a trash item was purged as soon as *any* upload anywhere expired,
+// regardless of its owner, and used_storage was never given back.
+func (s *CleanupScheduler) sweepTrash() {
+	cutoff := time.Now().Add(-s.expireAfter).Format(time.RFC3339)
+
+	rows, err := s.db.Query(
+		`SELECT user_id, COALESCE(file_hash, ''), COALESCE(file_size, 0) FROM file_items
+		 WHERE deleted_at IS NOT NULL AND deleted_at < $1`,
+		cutoff,
+	)
+	if err != nil {
+		log.Printf("[Cleanup] Trash sweep query failed: %v", err)
+		return
 	}
-	s.notifier.Fire(event)
-	s.db.Exec(`DELETE FROM upload_tasks WHERE upload_id = $1`, uploadID)
+
+	type userTrash struct {
+		bytes  int64
+		hashes []string
+	}
+	perUser := make(map[int64]*userTrash)
+	for rows.Next() {
+		var userID, size int64
+		var hash string
+		if err := rows.Scan(&userID, &hash, &size); err != nil {
+			continue
+		}
+		u := perUser[userID]
+		if u == nil {
+			u = &userTrash{}
+			perUser[userID] = u
+		}
+		u.bytes += size
+		if hash != "" {
+			u.hashes = append(u.hashes, hash)
+		}
+	}
+	rows.Close()
+
+	if len(perUser) == 0 {
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+	for userID, u := range perUser {
+		for _, hash := range u.hashes {
+			s.db.Exec(`UPDATE file_fingerprints SET reference_count = GREATEST(0, reference_count - 1), updated_at = $1 WHERE hash = $2`, now, hash)
+		}
+		res, err := s.db.Exec(
+			`DELETE FROM file_items WHERE user_id = $1 AND deleted_at IS NOT NULL AND deleted_at < $2`,
+			userID, cutoff,
+		)
+		if err != nil {
+			log.Printf("[Cleanup] Trash delete failed for user %d: %v", userID, err)
+			continue
+		}
+		n, _ := res.RowsAffected()
+		if n == 0 {
+			continue
+		}
+		if u.bytes > 0 {
+			s.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, u.bytes, userID)
+		}
+		log.Printf("[Cleanup] Purged %d trash items for user %d (released %d bytes)", n, userID, u.bytes)
+	}
 }

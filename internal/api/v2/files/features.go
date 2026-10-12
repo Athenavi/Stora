@@ -42,15 +42,33 @@ func NewVaultHandler(db *sql.DB, vaultDir string) *VaultHandler {
 
 // ─── Helpers ───
 
-var vaultTokenStore = make(map[string]struct{ VaultID int64; UserID int64 })
+// vaultTokenTTL bounds how long an unlocked vault stays unlocked.
+const vaultTokenTTL = 30 * time.Minute
+
+type vaultToken struct {
+	VaultID   int64
+	UserID    int64
+	ExpiresAt time.Time
+}
+
+var vaultTokenStore = make(map[string]vaultToken)
 var vaultTokenMu sync.RWMutex
 
 func issueVaultToken(vaultID, userID int64) string {
 	b := make([]byte, 16)
 	rand.Read(b)
 	tok := hex.EncodeToString(b)
+	now := time.Now()
+
 	vaultTokenMu.Lock()
-	vaultTokenStore[tok] = struct{ VaultID int64; UserID int64 }{vaultID, userID}
+	// Prune expired tokens here: they used to live forever, which made every
+	// vault unlock permanent and leaked one map entry per unlock.
+	for k, v := range vaultTokenStore {
+		if now.After(v.ExpiresAt) {
+			delete(vaultTokenStore, k)
+		}
+	}
+	vaultTokenStore[tok] = vaultToken{VaultID: vaultID, UserID: userID, ExpiresAt: now.Add(vaultTokenTTL)}
 	vaultTokenMu.Unlock()
 	return tok
 }
@@ -59,7 +77,10 @@ func validateVaultToken(tok string) (int64, int64, bool) {
 	vaultTokenMu.RLock()
 	e, ok := vaultTokenStore[tok]
 	vaultTokenMu.RUnlock()
-	return e.VaultID, e.UserID, ok
+	if !ok || time.Now().After(e.ExpiresAt) {
+		return 0, 0, false
+	}
+	return e.VaultID, e.UserID, true
 }
 
 // requireVaultToken validates the vault session token for the given vault.
@@ -241,8 +262,8 @@ func (h *VaultHandler) VerifyVaultPassword(w http.ResponseWriter, r *http.Reques
 
 	token := issueVaultToken(vaultID, userID)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"token":      token,
-		"vault_id":   vaultID,
+		"token":    token,
+		"vault_id": vaultID,
 	})
 }
 
@@ -421,7 +442,6 @@ func (h *VaultHandler) DeleteVaultItem(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
-
 type TranscodeHandler struct {
 	db      *sql.DB
 	storage storage.Driver
@@ -429,6 +449,14 @@ type TranscodeHandler struct {
 
 func NewTranscodeHandler(db *sql.DB, store storage.Driver) *TranscodeHandler {
 	return &TranscodeHandler{db: db, storage: store}
+}
+
+// allowedTranscodeFormats is the whitelist for target_format. The value is
+// concatenated into the ffmpeg output path, so it must never be free-form —
+// otherwise a value like "../../x" would write outside the object store.
+var allowedTranscodeFormats = map[string]bool{
+	"mp4": true, "webm": true, "mkv": true, "mov": true,
+	"mp3": true, "m4a": true, "aac": true, "wav": true,
 }
 
 func (h *TranscodeHandler) StartTranscode(w http.ResponseWriter, r *http.Request) {
@@ -441,6 +469,10 @@ func (h *TranscodeHandler) StartTranscode(w http.ResponseWriter, r *http.Request
 	json.NewDecoder(r.Body).Decode(&req)
 	if req.TargetFormat == "" {
 		req.TargetFormat = "mp4"
+	}
+	if !allowedTranscodeFormats[req.TargetFormat] {
+		writeError(w, http.StatusBadRequest, "unsupported target_format")
+		return
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -602,11 +634,11 @@ func (h *VersionHandler) RestoreVersion(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"message":    "restored",
-		"file_id":    fileID,
-		"file_hash":  vFileHash,
-		"file_size":  vFileSize,
-		"file_path":  vFilePath,
+		"message":   "restored",
+		"file_id":   fileID,
+		"file_hash": vFileHash,
+		"file_size": vFileSize,
+		"file_path": vFilePath,
 	})
 }
 
@@ -648,7 +680,7 @@ func (h *BatchHandler) BatchDelete(w http.ResponseWriter, r *http.Request) {
 		h.db.Exec(`UPDATE users SET used_storage = GREATEST(0, used_storage - $1) WHERE id = $2`, deletedBytes, userID)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"deleted": len(req.FileIDs),
+		"deleted":  len(req.FileIDs),
 		"affected": n,
 	})
 }
@@ -718,6 +750,22 @@ func (h *BatchHandler) BatchDownload(w http.ResponseWriter, r *http.Request) {
 	zw.Close()
 }
 
+// requireOwnedFolder verifies that folderID (when non-nil) is a folder owned by
+// userID. nil means "the virtual root", which needs no check.
+func (h *BatchHandler) requireOwnedFolder(userID int64, folderID *int64) error {
+	if folderID == nil {
+		return nil
+	}
+	var ownerID int64
+	if err := h.db.QueryRow(
+		`SELECT user_id FROM file_items WHERE id = $1 AND is_folder = true AND deleted_at IS NULL`,
+		*folderID,
+	).Scan(&ownerID); err != nil || ownerID != userID {
+		return fmt.Errorf("folder %d is not owned by user %d", *folderID, userID)
+	}
+	return nil
+}
+
 func (h *BatchHandler) BatchMove(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 	var req struct {
@@ -732,6 +780,11 @@ func (h *BatchHandler) BatchMove(w http.ResponseWriter, r *http.Request) {
 	dest := req.FolderID
 	if dest == nil {
 		dest = req.TargetID
+	}
+	// Without this, a caller could drop their files into someone else's folder.
+	if err := h.requireOwnedFolder(userID, dest); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid target folder")
+		return
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -778,6 +831,18 @@ func (h *BatchHandler) BatchCopy(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
+	// The destination folder must belong to the caller.
+	if dest != nil {
+		var folderOwner int64
+		if err := tx.QueryRow(
+			`SELECT user_id FROM file_items WHERE id = $1 AND is_folder = true AND deleted_at IS NULL`,
+			*dest,
+		).Scan(&folderOwner); err != nil || folderOwner != userID {
+			writeError(w, http.StatusBadRequest, "invalid target folder")
+			return
+		}
+	}
+
 	// Pre-flight: verify quota and collect source file metadata
 	var totalStorage, usedStorage int64
 	err = tx.QueryRow(`SELECT COALESCE(total_storage,0), COALESCE(used_storage,0) FROM users WHERE id = $1`, userID).Scan(&totalStorage, &usedStorage)
@@ -787,10 +852,10 @@ func (h *BatchHandler) BatchCopy(w http.ResponseWriter, r *http.Request) {
 	}
 	type srcFile struct {
 		filename, origFilename, filePath, mimeType, fileType, storageDriver, fileHash string
-		fileSize    int64
-		isEncrypted bool
-		description, fileURL, thumbnailURL, category string
-		duration, width, height, sortOrder int64
+		fileSize                                                                      int64
+		isEncrypted                                                                   bool
+		description, fileURL, thumbnailURL, category                                  string
+		duration, width, height, sortOrder                                            int64
 	}
 	var srcFiles []srcFile
 	var totalNeeded int64
@@ -1253,8 +1318,8 @@ func (h *TranscribeHandler) GetTranscriptionStatus(w http.ResponseWriter, r *htt
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"available":    status == "completed",
-		"status":       status,
+		"available":     status == "completed",
+		"status":        status,
 		"error_message": errorMsg,
 	})
 }
@@ -1377,18 +1442,17 @@ func (h *TranscodeHandler) ListTranscodeTasks(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, tasks)
 }
 
-func SetEncryptionKey(key string) {
+// SetEncryptionKey configures the AES-256-GCM key used for vault payloads.
+// The key is derived with SHA-256 so a secret of any length works. An empty key
+// is refused: falling back to a built-in constant would make every vault
+// readable by anyone who can read the source.
+func SetEncryptionKey(key string) error {
 	if key == "" {
-		encryptionKey = []byte("stora-vault-fallback-32byte!!!!!!!")
-		return
+		return errors.New("vault encryption key must not be empty")
 	}
-	// Derive 32-byte key from any-length secret via SHA256
 	h := sha256.Sum256([]byte(key))
 	encryptionKey = h[:]
-}
-
-func init() {
-	SetEncryptionKey("") // use fallback key for backward compat; production MUST set via config
+	return nil
 }
 
 func hashPassword(pw string) (string, error) {
@@ -1400,6 +1464,9 @@ func checkPassword(password, hash string) bool {
 }
 
 func encrypt(plaintext string) (string, error) {
+	if len(encryptionKey) == 0 {
+		return "", errors.New("vault encryption key is not configured")
+	}
 	block, err := aes.NewCipher(encryptionKey)
 	if err != nil {
 		return "", err
@@ -1420,6 +1487,9 @@ func encrypt(plaintext string) (string, error) {
 }
 
 func decrypt(encoded string) (string, error) {
+	if len(encryptionKey) == 0 {
+		return "", errors.New("vault encryption key is not configured")
+	}
 	ciphertext, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", err

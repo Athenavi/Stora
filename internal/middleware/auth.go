@@ -45,7 +45,7 @@ func AuthMiddleware(jwtManager *auth.JWTManager) func(http.Handler) http.Handler
 				return
 			}
 
-			claims, err := jwtManager.ValidateToken(tokenString)
+			claims, err := jwtManager.ValidateAccessToken(tokenString)
 			if err != nil {
 				utils.WriteError(w, http.StatusUnauthorized, "invalid or expired token")
 				return
@@ -56,28 +56,6 @@ func AuthMiddleware(jwtManager *auth.JWTManager) func(http.Handler) http.Handler
 			ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
 
 			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-// OptionalAuthMiddleware is like AuthMiddleware but doesn't require a token.
-func OptionalAuthMiddleware(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := r.Header.Get("Authorization")
-			if authHeader != "" {
-				parts := strings.SplitN(authHeader, " ", 2)
-				if len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
-					if claims, err := jwtManager.ValidateToken(parts[1]); err == nil {
-						ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
-						ctx = context.WithValue(ctx, UsernameKey, claims.Username)
-						ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
-						next.ServeHTTP(w, r.WithContext(ctx))
-						return
-					}
-				}
-			}
-			next.ServeHTTP(w, r)
 		})
 	}
 }

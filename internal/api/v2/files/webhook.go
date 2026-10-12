@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -61,6 +63,12 @@ func (h *WebhookHandler) CreateWebhook(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "url required")
 		return
 	}
+	// Webhooks are called by the server, so the target must not be inside our
+	// own network.
+	if _, err := utils.ValidateExternalURL(req.URL); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid url: %v", err))
+		return
+	}
 	now := time.Now().Format(time.RFC3339)
 	var id int64
 	h.db.QueryRow(
@@ -103,16 +111,27 @@ func TriggerWebhooks(db *sql.DB, event string, payload interface{}) {
 	}()
 }
 
+// webhookHTTPClient is bounded: one unresponsive receiver must not pin a
+// delivery goroutine forever.
+var webhookHTTPClient = utils.SafeHTTPClient(15 * time.Second)
+
+// maxWebhookResponseBytes caps what we store back from the receiver.
+const maxWebhookResponseBytes = 64 << 10
+
 func fireWebhook(db *sql.DB, id int64, url, event, payload string) {
 	body := bytes.NewBuffer([]byte(payload))
-	resp, err := http.Post(url, "application/json", body)
+	resp, err := webhookHTTPClient.Post(url, "application/json", body)
 	status := "failed"
 	respBody := ""
 	if err != nil {
 		respBody = err.Error()
 	} else {
 		status = "success"
-		if b, readErr := io.ReadAll(resp.Body); readErr == nil {
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			status = fmt.Sprintf("http_%d", resp.StatusCode)
+		}
+		// Cap the stored body: a chatty endpoint must not grow the table.
+		if b, readErr := io.ReadAll(io.LimitReader(resp.Body, maxWebhookResponseBytes)); readErr == nil {
 			respBody = string(b)
 		}
 		resp.Body.Close()

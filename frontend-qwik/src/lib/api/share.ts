@@ -15,6 +15,10 @@ export interface ShareLink {
   max_downloads: number;
   expires_at?: string | null;
   created_at?: string;
+  /** Name of the shared file or folder (returned by the list endpoint). */
+  filename?: string;
+  /** True when the link points at a folder rather than a single file. */
+  is_folder?: boolean;
 }
 
 export interface CreateShareParams {

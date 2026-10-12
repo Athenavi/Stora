@@ -6,6 +6,7 @@ import { routeLoader$, useLocation } from "@builder.io/qwik-city";
 import { createServerApi, api } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button } from "~/components/ui/Button";
+import { ImageEditor } from "~/components/image/ImageEditor";
 
 export const useFileDetail = routeLoader$(async ({ url, request }) => {
   const id = url.searchParams.get("id");
@@ -21,7 +22,7 @@ const OFFICE_EXTS = ["docx", "xlsx", "pptx", "doc", "xls", "ppt", "odt", "ods", 
 
 export default component$(() => {
   const file = useFileDetail();
-  const viewerRef = useSignal();
+  const viewerRef = useSignal<HTMLDivElement>();
   const editing = useSignal(false);
   const editContent = useSignal("");
   const saving = useSignal(false);
@@ -62,10 +63,11 @@ export default component$(() => {
 
   // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(async () => {
-    if (!viewerRef.value || isVideo || isAudio || editing.value) return;
+    const el = viewerRef.value;
+    if (!el || isVideo || isAudio || editing.value) return;
     try {
       const { mountViewerFrame } = await import('@flyfish-group/file-viewer-web');
-      mountViewerFrame(viewerRef.value, {
+      mountViewerFrame(el, {
         url: previewUrl,
         name: f.filename,
         options: { theme: 'dark', toolbar: { download: true, print: true } },

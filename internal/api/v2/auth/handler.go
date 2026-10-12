@@ -18,12 +18,13 @@ import (
 )
 
 type Handler struct {
-	db         *sql.DB
-	jwtManager *auth.JWTManager
+	db           *sql.DB
+	jwtManager   *auth.JWTManager
+	cookieSecure bool
 }
 
-func NewHandler(db *sql.DB, jwtManager *auth.JWTManager) *Handler {
-	return &Handler{db: db, jwtManager: jwtManager}
+func NewHandler(db *sql.DB, jwtManager *auth.JWTManager, cookieSecure bool) *Handler {
+	return &Handler{db: db, jwtManager: jwtManager, cookieSecure: cookieSecure}
 }
 
 // Register accepts FormData: username, email, password, password_confirm
@@ -127,10 +128,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Login anomaly detection: check if IP changed significantly
-	clientIP := r.RemoteAddr
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		clientIP = strings.Split(fwd, ",")[0]
-	}
+	clientIP := middleware.ClientIP(r)
 	if user.LastLoginIP != nil && *user.LastLoginIP != "" && *user.LastLoginIP != clientIP {
 		h.db.Exec(`INSERT INTO notifications (user_id, type, title, body, created_at)
 			VALUES ($1, 'security', '异地登录提醒', $2, $3)`,
@@ -143,18 +141,18 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		time.Now().Format(time.RFC3339), clientIP, user.ID)
 
 	// Format response matching frontend's LoginResponse expectations
-	setAuthCookie(w, tokens.AccessToken, tokens.ExpiresIn)
+	h.setAuthCookie(w, tokens.AccessToken, tokens.ExpiresIn)
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
 		"token_type":    tokens.TokenType,
 		"expires_in":    tokens.ExpiresIn,
 		"user": map[string]interface{}{
-			"id":             user.ID,
-			"username":       user.Username,
-			"email":          user.Email,
-			"is_superuser":   user.IsSuperuser,
-			"is_active":      user.IsActive,
+			"id":              user.ID,
+			"username":        user.Username,
+			"email":           user.Email,
+			"is_superuser":    user.IsSuperuser,
+			"is_active":       user.IsActive,
 			"profile_picture": user.ProfilePicture,
 		},
 	})
@@ -177,6 +175,11 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Keep the cookie in step with the refreshed token: it used to be left at the
+	// original value, so once the original expired the browser session broke
+	// while the API kept handing out fresh tokens.
+	h.setAuthCookie(w, tokens.AccessToken, tokens.ExpiresIn)
+
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
@@ -186,6 +189,7 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	h.clearAuthCookie(w)
 	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
@@ -210,15 +214,15 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"id":             user.ID,
-		"username":       user.Username,
-		"email":          user.Email,
-		"is_superuser":   user.IsSuperuser,
-		"is_active":      user.IsActive,
-		"date_joined":    user.DateJoined,
-		"locale":         user.Locale,
-		"total_storage":  user.TotalStorage,
-		"used_storage":   user.UsedStorage,
+		"id":              user.ID,
+		"username":        user.Username,
+		"email":           user.Email,
+		"is_superuser":    user.IsSuperuser,
+		"is_active":       user.IsActive,
+		"date_joined":     user.DateJoined,
+		"locale":          user.Locale,
+		"total_storage":   user.TotalStorage,
+		"used_storage":    user.UsedStorage,
 		"profile_picture": user.ProfilePicture,
 	})
 }
@@ -408,13 +412,34 @@ func (h *Handler) LoginWithCode(w http.ResponseWriter, r *http.Request) {
 	utils.WriteError(w, http.StatusNotImplemented, "not implemented")
 }
 
-// setAuthCookie sets the access_token as an HTTP-only cookie for SSR support.
-func setAuthCookie(w http.ResponseWriter, token string, expiresIn int) {
+// setAuthCookie mirrors the access token into a same-origin cookie so that
+// browser-issued requests (SSR route loaders, <img>/<a> tags, downloads)
+// authenticate without an Authorization header.
+//
+// HttpOnly is deliberately NOT set: the SPA currently reads this cookie from
+// JavaScript to decide whether a user is signed in. Turning it on requires the
+// frontend auth-probe rework described in the auth hardening assessment.
+func (h *Handler) setAuthCookie(w http.ResponseWriter, token string, expiresIn int) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "access_token",
 		Value:    token,
 		Path:     "/",
 		MaxAge:   expiresIn,
+		Secure:   h.cookieSecure,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// clearAuthCookie expires the auth cookie. Logout must call this: the SPA's own
+// logout only dropped its in-memory token, so the cookie outlived the session
+// and the next navigation was still authenticated.
+func (h *Handler) clearAuthCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "access_token",
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
 }

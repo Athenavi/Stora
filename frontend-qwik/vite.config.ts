@@ -1,4 +1,4 @@
-﻿/**
+/**
  * This is the base config for vite.
  * When building, the adapter config is used which loads this file and extends it.
  */

@@ -37,20 +37,20 @@ type UserRole struct {
 
 // PermissionAuditLog records permission changes.
 type PermissionAuditLog struct {
-	ID         int64   `json:"id" db:"id"`
-	ActorID    int64   `json:"actor_id" db:"actor_id"`
-	TargetID   *int64  `json:"target_id" db:"target_id"`
-	Action     string  `json:"action" db:"action"`
-	Detail     *string `json:"detail" db:"detail"`
-	CreatedAt  *string `json:"created_at" db:"created_at"`
+	ID        int64   `json:"id" db:"id"`
+	ActorID   int64   `json:"actor_id" db:"actor_id"`
+	TargetID  *int64  `json:"target_id" db:"target_id"`
+	Action    string  `json:"action" db:"action"`
+	Detail    *string `json:"detail" db:"detail"`
+	CreatedAt *string `json:"created_at" db:"created_at"`
 }
 
 // FieldPermission defines field-level access control.
 type FieldPermission struct {
-	ID          int64  `json:"id" db:"id"`
-	RoleID      int64  `json:"role_id" db:"role_id"`
-	ModelName   string `json:"model_name" db:"model_name"`
-	FieldName   string `json:"field_name" db:"field_name"`
-	CanRead     bool   `json:"can_read" db:"can_read"`
-	CanWrite    bool   `json:"can_write" db:"can_write"`
+	ID        int64  `json:"id" db:"id"`
+	RoleID    int64  `json:"role_id" db:"role_id"`
+	ModelName string `json:"model_name" db:"model_name"`
+	FieldName string `json:"field_name" db:"field_name"`
+	CanRead   bool   `json:"can_read" db:"can_read"`
+	CanWrite  bool   `json:"can_write" db:"can_write"`
 }

@@ -1,4 +1,4 @@
-﻿package files
+package files
 
 import (
 	"bytes"
@@ -16,10 +16,10 @@ import (
 
 	"database/sql"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/Athenavi/Stora/pkg/utils"
+	"github.com/go-chi/chi/v5"
 )
 
 // BlockHandler manages block-level storage for the .Stora sync engine.
@@ -33,12 +33,21 @@ func NewBlockHandler(db *sql.DB, store storage.Driver, tempDir string) *BlockHan
 	return &BlockHandler{db: db, storage: store, tempDir: tempDir}
 }
 
+// maxBlockBytes bounds a single uploaded block. The sync engine uses 4 MiB
+// blocks; the cap only needs headroom for multipart overhead.
+const maxBlockBytes = int64(16) << 20
+
 // UploadBlock stores a single 4MB block in content-addressable storage.
 func (h *BlockHandler) UploadBlock(w http.ResponseWriter, r *http.Request) {
-	_, _ = middleware.GetUserID(r.Context())
+	if _, ok := middleware.GetUserID(r.Context()); !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		utils.WriteError(w, http.StatusBadRequest, "invalid form")
+	// Hard cap the request body: without it a client could stream to disk freely.
+	r.Body = http.MaxBytesReader(w, r.Body, maxBlockBytes)
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		utils.WriteError(w, http.StatusBadRequest, "invalid form or block too large")
 		return
 	}
 
@@ -48,6 +57,11 @@ func (h *BlockHandler) UploadBlock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
+
+	if header.Size > maxBlockBytes {
+		utils.WriteError(w, http.StatusRequestEntityTooLarge, "block too large")
+		return
+	}
 
 	data, err := io.ReadAll(file)
 	if err != nil {
@@ -60,8 +74,8 @@ func (h *BlockHandler) UploadBlock(w http.ResponseWriter, r *http.Request) {
 
 	_, storagePath, err := h.storage.StoreHash(bytes.NewReader(data))
 	if err != nil {
-		storagePath = fmt.Sprintf("objects/%s/%s", hashStr[:2], hashStr[2:])
-		_ = header
+		utils.WriteError(w, http.StatusInternalServerError, "storage failed")
+		return
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -116,7 +130,7 @@ func (h *BlockHandler) GetFileManifest(w http.ResponseWriter, r *http.Request) {
 
 	var fileHash string
 	err := h.db.QueryRow(
-		`SELECT COALESCE(file_hash, '''') FROM file_items WHERE id = $1 AND user_id = $2`,
+		`SELECT COALESCE(file_hash, '') FROM file_items WHERE id = $1 AND user_id = $2`,
 		fileID, userID,
 	).Scan(&fileHash)
 	if err != nil {
@@ -253,12 +267,8 @@ func (h *BlockHandler) SyncUpload(w http.ResponseWriter, r *http.Request) {
 	// Store content via content-addressable storage
 	_, storagePath, err := h.storage.StoreHash(bytes.NewReader(data))
 	if err != nil {
-		storagePath = fmt.Sprintf("objects/%s/%s", hashStr[:2], hashStr[2:])
-		// Also write to disk as fallback
-		diskPath := fmt.Sprintf("objects/%s/%s", hashStr[:2], hashStr[2:])
-		os.MkdirAll(filepath.Dir(diskPath), 0755)
-		os.WriteFile(diskPath, data, 0644)
-		storagePath = diskPath
+		utils.WriteError(w, http.StatusInternalServerError, "storage failed")
+		return
 	}
 
 	now := time.Now().Format(time.RFC3339)
@@ -344,16 +354,30 @@ func (h *BlockHandler) SyncUploadAssign(w http.ResponseWriter, r *http.Request) 
 	dirPath := filepath.Dir(req.Path)
 
 	tx, err := h.db.Begin()
-	if err != nil { utils.WriteError(w, http.StatusInternalServerError, "tx failed"); return }
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "tx failed")
+		return
+	}
 	defer tx.Rollback()
 
 	// Risk 2+3: Verify ownership + prevent double-assign
-	var uid int64; var status string; var fh, sp string; var sz int64
-	err = tx.QueryRow(`SELECT user_id,status,COALESCE(final_hash,''),COALESCE(storage_path,''),file_size FROM upload_tasks WHERE upload_id=$1 FOR UPDATE`, req.UploadID,
-	).Scan(&uid, &status, &fh, &sp, &sz)
-	if err != nil { utils.WriteError(w, http.StatusNotFound, "upload not found"); return }
-	if uid != userID { utils.WriteError(w, http.StatusForbidden, "not your upload"); return }
-	if status != "pending" && status != "chunking" { utils.WriteError(w, http.StatusConflict, "already assigned"); return }
+	var uid int64
+	var status string
+	var fh, sp string
+	var sz int64
+	err = tx.QueryRow(`SELECT user_id,status,COALESCE(final_hash,''),COALESCE(storage_path,''),file_size FROM upload_tasks WHERE upload_id=$1 FOR UPDATE`, req.UploadID).Scan(&uid, &status, &fh, &sp, &sz)
+	if err != nil {
+		utils.WriteError(w, http.StatusNotFound, "upload not found")
+		return
+	}
+	if uid != userID {
+		utils.WriteError(w, http.StatusForbidden, "not your upload")
+		return
+	}
+	if status != "pending" && status != "chunking" {
+		utils.WriteError(w, http.StatusConflict, "already assigned")
+		return
+	}
 	now := time.Now().Format(time.RFC3339)
 	tx.Exec(`UPDATE upload_tasks SET status='completed',updated_at=$1 WHERE upload_id=$2`, now, req.UploadID)
 
@@ -361,17 +385,48 @@ func (h *BlockHandler) SyncUploadAssign(w http.ResponseWriter, r *http.Request) 
 	var parentID *int64
 	if dirPath != "." {
 		for _, seg := range strings.Split(dirPath, string(filepath.Separator)) {
-			if seg == "" || seg == "." { continue }
+			if seg == "" || seg == "." {
+				continue
+			}
 			var fid int64
-			if parentID != nil { tx.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id=$2 AND filename=$3 AND is_folder=true AND deleted_at IS NULL`, userID, *parentID, seg).Scan(&fid) } else { tx.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NULL AND filename=$2 AND is_folder=true AND deleted_at IS NULL`, userID, seg).Scan(&fid) }
-			if fid == 0 { tx.QueryRow(`INSERT INTO file_items (user_id,folder_id,filename,is_folder,created_at,updated_at) VALUES ($1,$2,$3,true,$4,$4) RETURNING id`, userID, parentID, seg, now).Scan(&fid) }
+			if parentID != nil {
+				tx.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id=$2 AND filename=$3 AND is_folder=true AND deleted_at IS NULL`, userID, *parentID, seg).Scan(&fid)
+			} else {
+				tx.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NULL AND filename=$2 AND is_folder=true AND deleted_at IS NULL`, userID, seg).Scan(&fid)
+			}
+			if fid == 0 {
+				tx.QueryRow(`INSERT INTO file_items (user_id,folder_id,filename,is_folder,created_at,updated_at) VALUES ($1,$2,$3,true,$4,$4) RETURNING id`, userID, parentID, seg, now).Scan(&fid)
+			}
 			parentID = &fid
 		}
 	}
 
 	ext := strings.ToLower(filepath.Ext(fileName))
-	ft := "other"; mt := "application/octet-stream"
-	switch ext { case ".jpg","jpeg": ft="image"; mt="image/jpeg"; case ".png": ft="image"; mt="image/png"; case ".gif": ft="image"; mt="image/gif"; case ".mp4": ft="video"; mt="video/mp4"; case ".pdf": ft="document"; mt="application/pdf"; case ".doc",".docx": ft="document"; mt="application/msword"; case ".mp3": ft="audio"; mt="audio/mpeg" }
+	ft := "other"
+	mt := "application/octet-stream"
+	switch ext {
+	case ".jpg", "jpeg":
+		ft = "image"
+		mt = "image/jpeg"
+	case ".png":
+		ft = "image"
+		mt = "image/png"
+	case ".gif":
+		ft = "image"
+		mt = "image/gif"
+	case ".mp4":
+		ft = "video"
+		mt = "video/mp4"
+	case ".pdf":
+		ft = "document"
+		mt = "application/pdf"
+	case ".doc", ".docx":
+		ft = "document"
+		mt = "application/msword"
+	case ".mp3":
+		ft = "audio"
+		mt = "audio/mpeg"
+	}
 
 	// Create file record
 	var fileID int64
@@ -381,19 +436,27 @@ func (h *BlockHandler) SyncUploadAssign(w http.ResponseWriter, r *http.Request) 
 		// Risk 7: Duplicate filename - update existing
 		var eid int64
 		tx.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NOT DISTINCT FROM $2 AND filename=$3 AND is_folder=false AND deleted_at IS NULL`, userID, parentID, fileName).Scan(&eid)
-		if eid > 0 { tx.Exec(`UPDATE file_items SET file_path=$1,file_hash=$2,file_size=$3,updated_at=$4 WHERE id=$5`, sp, fh, sz, now, eid); fileID = eid }
+		if eid > 0 {
+			tx.Exec(`UPDATE file_items SET file_path=$1,file_hash=$2,file_size=$3,updated_at=$4 WHERE id=$5`, sp, fh, sz, now, eid)
+			fileID = eid
+		}
 	}
-	if fileID == 0 { utils.WriteError(w, http.StatusInternalServerError, "create file failed"); return }
+	if fileID == 0 {
+		utils.WriteError(w, http.StatusInternalServerError, "create file failed")
+		return
+	}
 
 	// Risk 5: Fingerprint refcount
 	tx.Exec(`INSERT INTO file_fingerprints (hash,file_size,mime_type,storage_path,reference_count,created_at,updated_at) VALUES ($1,$2,$3,$4,1,$5,$5) ON CONFLICT (hash) DO UPDATE SET reference_count=file_fingerprints.reference_count+1,updated_at=$5`, fh, sz, mt, sp, now)
 	// Risk 6: Quota
 	tx.Exec(`UPDATE users SET used_storage=used_storage+$1 WHERE id=$2`, sz, userID)
 
-	if err := tx.Commit(); err != nil { utils.WriteError(w, http.StatusInternalServerError, "commit failed"); return }
-	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id":fileID,"file_hash":fh,"file_size":sz,"filename":fileName,"path":req.Path})
+	if err := tx.Commit(); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "commit failed")
+		return
+	}
+	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "file_hash": fh, "file_size": sz, "filename": fileName, "path": req.Path})
 }
-
 
 func (h *BlockHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	fileID, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
@@ -498,7 +561,6 @@ func (h *BlockHandler) SyncChanges(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-
 // SyncUploadComplete - merge chunks + create folders + create file in one call.
 func (h *BlockHandler) SyncUploadComplete(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
@@ -507,54 +569,116 @@ func (h *BlockHandler) SyncUploadComplete(w http.ResponseWriter, r *http.Request
 		Path     string `json:"path"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.UploadID == "" || req.Path == "" {
-		utils.WriteError(w, http.StatusBadRequest, "upload_id and path required"); return
+		utils.WriteError(w, http.StatusBadRequest, "upload_id and path required")
+		return
 	}
 	cleanPath := filepath.Clean(req.Path)
 	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "..") || cleanPath[0] == '/' || cleanPath[0] == '\\' {
-		utils.WriteError(w, http.StatusBadRequest, "invalid path"); return
+		utils.WriteError(w, http.StatusBadRequest, "invalid path")
+		return
 	}
-	req.Path = cleanPath; fileName := filepath.Base(req.Path); dirPath := filepath.Dir(req.Path)
-	var uID, uSize int64; var uMime, uStatus string; var total, recv int
-	err := h.db.QueryRow(`SELECT user_id,file_size,COALESCE(mime_type,''),status,total_chunks,received_chunks FROM upload_tasks WHERE upload_id=$1`, req.UploadID,
-	).Scan(&uID, &uSize, &uMime, &uStatus, &total, &recv)
-	if err != nil { utils.WriteError(w, http.StatusNotFound, "upload not found"); return }
-	if uID != userID { utils.WriteError(w, http.StatusForbidden, "not your upload"); return }
-	if uStatus == "completed" { utils.WriteError(w, http.StatusConflict, "already completed"); return }
+	req.Path = cleanPath
+	fileName := filepath.Base(req.Path)
+	dirPath := filepath.Dir(req.Path)
+	var uID, uSize int64
+	var uMime, uStatus string
+	var total, recv int
+	err := h.db.QueryRow(`SELECT user_id,file_size,COALESCE(mime_type,''),status,total_chunks,received_chunks FROM upload_tasks WHERE upload_id=$1`, req.UploadID).Scan(&uID, &uSize, &uMime, &uStatus, &total, &recv)
+	if err != nil {
+		utils.WriteError(w, http.StatusNotFound, "upload not found")
+		return
+	}
+	if uID != userID {
+		utils.WriteError(w, http.StatusForbidden, "not your upload")
+		return
+	}
+	if uStatus == "completed" {
+		utils.WriteError(w, http.StatusConflict, "already completed")
+		return
+	}
 	dir := filepath.Join(h.tempDir, req.UploadID)
 	var readers []io.Reader
 	for i := 0; i < total; i++ {
-		f, e := os.Open(filepath.Join(dir, fmt.Sprintf("chunk_%d", i)))
-		if e != nil { utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("missing chunk %d", i)); return }
-		readers = append(readers, f); defer f.Close()
+		// Chunks are written by UploadChunk as "<index>.part" under the upload id.
+		f, e := os.Open(filepath.Join(dir, fmt.Sprintf("%d.part", i)))
+		if e != nil {
+			utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("missing chunk %d", i))
+			return
+		}
+		readers = append(readers, f)
+		defer f.Close()
 	}
 	merged := io.NopCloser(io.MultiReader(readers...))
 	fh, sp, err := h.storage.StoreHash(merged)
 	merged.Close()
-	if err != nil { utils.WriteError(w, http.StatusInternalServerError, "storage failed"); return }
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "storage failed")
+		return
+	}
 	now := time.Now().Format(time.RFC3339)
 	var parentID *int64
 	if dirPath != "." {
 		for _, seg := range strings.Split(dirPath, string(filepath.Separator)) {
-			if seg == "" || seg == "." { continue }
+			if seg == "" || seg == "." {
+				continue
+			}
 			var fid int64
-			if parentID != nil { h.db.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id=$2 AND filename=$3 AND is_folder=true AND deleted_at IS NULL`, userID, *parentID, seg).Scan(&fid) } else { h.db.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NULL AND filename=$2 AND is_folder=true AND deleted_at IS NULL`, userID, seg).Scan(&fid) }
-			if fid == 0 { h.db.QueryRow(`INSERT INTO file_items (user_id,folder_id,filename,is_folder,created_at,updated_at) VALUES ($1,$2,$3,true,$4,$4) RETURNING id`, userID, parentID, seg, now).Scan(&fid) }
+			if parentID != nil {
+				h.db.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id=$2 AND filename=$3 AND is_folder=true AND deleted_at IS NULL`, userID, *parentID, seg).Scan(&fid)
+			} else {
+				h.db.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NULL AND filename=$2 AND is_folder=true AND deleted_at IS NULL`, userID, seg).Scan(&fid)
+			}
+			if fid == 0 {
+				h.db.QueryRow(`INSERT INTO file_items (user_id,folder_id,filename,is_folder,created_at,updated_at) VALUES ($1,$2,$3,true,$4,$4) RETURNING id`, userID, parentID, seg, now).Scan(&fid)
+			}
 			parentID = &fid
 		}
 	}
-	ext := strings.ToLower(filepath.Ext(fileName)); ft := "other"; mt := "application/octet-stream"
-	switch ext { case ".jpg","jpeg": ft="image";mt="image/jpeg"; case ".png": ft="image";mt="image/png"; case ".mp4": ft="video";mt="video/mp4"; case ".pdf": ft="document";mt="application/pdf"; case ".doc",".docx": ft="document";mt="application/msword"; case ".mp3": ft="audio";mt="audio/mpeg" }
+	ext := strings.ToLower(filepath.Ext(fileName))
+	ft := "other"
+	mt := "application/octet-stream"
+	switch ext {
+	case ".jpg", "jpeg":
+		ft = "image"
+		mt = "image/jpeg"
+	case ".png":
+		ft = "image"
+		mt = "image/png"
+	case ".mp4":
+		ft = "video"
+		mt = "video/mp4"
+	case ".pdf":
+		ft = "document"
+		mt = "application/pdf"
+	case ".doc", ".docx":
+		ft = "document"
+		mt = "application/msword"
+	case ".mp3":
+		ft = "audio"
+		mt = "audio/mpeg"
+	}
 	var fileID int64
 	err = h.db.QueryRow(`INSERT INTO file_items (user_id,folder_id,filename,original_filename,file_path,file_size,mime_type,file_type,file_hash,is_folder,created_at,updated_at) VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,false,$9,$9) RETURNING id`,
 		userID, parentID, fileName, sp, uSize, mt, ft, fh, now).Scan(&fileID)
 	if err != nil {
-		var eid int64; h.db.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NOT DISTINCT FROM $2 AND filename=$3 AND is_folder=false AND deleted_at IS NULL`, userID, parentID, fileName).Scan(&eid)
-		if eid > 0 { h.db.Exec(`UPDATE file_items SET file_path=$1,file_hash=$2,file_size=$3,updated_at=$4 WHERE id=$5`, sp, fh, uSize, now, eid); fileID = eid }
+		var eid int64
+		h.db.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NOT DISTINCT FROM $2 AND filename=$3 AND is_folder=false AND deleted_at IS NULL`, userID, parentID, fileName).Scan(&eid)
+		if eid > 0 {
+			h.db.Exec(`UPDATE file_items SET file_path=$1,file_hash=$2,file_size=$3,updated_at=$4 WHERE id=$5`, sp, fh, uSize, now, eid)
+			fileID = eid
+		}
 	}
-	if fileID == 0 { utils.WriteError(w, http.StatusInternalServerError, "create file failed"); return }
+	if fileID == 0 {
+		utils.WriteError(w, http.StatusInternalServerError, "create file failed")
+		return
+	}
 	h.db.Exec(`INSERT INTO file_fingerprints (hash,file_size,mime_type,storage_path,reference_count,created_at,updated_at) VALUES ($1,$2,$3,$4,1,$5,$5) ON CONFLICT (hash) DO UPDATE SET reference_count=file_fingerprints.reference_count+1,updated_at=$5`, fh, uSize, mt, sp, now)
 	h.db.Exec(`UPDATE users SET used_storage=used_storage+$1 WHERE id=$2`, uSize, userID)
 	h.db.Exec(`UPDATE upload_tasks SET status='completed',final_hash=$1,storage_path=$2,updated_at=$3 WHERE upload_id=$4`, fh, sp, now, req.UploadID)
-	go func() { h.db.Exec(`DELETE FROM upload_chunks WHERE upload_id=$1`, req.UploadID); h.db.Exec(`DELETE FROM upload_tasks WHERE upload_id=$1 AND status='completed'`, req.UploadID); os.RemoveAll(dir) }()
-	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id":fileID,"file_hash":fh,"file_size":uSize,"filename":fileName,"path":req.Path})
+	go func() {
+		h.db.Exec(`DELETE FROM upload_chunks WHERE upload_id=$1`, req.UploadID)
+		h.db.Exec(`DELETE FROM upload_tasks WHERE upload_id=$1 AND status='completed'`, req.UploadID)
+		os.RemoveAll(dir)
+	}()
+	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "file_hash": fh, "file_size": uSize, "filename": fileName, "path": req.Path})
 }

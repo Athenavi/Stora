@@ -3,6 +3,7 @@
  * Tracks active transfers, shows progress bars, supports cancel/retry.
  */
 import { component$, useSignal, useVisibleTask$, Slot } from "@builder.io/qwik";
+import { Icon } from "./Icon";
 
 export interface TransferTask {
   id: string;

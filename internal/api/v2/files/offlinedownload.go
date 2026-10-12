@@ -16,6 +16,7 @@ import (
 
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/storage"
+	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -47,6 +48,15 @@ func (h *OfflineDownloadHandler) CreateDownloadTask(w http.ResponseWriter, r *ht
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.URL == "" {
 		writeError(w, http.StatusBadRequest, "url required")
 		return
+	}
+
+	// The server fetches this URL, so it must point somewhere public. magnet
+	// links are handled by aria2c and are not fetched by us.
+	if !strings.HasPrefix(req.URL, "magnet:") {
+		if _, err := utils.ValidateExternalURL(req.URL); err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid url: %v", err))
+			return
+		}
 	}
 
 	// Monthly quota check
@@ -165,15 +175,15 @@ func (h *OfflineDownloadHandler) ListDownloadTasks(w http.ResponseWriter, r *htt
 	defer rows.Close()
 
 	type Task struct {
-		ID           int64   `json:"id"`
-		URL          string  `json:"url"`
-		Filename     string  `json:"filename"`
-		Status       string  `json:"status"`
-		Progress     int     `json:"progress"`
-		RetryCount   int     `json:"retry_count"`
-		ManualRetry  int     `json:"manual_retries"`
-		CreatedAt    *string `json:"created_at"`
-		UpdatedAt    *string `json:"updated_at"`
+		ID          int64   `json:"id"`
+		URL         string  `json:"url"`
+		Filename    string  `json:"filename"`
+		Status      string  `json:"status"`
+		Progress    int     `json:"progress"`
+		RetryCount  int     `json:"retry_count"`
+		ManualRetry int     `json:"manual_retries"`
+		CreatedAt   *string `json:"created_at"`
+		UpdatedAt   *string `json:"updated_at"`
 	}
 	var tasks = make([]Task, 0)
 	for rows.Next() {
@@ -220,12 +230,22 @@ func (h *OfflineDownloadHandler) processDownload(taskID int64, userID int64, url
 	log.Printf("[OfflineDownload] task %d failed after %d retries: %v", taskID, maxAutoRetries, lastErr)
 }
 
+// offlineHTTPClient refuses internal targets and carries no overall deadline
+// (large downloads are expected), but still gives up if a server never answers.
+var offlineHTTPClient = utils.SafeHTTPClient(0)
+
+// maxOfflineDownloadBytes caps a single offline download.
+const maxOfflineDownloadBytes = int64(20) << 30 // 20 GiB
+
 func (h *OfflineDownloadHandler) tryDownload(taskID, userID int64, url string, filename *string, folderID int64, now string) error {
-	resp, err := http.Get(url)
+	resp, err := offlineHTTPClient.Get(url)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("upstream returned %s", resp.Status)
+	}
 
 	// Determine filename
 	fname := ""
@@ -260,6 +280,11 @@ func (h *OfflineDownloadHandler) tryDownload(taskID, userID int64, url string, f
 	for {
 		n, readErr := resp.Body.Read(buf)
 		if n > 0 {
+			if written+int64(n) > maxOfflineDownloadBytes {
+				f.Close()
+				os.Remove(tmpFile)
+				return fmt.Errorf("download exceeds %d bytes", maxOfflineDownloadBytes)
+			}
 			if _, writeErr := f.Write(buf[:n]); writeErr != nil {
 				f.Close()
 				os.Remove(tmpFile)

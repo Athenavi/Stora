@@ -10,8 +10,8 @@ import (
 // 每个用户一个桶，以 bytes/s 为单位。
 type TokenBucket struct {
 	mu         sync.Mutex
-	rate       int64   // bytes per second
-	capacity   int64   // burst capacity
+	rate       int64 // bytes per second
+	capacity   int64 // burst capacity
 	tokens     int64
 	lastRefill time.Time
 }
@@ -24,8 +24,8 @@ func NewTokenBucket(rate int64) *TokenBucket {
 	}
 	return &TokenBucket{
 		rate:       rate,
-		capacity:   rate,     // 初始容量 = 1秒的额度
-		tokens:     rate,     // 初始满令牌
+		capacity:   rate, // 初始容量 = 1秒的额度
+		tokens:     rate, // 初始满令牌
 		lastRefill: time.Now(),
 	}
 }
@@ -101,10 +101,10 @@ func (w *RateLimitedWriter) Write(p []byte) (int, error) {
 
 // SpeedLimiter 管理所有用户的令牌桶。
 type SpeedLimiter struct {
-	mu          sync.RWMutex
-	buckets     map[int64]*TokenBucket // userID → bucket
-	uploadRate  int64                  // bytes/s
-	downloadRate int64                 // bytes/s
+	mu           sync.RWMutex
+	buckets      map[int64]*TokenBucket // userID → bucket
+	uploadRate   int64                  // bytes/s
+	downloadRate int64                  // bytes/s
 }
 
 // NewSpeedLimiter 创建限速器。

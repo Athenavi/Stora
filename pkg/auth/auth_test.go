@@ -55,6 +55,35 @@ func TestJWTTokenGeneration(t *testing.T) {
 	if newTokens.AccessToken == "" {
 		t.Fatal("new access token should not be empty")
 	}
+
+	// Token types are separated: an access token must not be usable as a refresh
+	// token, and a refresh token must not authenticate a request.
+	if _, err := manager.RefreshTokens(tokens.AccessToken); err == nil {
+		t.Error("access token should not be accepted by RefreshTokens")
+	}
+	if _, err := manager.ValidateAccessToken(tokens.RefreshToken); err == nil {
+		t.Error("refresh token should not be accepted as an access token")
+	}
+	if _, err := manager.ValidateAccessToken(tokens.AccessToken); err != nil {
+		t.Errorf("access token should validate: %v", err)
+	}
+
+	// The admin flag must survive a refresh (it used to be dropped).
+	adminTokens, err := manager.GenerateTokens(2, "admin", true)
+	if err != nil {
+		t.Fatalf("GenerateTokens failed: %v", err)
+	}
+	refreshed, err := manager.RefreshTokens(adminTokens.RefreshToken)
+	if err != nil {
+		t.Fatalf("RefreshTokens failed: %v", err)
+	}
+	refreshedClaims, err := manager.ValidateAccessToken(refreshed.AccessToken)
+	if err != nil {
+		t.Fatalf("ValidateAccessToken failed: %v", err)
+	}
+	if !refreshedClaims.IsAdmin {
+		t.Error("admin flag should survive a refresh")
+	}
 }
 
 func TestJWTInvalidToken(t *testing.T) {

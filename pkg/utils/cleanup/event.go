@@ -7,9 +7,9 @@ import (
 
 // CleanupEvent carries data about an expired/cancelled upload that needs cleanup.
 type CleanupEvent struct {
-	UploadID  string
-	UserID    int64
-	TempDir   string // e.g. "temp/upload/{upload_id}/"
+	UploadID string
+	UserID   int64
+	TempDir  string // e.g. "temp/upload/{upload_id}/"
 }
 
 // CleanupObserver is the interface that cleanup subscribers must implement.

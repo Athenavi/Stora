@@ -106,9 +106,9 @@ func printStep(step int, title string) {
 
 func checkPrerequisites(scanner *bufio.Scanner) {
 	checks := []struct {
-		name   string
-		check  func() bool
-		hint   string
+		name  string
+		check func() bool
+		hint  string
 	}{
 		{"Go 运行环境", func() bool {
 			_, err := exec.LookPath("go")

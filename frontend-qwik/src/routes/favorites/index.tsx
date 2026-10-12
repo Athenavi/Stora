@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Stora Favorites — flat design card grid
  */
 import { component$, useSignal, $ } from "@builder.io/qwik";

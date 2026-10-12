@@ -12,11 +12,22 @@ var (
 	ErrExpiredToken = errors.New("token expired")
 )
 
+// TokenType marks what a token may be used for. Without it, an access token
+// could be presented to /auth/refresh to mint fresh token pairs indefinitely,
+// which defeats the point of a short access-token TTL.
+type TokenType string
+
+const (
+	TokenTypeAccess  TokenType = "access"
+	TokenTypeRefresh TokenType = "refresh"
+)
+
 // Claims represents JWT claims.
 type Claims struct {
-	UserID   int64  `json:"user_id"`
-	Username string `json:"username"`
-	IsAdmin  bool   `json:"is_admin"`
+	UserID    int64     `json:"user_id"`
+	Username  string    `json:"username"`
+	IsAdmin   bool      `json:"is_admin"`
+	TokenType TokenType `json:"token_type"`
 	jwt.RegisteredClaims
 }
 
@@ -46,36 +57,36 @@ func NewJWTManager(secret string, accessExp, refreshExp time.Duration) *JWTManag
 
 // GenerateTokens creates an access and refresh token pair.
 func (m *JWTManager) GenerateTokens(userID int64, username string, isAdmin bool) (*TokenPair, error) {
-	// Access token
 	now := time.Now()
-	accessClaims := &Claims{
-		UserID:   userID,
-		Username: username,
-		IsAdmin:  isAdmin,
+
+	accessToken, err := m.sign(&Claims{
+		UserID:    userID,
+		Username:  username,
+		IsAdmin:   isAdmin,
+		TokenType: TokenTypeAccess,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.accessExpiration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			Issuer:    "stora",
 		},
-	}
-
-	accessToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, accessClaims).SignedString(m.secret)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	// Refresh token
-	refreshClaims := &Claims{
-		UserID:   userID,
-		Username: username,
+	// The refresh token carries is_admin as well: RefreshTokens re-issues from
+	// these claims, so dropping it silently demoted admins on every refresh.
+	refreshToken, err := m.sign(&Claims{
+		UserID:    userID,
+		Username:  username,
+		IsAdmin:   isAdmin,
+		TokenType: TokenTypeRefresh,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.refreshExpiration)),
 			IssuedAt:  jwt.NewNumericDate(now),
 			Issuer:    "stora",
 		},
-	}
-
-	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).SignedString(m.secret)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -86,6 +97,10 @@ func (m *JWTManager) GenerateTokens(userID int64, username string, isAdmin bool)
 		TokenType:    "bearer",
 		ExpiresIn:    int(m.accessExpiration.Seconds()),
 	}, nil
+}
+
+func (m *JWTManager) sign(claims *Claims) (string, error) {
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.secret)
 }
 
 // ValidateToken validates a token string and returns the claims.
@@ -111,11 +126,28 @@ func (m *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 	return claims, nil
 }
 
+// ValidateAccessToken validates a token and requires it to be an access token.
+// Request authentication must use this, so a refresh token cannot be presented
+// as a bearer credential.
+func (m *JWTManager) ValidateAccessToken(tokenString string) (*Claims, error) {
+	claims, err := m.ValidateToken(tokenString)
+	if err != nil {
+		return nil, err
+	}
+	if claims.TokenType != TokenTypeAccess {
+		return nil, ErrInvalidToken
+	}
+	return claims, nil
+}
+
 // RefreshTokens generates a new token pair from a valid refresh token.
 func (m *JWTManager) RefreshTokens(refreshTokenString string) (*TokenPair, error) {
 	claims, err := m.ValidateToken(refreshTokenString)
 	if err != nil {
 		return nil, err
+	}
+	if claims.TokenType != TokenTypeRefresh {
+		return nil, ErrInvalidToken
 	}
 
 	return m.GenerateTokens(claims.UserID, claims.Username, claims.IsAdmin)

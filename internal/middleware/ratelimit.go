@@ -81,12 +81,7 @@ func (rl *RateLimiter) Allow(key string) bool {
 // HTTPMiddleware returns an HTTP middleware that rate-limits by client IP.
 func (rl *RateLimiter) HTTPMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		// Use X-Forwarded-For if behind proxy
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = fwd
-		}
-		if !rl.Allow(ip) {
+		if !rl.Allow(ClientIP(r)) {
 			http.Error(w, `{"success":false,"message":"请求过于频繁，请稍后再试"}`, http.StatusTooManyRequests)
 			return
 		}

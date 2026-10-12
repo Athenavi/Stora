@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 上传工具函数 — 与 Qwik 组件分离，避免优化器分析问题
  */
 import { uploadFile, checkUpload, initChunkedUpload, uploadChunk, completeUpload } from "~/lib/api";

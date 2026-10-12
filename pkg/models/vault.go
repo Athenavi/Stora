@@ -51,12 +51,12 @@ type TranscriptionTask struct {
 
 // StoragePlan defines storage plan tiers.
 type StoragePlan struct {
-	ID          int64   `json:"id" db:"id"`
-	Name        string  `json:"name" db:"name"`
-	MaxBytes    int64   `json:"max_bytes" db:"max_bytes"`
-	MaxFiles    int     `json:"max_files" db:"max_files"`
-	Price       float64 `json:"price" db:"price"`
-	IsActive    bool    `json:"is_active" db:"is_active"`
-	CreatedAt   *string `json:"created_at" db:"created_at"`
-	UpdatedAt   *string `json:"updated_at" db:"updated_at"`
+	ID        int64   `json:"id" db:"id"`
+	Name      string  `json:"name" db:"name"`
+	MaxBytes  int64   `json:"max_bytes" db:"max_bytes"`
+	MaxFiles  int     `json:"max_files" db:"max_files"`
+	Price     float64 `json:"price" db:"price"`
+	IsActive  bool    `json:"is_active" db:"is_active"`
+	CreatedAt *string `json:"created_at" db:"created_at"`
+	UpdatedAt *string `json:"updated_at" db:"updated_at"`
 }

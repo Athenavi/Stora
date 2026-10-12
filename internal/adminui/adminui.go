@@ -44,18 +44,18 @@ func NewHandler(db *sql.DB, cfg *config.Config) (*Handler, error) {
 
 // DashboardData is the data structure for the dashboard template.
 type DashboardData struct {
-	Error       string
-	Version     string
-	Health      HealthStatus
-	Stats       SystemStats
-	Config      ConfigSummary
-	Migrations  []MigrationRecord
+	Error      string
+	Version    string
+	Health     HealthStatus
+	Stats      SystemStats
+	Config     ConfigSummary
+	Migrations []MigrationRecord
 }
 
 // HealthStatus represents database and Redis connectivity.
 type HealthStatus struct {
-	DBConnected     bool
-	RedisConnected  bool
+	DBConnected    bool
+	RedisConnected bool
 }
 
 // SystemStats holds aggregate system statistics.

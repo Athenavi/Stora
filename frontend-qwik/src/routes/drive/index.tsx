@@ -62,7 +62,7 @@ export default component$(() => {
   const currentPath = loc.url.searchParams.get("Path") || "";
   const resolvedFolderId = useSignal<number | undefined>(undefined);
 
-  const allItems: ({ t: "f" } & { id: number; name: string; path?: string } | { t: "d" } & FileItem)[] = [];
+  const allItems: ({ t: "f" } & { id: number; name: string; path?: string; filename?: string } | { t: "d" } & FileItem)[] = [];
   if (data.value) {
     for (const f of data.value.folders || []) allItems.push({ t: "f" as const, ...f });
     for (const f of data.value.files || []) {
@@ -89,7 +89,7 @@ export default component$(() => {
   const renameVal = useSignal("");
   const searchHistory = useSignal<any[]>([]);
   // Context menu state (desktop floating + mobile action sheet)
-  const ctxItem = useSignal<{ id: number; type: "file" | "folder"; name: string; fileType?: string } | null>(null);
+  const ctxItem = useSignal<{ id: number; type: "file" | "folder" | "paste"; name: string; fileType?: string } | null>(null);
   const ctxPos = useSignal({ x: 0, y: 0 });
   const showActionSheet = useSignal(false);
   // Batch operation dialogs
@@ -449,8 +449,8 @@ export default component$(() => {
             <thead>
               <tr class="text-left text-xs font-semibold text-stora-muted-foreground">
                 <th class="w-10 px-4 py-3 font-semibold">&nbsp;</th>
-                <th class="px-2 py-3 font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("filename"))}>名称 {sortIcon("filename")}</th>
-                <th class="px-2 py-3 w-[100px] font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("file_size"))}>大小 {sortIcon("file_size")}</th>
+                <th class="px-2 py-3 font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={async () => nav(await sortUrl("filename"))}>名称 {sortIcon("filename")}</th>
+                <th class="px-2 py-3 w-[100px] font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={async () => nav(await sortUrl("file_size"))}>大小 {sortIcon("file_size")}</th>
                 <th class="px-2 py-3 w-[100px] font-semibold">类型</th>
                 <th class="px-2 py-3 w-[140px] font-semibold">修改时间</th>
                 <th class="px-2 py-3 w-[80px] font-semibold">操作</th>
@@ -1039,8 +1039,8 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
       <tr class="text-left text-xs font-semibold text-stora-muted-foreground bg-stora-muted">
         <th class="w-10 px-4 py-3 font-semibold"><input type="checkbox" checked={selIds.value.length === items.length && items.length > 0}
           onChange$={() => selIds.value = selIds.value.length === items.length ? [] : items.map((x: any) => x.id)} class="border-stora-border" /></th>
-        <th class="px-2 py-3 font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("filename"))}>名称 {sortIcon("filename")}</th>
-        <th class="px-2 py-3 w-[100px] font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={() => nav(sortUrl("file_size"))}>大小 {sortIcon("file_size")}</th>
+        <th class="px-2 py-3 font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={async () => nav(await sortUrl("filename"))}>名称 {sortIcon("filename")}</th>
+        <th class="px-2 py-3 w-[100px] font-semibold cursor-pointer hover:text-stora-primary select-none" onClick$={async () => nav(await sortUrl("file_size"))}>大小 {sortIcon("file_size")}</th>
         <th class="px-2 py-3 w-[100px] font-semibold">类型</th>
         <th class="px-2 py-3 w-[140px] font-semibold">修改时间</th>
         <th class="px-2 py-3 w-[80px] font-semibold">操作</th>
@@ -1060,7 +1060,7 @@ export const ListView = component$<{ items: any[]; selIds: any; renameId: any; r
                 else { selIds.value = [...new Set([...selIds.value, ...gids])]; }
                 selIds.value = [...selIds.value];
               }} class="border-stora-border" /></td>
-            <td colspan="5" class="px-2 py-1.5">
+            <td colSpan={5} class="px-2 py-1.5">
               <span class="cursor-pointer hover:text-stora-primary" onClick$={() => nav(`/drive?category=${encodeURIComponent(grp.label)}`)}>{grp.label}</span>
               <span class="ml-1 font-normal">· {grp.items.length} 项</span>
             </td>

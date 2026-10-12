@@ -33,12 +33,12 @@ func (h *Handler) DashboardStats(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow(`SELECT COALESCE(SUM(used_storage), 0) FROM users`).Scan(&usedStorage)
 
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
-		"total_users":      totalUsers,
-		"total_files":      totalFiles,
-		"total_shares":     totalShares,
-		"total_storage":    totalStorage,
-		"used_storage":     usedStorage,
-		"storage_percent":  usedStorage * 100 / max(totalStorage, 1),
+		"total_users":     totalUsers,
+		"total_files":     totalFiles,
+		"total_shares":    totalShares,
+		"total_storage":   totalStorage,
+		"used_storage":    usedStorage,
+		"storage_percent": usedStorage * 100 / max(totalStorage, 1),
 	})
 }
 
@@ -70,16 +70,16 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	defer rows.Close()
 
 	type User struct {
-		ID           int64      `json:"id"`
-		Username     *string    `json:"username"`
-		Email        *string    `json:"email"`
-		IsActive     bool       `json:"is_active"`
-		IsSuperuser  bool       `json:"is_superuser"`
-		IsStaff      bool       `json:"is_staff"`
-		DateJoined   *string    `json:"date_joined"`
-		LastLoginAt  *string    `json:"last_login_at"`
-		TotalStorage int64      `json:"total_storage"`
-		UsedStorage  int64      `json:"used_storage"`
+		ID           int64   `json:"id"`
+		Username     *string `json:"username"`
+		Email        *string `json:"email"`
+		IsActive     bool    `json:"is_active"`
+		IsSuperuser  bool    `json:"is_superuser"`
+		IsStaff      bool    `json:"is_staff"`
+		DateJoined   *string `json:"date_joined"`
+		LastLoginAt  *string `json:"last_login_at"`
+		TotalStorage int64   `json:"total_storage"`
+		UsedStorage  int64   `json:"used_storage"`
 	}
 	var users = make([]User, 0)
 	for rows.Next() {
@@ -89,9 +89,9 @@ func (h *Handler) ListUsers(w http.ResponseWriter, r *http.Request) {
 		users = append(users, u)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"items": users,
-		"total": total,
-		"page":  page,
+		"items":     users,
+		"total":     total,
+		"page":      page,
 		"page_size": pageSize,
 	})
 }

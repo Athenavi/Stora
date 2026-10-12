@@ -245,7 +245,6 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		passwordVal = v
 	}
 
-
 	var linkID int64
 	isFolder := folderID > 0
 
@@ -452,11 +451,11 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 				"filename":  folderName,
 				"is_folder": true,
 			},
-			"items":            items,
+			"items":             items,
 			"preloaded_folders": preloaded,
-			"total":            totalDirect,
-			"page":             page,
-			"per_page":         perPage,
+			"total":             totalDirect,
+			"page":              page,
+			"per_page":          perPage,
 		})
 		return
 	}
@@ -585,7 +584,7 @@ func (h *Handler) VerifySharePassword(w http.ResponseWriter, r *http.Request) {
 				"file_count":         batchCount,
 			},
 			"items":             allItems,
-			"preloaded_folders":  preloaded,
+			"preloaded_folders": preloaded,
 			"total":             batchCount,
 			"top_total":         topTotal,
 			"page":              batchPage,
@@ -691,7 +690,7 @@ func (h *Handler) ShareFileDownload(w http.ResponseWriter, r *http.Request) {
 
 		w.Header().Set("Content-Type", "application/zip")
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": folderName + ".zip"}))
-			w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusOK)
 
 		zw := zip.NewWriter(w)
 		for _, f := range files {
@@ -1029,6 +1028,27 @@ func (h *Handler) ShareWithUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.FileID == 0 || req.SharedWith == 0 {
 		writeError(w, http.StatusBadRequest, "file_id and shared_with required")
+		return
+	}
+	allowedPerms := map[string]bool{"view": true, "download": true, "edit": true}
+	if !allowedPerms[req.Permission] {
+		writeError(w, http.StatusBadRequest, "invalid permission")
+		return
+	}
+
+	// You may only share files you own, with an account that exists.
+	var fileOwner int64
+	if err := h.db.QueryRow(`SELECT user_id FROM file_items WHERE id = $1 AND deleted_at IS NULL`, req.FileID).Scan(&fileOwner); err != nil || fileOwner != ownerID {
+		writeError(w, http.StatusNotFound, "file not found")
+		return
+	}
+	if req.SharedWith == ownerID {
+		writeError(w, http.StatusBadRequest, "cannot share with yourself")
+		return
+	}
+	var targetExists int
+	if err := h.db.QueryRow(`SELECT 1 FROM users WHERE id = $1 AND is_active = true`, req.SharedWith).Scan(&targetExists); err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
 		return
 	}
 
@@ -1407,10 +1427,10 @@ func (h *Handler) GetShareInfo(w http.ResponseWriter, r *http.Request) {
 	code := chi.URLParam(r, "code")
 
 	var item struct {
-		ID                int64  `json:"id"`
-		ShortCode         string `json:"short_code"`
-		FileID            int64  `json:"file_id"`
-		PasswordProtected bool   `json:"password_protected"`
+		ID                int64   `json:"id"`
+		ShortCode         string  `json:"short_code"`
+		FileID            int64   `json:"file_id"`
+		PasswordProtected bool    `json:"password_protected"`
 		ExpiresAt         *string `json:"expires_at"`
 	}
 	err := h.db.QueryRow(

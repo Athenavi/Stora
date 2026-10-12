@@ -79,7 +79,7 @@ export const ToastContainer = component$(() => {
     const interval = setInterval(() => { items.value = [...toasts]; }, 200);
     return () => clearInterval(interval);
   });
-  const colors = { success: "bg-green-50 border-green-200 text-green-700", error: "bg-red-50 border-red-200 text-red-700", info: "bg-blue-50 border-blue-200 text-blue-700" };
+  const colors: Record<string, string> = { success: "bg-green-50 border-green-200 text-green-700", error: "bg-red-50 border-red-200 text-red-700", info: "bg-blue-50 border-blue-200 text-blue-700" };
   return (
     <div class="fixed bottom-4 right-4 z-50 space-y-2">
       {items.value.map(t => (

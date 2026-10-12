@@ -24,6 +24,9 @@ interface ShareAccess {
 interface FolderNode {
   id: number; name: string; parent_id?: number | null; children: FolderNode[];
 }
+interface FolderItem {
+  id: number; filename: string; file_size?: number; file_type?: string; is_folder?: boolean;
+}
 
 export const useShareData = routeLoader$(async ({ params, request }) => {
   const code = params["code"];

@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"net/http"
-	"strings"
 )
 
 // IPWhitelistMiddleware restricts access to specific IPs.
@@ -23,13 +22,9 @@ func (m *IPWhitelistMiddleware) Handler(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		clientIP := r.RemoteAddr
-		if idx := strings.LastIndex(clientIP, ":"); idx > 0 {
-			clientIP = clientIP[:idx]
-		}
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			clientIP = strings.Split(fwd, ",")[0]
-		}
+		// ClientIP() only honours a forwarding header that an operator opted into,
+		// so a spoofed X-Forwarded-For cannot walk past this allow-list.
+		clientIP := ClientIP(r)
 		for _, allowed := range whitelist {
 			if clientIP == allowed {
 				next.ServeHTTP(w, r)

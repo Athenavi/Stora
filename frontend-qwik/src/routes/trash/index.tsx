@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Stora Trash — flat design recycle bin
  */
 import { component$, useSignal, $ } from "@builder.io/qwik";

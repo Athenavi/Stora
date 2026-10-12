@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Stora Share Management — flat design card layout
  */
 import { component$, useSignal, $ } from "@builder.io/qwik";

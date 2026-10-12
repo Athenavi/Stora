@@ -1,7 +1,7 @@
 /**
  * Stora 用户认证/资料 API
  */
-import { api, setToken } from './api-client';
+import { api, setToken, clearToken } from './api-client';
 
 export interface User {
   id: number;
@@ -65,8 +65,14 @@ export const register = (params: {
   return api.post('/auth/register', fd);
 };
 
-/** 登出 */
-export const logout = (): Promise<void> => api.post('/auth/logout');
+/** 登出：后端清除 cookie，前端清掉内存中的 token */
+export const logout = async (): Promise<void> => {
+  try {
+    await api.post('/auth/logout');
+  } finally {
+    clearToken();
+  }
+};
 
 /** 获取当前用户信息 */
 export const getProfile = (): Promise<User> => api.get('/auth/me');

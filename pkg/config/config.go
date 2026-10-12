@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -12,13 +13,18 @@ import (
 // Config holds all application configuration.
 type Config struct {
 	// Server
-	ServerPort  int
-	ServerHost  string
-	SecretKey   string
-	Debug       bool
-	TimeZone    string
-	SiteName    string
-	Domain      string
+	ServerPort int
+	ServerHost string
+	SecretKey  string
+	Debug      bool
+	TimeZone   string
+	SiteName   string
+	Domain     string
+
+	// TrustedIPHeader names the request header carrying the real client IP when
+	// the app runs behind a reverse proxy that overwrites it (e.g. "X-Real-IP").
+	// Empty (the default) means only the TCP peer address is trusted.
+	TrustedIPHeader string
 
 	// Database
 	DBHost     string
@@ -26,6 +32,7 @@ type Config struct {
 	DBUser     string
 	DBPassword string
 	DBName     string
+	DBSSLMode  string // disable | allow | prefer | require | verify-ca | verify-full
 
 	// Redis
 	RedisHost     string
@@ -39,9 +46,9 @@ type Config struct {
 
 	// Upload
 	UploadExpireHours int    // hours before incomplete uploads are cleaned up
-	StorageDriver   string       // "local" or "s3"
-	StorageObjectsDir string     // content-addressed objects root, e.g. "storage/objects"
-	TempFolder      string       // temp dir for chunked upload assembly
+	StorageDriver     string // "local" or "s3"
+	StorageObjectsDir string // content-addressed objects root, e.g. "storage/objects"
+	TempFolder        string // temp dir for chunked upload assembly
 
 	// S3
 	S3Endpoint  string
@@ -63,6 +70,14 @@ type Config struct {
 	// Speed limits (KB/s, 0 = unlimited)
 	UploadSpeedLimit   int64
 	DownloadSpeedLimit int64
+
+	// CORSOrigins is a comma-separated list of browser origins allowed to call
+	// the API. Empty means "the site's own origin only".
+	CORSOrigins string
+
+	// CookieSecure marks the auth cookie Secure (HTTPS-only). Defaults to true;
+	// browsers still accept Secure cookies on localhost.
+	CookieSecure bool
 }
 
 // Load reads configuration from environment variables and .env file.
@@ -71,19 +86,21 @@ func Load() *Config {
 	_ = godotenv.Load()
 
 	cfg := &Config{
-		ServerPort:           getEnvInt("PORT", 9421),
-		ServerHost:           getEnv("HOST", "0.0.0.0"),
-		SecretKey:            getEnv("SECRET_KEY", ""),
-		Debug:                getEnv("DEBUG", "false") == "true",
-		TimeZone:             getEnv("TIME_ZONE", "Asia/Shanghai"),
-		SiteName:             getEnv("TITLE", "Stora"),
-		Domain:               getEnv("DOMAIN", "/"),
+		ServerPort:      getEnvInt("PORT", 9421),
+		ServerHost:      getEnv("HOST", "0.0.0.0"),
+		SecretKey:       getEnv("SECRET_KEY", ""),
+		Debug:           getEnv("DEBUG", "false") == "true",
+		TimeZone:        getEnv("TIME_ZONE", "Asia/Shanghai"),
+		SiteName:        getEnv("TITLE", "Stora"),
+		Domain:          getEnv("DOMAIN", "/"),
+		TrustedIPHeader: getEnv("TRUSTED_IP_HEADER", ""),
 
 		DBHost:     getEnv("DB_HOST", "localhost"),
 		DBPort:     getEnvInt("DB_PORT", 5432),
 		DBUser:     getEnv("DB_USER", "postgres"),
 		DBPassword: getEnv("DB_PASSWORD", ""),
 		DBName:     getEnv("DB_NAME", "stora"),
+		DBSSLMode:  getEnv("DB_SSLMODE", "prefer"),
 
 		RedisHost:     getEnv("REDIS_HOST", "localhost"),
 		RedisPort:     getEnvInt("REDIS_PORT", 6379),
@@ -93,10 +110,10 @@ func Load() *Config {
 		JWTExpiration:        time.Duration(getEnvInt("JWT_EXPIRATION_DELTA", 7200)) * time.Second,
 		JWTRefreshExpiration: time.Duration(getEnvInt("REFRESH_TOKEN_EXPIRATION_DELTA", 64800)) * time.Second,
 
-		StorageDriver:      getEnv("STORAGE_DRIVER", "local"),
-		StorageObjectsDir:  getEnv("STORAGE_OBJECTS_DIR", "storage/objects"),
-		UploadExpireHours:  getEnvInt("UPLOAD_EXPIRE_HOURS", 144),
-		TempFolder:         getEnv("TEMP_FOLDER", "temp/upload"),
+		StorageDriver:     getEnv("STORAGE_DRIVER", "local"),
+		StorageObjectsDir: getEnv("STORAGE_OBJECTS_DIR", "storage/objects"),
+		UploadExpireHours: getEnvInt("UPLOAD_EXPIRE_HOURS", 144),
+		TempFolder:        getEnv("TEMP_FOLDER", "temp/upload"),
 
 		S3Endpoint:  getEnv("S3_ENDPOINT", ""),
 		S3Region:    getEnv("S3_REGION", "us-east-1"),
@@ -114,6 +131,9 @@ func Load() *Config {
 
 		UploadSpeedLimit:   int64(getEnvInt("UPLOAD_SPEED_LIMIT", 0)),
 		DownloadSpeedLimit: int64(getEnvInt("DOWNLOAD_SPEED_LIMIT", 0)),
+
+		CORSOrigins: getEnv("CORS_ALLOWED_ORIGINS", ""),
+		CookieSecure: getEnv("COOKIE_SECURE", "true") == "true",
 	}
 
 	// Ensure domain ends with /
@@ -130,8 +150,12 @@ func (c *Config) PostgresDSN() string {
 	if c.DBPassword != "" {
 		passwordPart = ":" + c.DBPassword
 	}
-	return fmt.Sprintf("postgres://%s%s@%s:%d/%s?sslmode=disable",
-		c.DBUser, passwordPart, c.DBHost, c.DBPort, c.DBName)
+	sslMode := c.DBSSLMode
+	if sslMode == "" {
+		sslMode = "prefer"
+	}
+	return fmt.Sprintf("postgres://%s%s@%s:%d/%s?sslmode=%s",
+		c.DBUser, passwordPart, c.DBHost, c.DBPort, c.DBName, sslMode)
 }
 
 // RedisAddr returns the Redis address.
@@ -142,6 +166,26 @@ func (c *Config) RedisAddr() string {
 // VaultDir returns the directory for storing encrypted vault files.
 func (c *Config) VaultDir() string {
 	return getEnv("VAULT_DIR", "storage/vaults")
+}
+
+// CORSAllowedOrigins returns the origins allowed to make browser requests.
+// It defaults to the site's own origin (DOMAIN). An empty result means "no
+// cross-origin access", which is the safe default for a same-origin SPA —
+// a wildcard must never be combined with credentialed (cookie) requests.
+func (c *Config) CORSAllowedOrigins() []string {
+	raw := c.CORSOrigins
+	if raw == "" {
+		if d := strings.TrimSuffix(c.Domain, "/"); strings.Contains(d, "://") {
+			raw = d
+		}
+	}
+	var origins []string
+	for _, o := range strings.Split(raw, ",") {
+		if o = strings.TrimSpace(o); o != "" {
+			origins = append(origins, o)
+		}
+	}
+	return origins
 }
 
 func getEnv(key, fallback string) string {

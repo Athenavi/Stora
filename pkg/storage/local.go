@@ -41,27 +41,55 @@ func (d *LocalDriver) Store(path string, reader io.Reader) error {
 
 // StoreHash saves a file by SHA256 hash at objects/{hash[:2]}/{hash[2:]}.
 // Returns the hex hash and the relative storage path.
+//
+// The content is streamed to a temp file while hashing, so an upload of any
+// size never has to sit in memory; the temp file is renamed into place once the
+// digest is known.
 func (d *LocalDriver) StoreHash(reader io.Reader) (hash, relPath string, err error) {
-	data, err := io.ReadAll(reader)
+	tmp, err := os.CreateTemp(d.ObjectsPath, ".tmp-upload-")
 	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer func() {
+		if err != nil {
+			tmp.Close()
+			os.Remove(tmpName)
+		}
+	}()
+
+	h := sha256.New()
+	if _, err = io.Copy(io.MultiWriter(tmp, h), reader); err != nil {
 		return "", "", fmt.Errorf("failed to read data: %w", err)
 	}
-	h := sha256.Sum256(data)
-	hash = fmt.Sprintf("%x", h)
+	if err = tmp.Chmod(0644); err != nil {
+		return "", "", fmt.Errorf("failed to set file mode: %w", err)
+	}
+	if err = tmp.Close(); err != nil {
+		return "", "", fmt.Errorf("failed to close temp file: %w", err)
+	}
+
+	hash = fmt.Sprintf("%x", h.Sum(nil))
 	relPath = fmt.Sprintf("%s/%s", hash[:2], hash[2:])
 	fullPath := filepath.Join(d.ObjectsPath, relPath)
 
 	// Check if already exists
-	if _, err := os.Stat(fullPath); err == nil {
+	if _, statErr := os.Stat(fullPath); statErr == nil {
+		os.Remove(tmpName)
 		return hash, relPath, nil // already stored, dedup
 	}
 
 	dir := filepath.Dir(fullPath)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err = os.MkdirAll(dir, 0755); err != nil {
 		return "", "", fmt.Errorf("failed to create directory %s: %w", dir, err)
 	}
-	if err := os.WriteFile(fullPath, data, 0644); err != nil {
-		return "", "", fmt.Errorf("failed to write file %s: %w", fullPath, err)
+	if err = os.Rename(tmpName, fullPath); err != nil {
+		// A concurrent upload may have published the same content first.
+		if _, statErr := os.Stat(fullPath); statErr == nil {
+			os.Remove(tmpName)
+			return hash, relPath, nil
+		}
+		return "", "", fmt.Errorf("failed to move file into place %s: %w", fullPath, err)
 	}
 	return hash, relPath, nil
 }

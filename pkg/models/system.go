@@ -13,12 +13,12 @@ type AuditLog struct {
 
 // SystemSettings stores key-value configuration.
 type SystemSettings struct {
-	ID           int    `json:"id" db:"id"`
-	SettingKey   string `json:"setting_key" db:"setting_key"`
-	SettingValue string `json:"setting_value" db:"setting_value"`
+	ID           int     `json:"id" db:"id"`
+	SettingKey   string  `json:"setting_key" db:"setting_key"`
+	SettingValue string  `json:"setting_value" db:"setting_value"`
 	SettingType  *string `json:"setting_type" db:"setting_type"`
 	Description  *string `json:"description" db:"description"`
-	IsPublic     bool   `json:"is_public" db:"is_public"`
+	IsPublic     bool    `json:"is_public" db:"is_public"`
 	CreatedAt    *string `json:"created_at" db:"created_at"`
 	UpdatedAt    *string `json:"updated_at" db:"updated_at"`
 }
@@ -45,10 +45,10 @@ type SearchHistory struct {
 
 // StorageQuota tracks storage usage per user.
 type StorageQuota struct {
-	ID          int64  `json:"id" db:"id"`
-	UserID      int64  `json:"user_id" db:"user_id"`
-	TotalBytes  int64  `json:"total_bytes" db:"total_bytes"`
-	UsedBytes   int64  `json:"used_bytes" db:"used_bytes"`
-	CreatedAt   *string `json:"created_at" db:"created_at"`
-	UpdatedAt   *string `json:"updated_at" db:"updated_at"`
+	ID         int64   `json:"id" db:"id"`
+	UserID     int64   `json:"user_id" db:"user_id"`
+	TotalBytes int64   `json:"total_bytes" db:"total_bytes"`
+	UsedBytes  int64   `json:"used_bytes" db:"used_bytes"`
+	CreatedAt  *string `json:"created_at" db:"created_at"`
+	UpdatedAt  *string `json:"updated_at" db:"updated_at"`
 }

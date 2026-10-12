@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"context"
@@ -7,19 +7,20 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/Athenavi/Stora/internal/adminui"
+	adminapi "github.com/Athenavi/Stora/internal/api/v2/admin"
 	authapi "github.com/Athenavi/Stora/internal/api/v2/auth"
 	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
 	shareapi "github.com/Athenavi/Stora/internal/api/v2/share"
-	adminapi "github.com/Athenavi/Stora/internal/api/v2/admin"
-	"github.com/Athenavi/Stora/internal/adminui"
 	"github.com/Athenavi/Stora/internal/api/v2/wopi"
-	"github.com/Athenavi/Stora/pkg/cache"
 	mobileapi "github.com/Athenavi/Stora/internal/api/v3/mobile"
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
+	"github.com/Athenavi/Stora/pkg/cache"
 	"github.com/Athenavi/Stora/pkg/config"
 	"github.com/Athenavi/Stora/pkg/database"
 	"github.com/Athenavi/Stora/pkg/storage"
@@ -45,7 +46,12 @@ func main() {
 	if vaultKey == "" {
 		vaultKey = cfg.SecretKey // fallback to main secret
 	}
-	fileapi.SetEncryptionKey(vaultKey)
+	if err := fileapi.SetEncryptionKey(vaultKey); err != nil {
+		log.Fatalf("[Server] vault encryption key invalid: %v", err)
+	}
+
+	// Trust a forwarding header only when the operator explicitly opted in.
+	middleware.SetTrustedIPHeader(cfg.TrustedIPHeader)
 
 	// Connect to PostgreSQL
 	db, err := database.Connect(cfg.PostgresDSN(), 25, 5)
@@ -62,17 +68,25 @@ func main() {
 		defer database.CloseRedis()
 	}
 
-	// Create router
+	// Router
+	//
+	// Note: chi's RealIP is deliberately NOT used. It rewrites RemoteAddr from the
+	// client-supplied X-Forwarded-For, which would make per-IP rate limits, IP
+	// allow-lists and audit logs spoofable. Behind a reverse proxy, set
+	// TRUSTED_IP_HEADER to the header the proxy overwrites itself (e.g. X-Real-IP).
 	r := chi.NewRouter()
 
 	// Middleware
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RequestID)
-	r.Use(chimw.RealIP)
-	r.Use(chimw.Timeout(60 * time.Second))
+	// Bulk transfers legitimately outlive a JSON request: they get the server's
+	// full WriteTimeout budget while everything else fails fast.
+	r.Use(timeoutByPath(transferPaths, 60*time.Second, 600*time.Second))
+	// CORS: only the configured origins may call the API from a browser.
+	// Wildcard + AllowCredentials is both invalid per the CORS spec and unsafe.
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   cfg.CORSAllowedOrigins(),
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
@@ -104,14 +118,14 @@ func main() {
 	speedLimiter := middleware.NewSpeedLimiter(cfg.UploadSpeedLimit, cfg.DownloadSpeedLimit)
 
 	// Rate limiters for auth endpoints
-	loginLimiter := middleware.NewRateLimiter(10, 1*time.Minute)    // 10 login attempts/min per IP
-	registerLimiter := middleware.NewRateLimiter(3, 1*time.Minute)  // 3 registrations/min per IP
+	loginLimiter := middleware.NewRateLimiter(10, 1*time.Minute)   // 10 login attempts/min per IP
+	registerLimiter := middleware.NewRateLimiter(3, 1*time.Minute) // 3 registrations/min per IP
 
 	// Initialize storage driver
 	store := storage.NewLocalDriver(cfg.StorageObjectsDir, "/files")
 
 	// Initialize auth API handlers
-	authHandler := authapi.NewHandler(db, jwtManager)
+	authHandler := authapi.NewHandler(db, jwtManager, cfg.CookieSecure)
 
 	// Initialize file API handlers
 	var pathCache *cache.PathCache
@@ -152,15 +166,14 @@ func main() {
 	}
 
 	// Initialize WOPI handler (Collabora Online integration)
-	wopiHandler := wopi.NewHandler(db, store)
+	wopiHandler := wopi.NewHandler(db, store, jwtManager)
 
 	// Setup cleanup notifier and scheduler
 	notifier := cleanup.NewCleanupNotifier()
 	notifier.Register(&cleanup.TempDirCleaner{})
 	notifier.Register(&cleanup.UploadChunkCleaner{DB: db})
-	notifier.Register(&cleanup.OrphanFileItemCleaner{DB: db, ExpireHours: cfg.UploadExpireHours})
 
-	scheduler := cleanup.NewCleanupScheduler(db, notifier, cfg.UploadExpireHours)
+	scheduler := cleanup.NewCleanupScheduler(db, notifier, cfg.UploadExpireHours, cfg.TempFolder)
 	scheduler.Start()
 	defer scheduler.Stop()
 
@@ -212,9 +225,9 @@ func main() {
 					usagePercent = float64(used) / float64(total) * 100
 				}
 				utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
-					"max_storage":    total,
-					"used_storage":   used,
-					"usage_percent":  usagePercent,
+					"max_storage":   total,
+					"used_storage":  used,
+					"usage_percent": usagePercent,
 				})
 			})
 			// Recalculate storage quota from actual file sizes
@@ -244,9 +257,9 @@ func main() {
 					usagePercent = float64(actual) / float64(total) * 100
 				}
 				utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
-					"max_storage":    total,
-					"used_storage":   actual,
-					"usage_percent":  usagePercent,
+					"max_storage":   total,
+					"used_storage":  actual,
+					"usage_percent": usagePercent,
 				})
 			})
 
@@ -426,6 +439,11 @@ func main() {
 				// Sensitive words
 				r.Get("/admin/sensitive-words", adminHandler.ListSensitiveWords)
 			})
+
+			// WOPI editor token — authenticated. Collabora then calls /api/v2/wopi/*
+			// server-to-server carrying this token, so those endpoints stay public
+			// but validate the token themselves.
+			r.Get("/wopi/access/{fileId}", wopiHandler.GetWopiAccess)
 		})
 
 		// Public share access (no auth required)
@@ -438,8 +456,8 @@ func main() {
 		r.Get("/share/{code}/folder/{folderId}", shareHandler.ShareFolderChildren)
 		r.Get("/files/shares/access/{code}", shareHandler.VerifySharePassword)
 
-		// File preview (optional auth for <img> tags)
-		r.With(middleware.OptionalAuthMiddleware(jwtManager)).Get("/files/preview/{id}/{filename}", fileHandler.PreviewFile)
+		// Note: /files/preview/{id}/{filename} is registered once, inside the
+		// authenticated group above — anonymous requests must not read files by id.
 
 		// Maintenance public status
 		r.Get("/system/maintenance/public-status", func(w http.ResponseWriter, r *http.Request) {
@@ -466,9 +484,9 @@ func main() {
 		}
 	})
 
-	// WOPI routes (public — Collabora Online calls server-to-server)
+	// WOPI routes — Collabora Online calls these server-to-server. Every handler
+	// validates the access_token (a Stora JWT minted by /api/v2/wopi/access).
 	r.Route("/api/v2/wopi", func(r chi.Router) {
-		r.Get("/access/{fileId}", wopiHandler.GetWopiAccess)
 		r.Get("/files/{fileId}", wopiHandler.CheckFileInfo)
 		r.Get("/files/{fileId}/contents", wopiHandler.GetFile)
 		r.Post("/files/{fileId}/contents", wopiHandler.PutFile)
@@ -510,4 +528,37 @@ func main() {
 		log.Fatalf("[Server] Shutdown error: %v", err)
 	}
 	log.Println("[Server] Stopped")
+}
+
+// transferPaths are the route prefixes that carry (potentially large) request or
+// response bodies. A single 60s deadline across the whole API used to fire in
+// the middle of a large upload or a rate-limited download.
+var transferPaths = []string{
+	"/api/v2/files/upload",
+	"/api/v2/files/download",
+	"/api/v2/files/preview",
+	"/api/v2/files/blocks",
+	"/api/v2/files/offline-download",
+	"/api/v2/sync",
+	"/api/v2/share",
+	"/api/v2/wopi",
+}
+
+// timeoutByPath applies long to transfer prefixes and short to everything else.
+func timeoutByPath(prefixes []string, short, long time.Duration) func(http.Handler) http.Handler {
+	shortMW := chimw.Timeout(short)
+	longMW := chimw.Timeout(long)
+	return func(next http.Handler) http.Handler {
+		shortH := shortMW(next)
+		longH := longMW(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			for _, p := range prefixes {
+				if strings.HasPrefix(r.URL.Path, p) {
+					longH.ServeHTTP(w, r)
+					return
+				}
+			}
+			shortH.ServeHTTP(w, r)
+		})
+	}
 }
