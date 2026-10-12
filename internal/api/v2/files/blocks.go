@@ -455,6 +455,7 @@ func (h *BlockHandler) SyncUploadAssign(w http.ResponseWriter, r *http.Request) 
 		utils.WriteError(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
+	EnqueueThumbnail(h.db, fileID)
 	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "file_hash": fh, "file_size": sz, "filename": fileName, "path": req.Path})
 }
 
@@ -680,5 +681,6 @@ func (h *BlockHandler) SyncUploadComplete(w http.ResponseWriter, r *http.Request
 		h.db.Exec(`DELETE FROM upload_tasks WHERE upload_id=$1 AND status='completed'`, req.UploadID)
 		os.RemoveAll(dir)
 	}()
+	EnqueueThumbnail(h.db, fileID)
 	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "file_hash": fh, "file_size": uSize, "filename": fileName, "path": req.Path})
 }

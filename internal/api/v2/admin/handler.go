@@ -3,11 +3,13 @@ package admin
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/audit"
 	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
 )
@@ -119,6 +121,14 @@ func (h *Handler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		h.db.Exec(`UPDATE users SET total_storage = $1 WHERE id = $2`, *req.Quota, userID)
 	}
 
+	actorID, _ := middleware.GetUserID(r.Context())
+	audit.Log(h.db, audit.Entry{
+		UserID:    actorID,
+		Action:    "admin.user_update",
+		Resource:  fmt.Sprintf("user:%d", userID),
+		Detail:    fmt.Sprintf("active=%v superuser=%v quota=%v", req.IsActive, req.IsSuperuser, req.Quota),
+		IPAddress: middleware.ClientIP(r),
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
 }
 
@@ -209,6 +219,13 @@ func (h *Handler) UpdateSetting(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "update failed")
 		return
 	}
+	actorID, _ := middleware.GetUserID(r.Context())
+	audit.Log(h.db, audit.Entry{
+		UserID:    actorID,
+		Action:    "admin.setting_update",
+		Resource:  "setting:" + req.Key,
+		IPAddress: middleware.ClientIP(r),
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "updated"})
 }
 

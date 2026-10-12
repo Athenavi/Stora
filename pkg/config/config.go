@@ -50,12 +50,18 @@ type Config struct {
 	StorageObjectsDir string // content-addressed objects root, e.g. "storage/objects"
 	TempFolder        string // temp dir for chunked upload assembly
 
-	// S3
+	// S3 (any S3-compatible object storage; RustFS recommended, MinIO unsupported)
 	S3Endpoint  string
 	S3Region    string
 	S3Bucket    string
 	S3AccessKey string
 	S3SecretKey string
+	// S3ForcePathStyle uses "endpoint/bucket/key" instead of "bucket.endpoint/key".
+	// Non-AWS endpoints (RustFS, Ceph, ...) almost always need it.
+	S3ForcePathStyle bool
+	// S3PresignDownload serves large downloads straight from object storage.
+	// Off by default: it bypasses application-level audit.
+	S3PresignDownload bool
 
 	// Email
 	SMTPHost     string
@@ -121,6 +127,9 @@ func Load() *Config {
 		S3AccessKey: getEnv("S3_ACCESS_KEY", ""),
 		S3SecretKey: getEnv("S3_SECRET_KEY", ""),
 
+		S3ForcePathStyle:  getEnv("S3_FORCE_PATH_STYLE", "true") == "true",
+		S3PresignDownload: getEnv("S3_PRESIGN_DOWNLOAD", "false") == "true",
+
 		SMTPHost:     getEnv("SMTP_HOST", ""),
 		SMTPPort:     getEnvInt("SMTP_PORT", 587),
 		SMTPUser:     getEnv("SMTP_USER", ""),
@@ -132,7 +141,7 @@ func Load() *Config {
 		UploadSpeedLimit:   int64(getEnvInt("UPLOAD_SPEED_LIMIT", 0)),
 		DownloadSpeedLimit: int64(getEnvInt("DOWNLOAD_SPEED_LIMIT", 0)),
 
-		CORSOrigins: getEnv("CORS_ALLOWED_ORIGINS", ""),
+		CORSOrigins:  getEnv("CORS_ALLOWED_ORIGINS", ""),
 		CookieSecure: getEnv("COOKIE_SECURE", "true") == "true",
 	}
 

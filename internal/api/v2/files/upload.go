@@ -436,7 +436,7 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create file item
-	fileType := detectFileType(task.MimeType, task.Filename)
+	fileType := DetectFileType(task.MimeType, task.Filename)
 	var fileID int64
 	err = h.db.QueryRow(
 		`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
@@ -464,6 +464,8 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 		h.db.Exec(`DELETE FROM upload_chunks WHERE upload_id = $1`, uploadID)
 		h.db.Exec(`DELETE FROM upload_tasks WHERE upload_id = $1 AND status = 'completed'`, uploadID)
 	}()
+
+	EnqueueThumbnail(h.db, fileID)
 
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"file_id":   fileID,

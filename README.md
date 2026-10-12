@@ -29,7 +29,7 @@ pkg/
   database/        # PostgreSQL + Redis connection pools
   models/          # Data models (Go structs, 33 tables)
   auth/            # JWT tokens, bcrypt passwords
-  storage/         # Local filesystem + S3/MinIO adapters
+  storage/         # Local filesystem + S3-compatible object storage (RustFS)
   cache/           # Multi-level caching
   utils/           # Shared utilities
 ```
@@ -58,8 +58,9 @@ go run ./cmd/server
 
 - [部署指南（完整版）](docs/deployment-nginx.md)
 - [功能差距分析](docs/gap-analysis.md)
-- [分享功能分析](docs/share-analysis.md)
-- [Collabora Online 集成](docs/wopi-collabora.md)
+- [下一阶段实施设计](docs/design-next-phase.md)
+- [Collabora Online 集成](docs/collabora-deploy.md)
+- [RustFS 对象存储部署](docs/deployment-rustfs.md)
 
 ## API Endpoints
 
@@ -151,7 +152,7 @@ go run ./cmd/server
 | Database | PostgreSQL 15+ (sqlx) |
 | Cache | Redis 7+ (go-redis) |
 | Auth | JWT (golang-jwt), bcrypt |
-| Storage | Local FS / S3 / MinIO (minio-go) |
+| Storage | Local FS / S3-compatible object storage (RustFS; MinIO is no longer supported) |
 | Config | Viper + .env |
 | Encryption | AES-256-GCM (vault) |
 | Transcoding | FFmpeg |

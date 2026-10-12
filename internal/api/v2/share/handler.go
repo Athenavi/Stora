@@ -16,7 +16,9 @@ import (
 	"strings"
 	"time"
 
+	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/audit"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/Athenavi/Stora/pkg/utils"
@@ -286,6 +288,13 @@ func (h *Handler) CreateShareLink(w http.ResponseWriter, r *http.Request) {
 		"file_count":         fileCount,
 		"filename":           itemName,
 		"url":                "/s/" + shortCode,
+	})
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "share.create",
+		Resource:  fmt.Sprintf("share:%d", linkID),
+		Detail:    fmt.Sprintf("permission=%s protected=%v files=%d", permission, passwordVal != "", fileCount),
+		IPAddress: middleware.ClientIP(r),
 	})
 }
 
@@ -913,6 +922,12 @@ func (h *Handler) DeleteShareLink(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "share.revoke",
+		Resource:  fmt.Sprintf("share:%d", linkID),
+		IPAddress: middleware.ClientIP(r),
+	})
 	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
 
@@ -1161,6 +1176,8 @@ func (h *Handler) ShareFileUpload(w http.ResponseWriter, r *http.Request) {
 		ownerID, nullIfZero(folderID), filename, storagePath, header.Size, mimeType, fileType, fileHash, now,
 	).Scan(&fileID)
 
+	// The uploaded content is a new file item, so it needs its own thumbnail.
+	fileapi.EnqueueThumbnail(h.db, fileID)
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "filename": filename})
 }
 

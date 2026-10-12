@@ -1146,7 +1146,7 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; curren
           class={`bg-stora-card border cursor-pointer p-3 relative ${sel ? "border-stora-primary" : "border-stora-border hover:border-stora-muted-foreground"}`}>
           <div class={`aspect-square flex items-center justify-center text-4xl mb-2.5 overflow-hidden`}>
             {item.file_type === "image" ? (
-              <img src={`/api/v2/files/preview/${item.id}/thumbnail?size=256`} alt={item.filename}
+              <img src={`/api/v2/files/${item.id}/thumbnail?size=sm`} alt={item.filename}
                 class="w-full h-full object-cover" loading="lazy" />
             ) : (
               <span>{tc.icon}</span>

@@ -318,7 +318,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 
 	filename := header.Filename
 	mimeType := header.Header.Get("Content-Type")
-	fileType := detectFileType(mimeType, filename)
+	fileType := DetectFileType(mimeType, filename)
 	fileSize := header.Size
 
 	// Storage quota check — BEFORE writing to disk
@@ -412,6 +412,8 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 		"file_size": fileSize,
 		"file_type": fileType,
 	})
+	// Generate a preview image in the background.
+	EnqueueThumbnail(h.db, fileID)
 	// Trigger webhook
 	TriggerWebhooks(h.db, "file.create", map[string]interface{}{
 		"event": "file.create", "file_id": fileID,
@@ -746,7 +748,7 @@ func (h *Handler) UpdateFileContent(w http.ResponseWriter, r *http.Request) {
 	// Update file item
 	newFilename := header.Filename
 	mimeType := header.Header.Get("Content-Type")
-	fileType := detectFileType(mimeType, newFilename)
+	fileType := DetectFileType(mimeType, newFilename)
 	_, err = h.db.Exec(
 		`UPDATE file_items SET file_path = $1, file_hash = $2, file_size = $3,
 		 mime_type = $4, file_type = $5, original_filename = $6, updated_at = $7
@@ -757,6 +759,8 @@ func (h *Handler) UpdateFileContent(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "update failed")
 		return
 	}
+	// Content changed — the cached thumbnails are stale.
+	EnqueueThumbnail(h.db, fileID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "saved"})
 }
 
@@ -1429,7 +1433,7 @@ func (h *Handler) wrapDownloadReader(userID int64, reader io.Reader) io.Reader {
 
 // ---------- Utilities ----------
 
-func detectFileType(mimeType, filename string) string {
+func DetectFileType(mimeType, filename string) string {
 	if mimeType != "" {
 		if strings.HasPrefix(mimeType, "image/") {
 			return "image"

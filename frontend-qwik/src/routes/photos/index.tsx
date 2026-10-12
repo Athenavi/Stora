@@ -142,7 +142,7 @@ export default component$(() => {
                         onContextMenu$={(e: any) => { e.preventDefault(); toggleSel(photo.id); }}
                         class={`w-[220px] h-[220px] bg-stora-muted cursor-pointer relative overflow-hidden ${sel ? 'ring-2 ring-stora-primary' : 'hover:ring-2 hover:ring-stora-secondary'}`}>
                         <img
-                          src={`/api/v2/files/preview/${photo.id}/thumbnail?size=400`}
+                          src={`/api/v2/files/${photo.id}/thumbnail?size=md`}
                           alt={photo.filename}
                           class="w-full h-full object-cover"
                           loading="lazy"

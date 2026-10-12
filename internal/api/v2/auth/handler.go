@@ -1,15 +1,19 @@
 package authapi
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/audit"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/models"
 	"github.com/Athenavi/Stora/pkg/utils"
@@ -108,6 +112,11 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.IsSuperuser, &user.IsActive, &user.ProfilePicture, &user.LastLoginIP)
 
 	if err == sql.ErrNoRows {
+		audit.Log(h.db, audit.Entry{
+			Action:    "auth.login_failed",
+			Detail:    "unknown user",
+			IPAddress: middleware.ClientIP(r),
+		})
 		utils.WriteError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -117,6 +126,13 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user.Password == nil || !auth.CheckPassword(password, *user.Password) {
+		audit.Log(h.db, audit.Entry{
+			UserID:    user.ID,
+			Action:    "auth.login_failed",
+			Resource:  fmt.Sprintf("user:%d", user.ID),
+			Detail:    "bad password",
+			IPAddress: middleware.ClientIP(r),
+		})
 		utils.WriteError(w, http.StatusUnauthorized, "invalid credentials")
 		return
 	}
@@ -142,6 +158,14 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	// Format response matching frontend's LoginResponse expectations
 	h.setAuthCookie(w, tokens.AccessToken, tokens.ExpiresIn)
+	h.recordSession(user.ID, tokens.AccessToken, clientIP, r.UserAgent(), tokens.ExpiresIn)
+	audit.Log(h.db, audit.Entry{
+		UserID:    user.ID,
+		Action:    "auth.login",
+		Resource:  fmt.Sprintf("user:%d", user.ID),
+		Detail:    fmt.Sprintf("username=%s", *user.Username),
+		IPAddress: clientIP,
+	})
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"access_token":  tokens.AccessToken,
 		"refresh_token": tokens.RefreshToken,
@@ -189,7 +213,14 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	h.deactivateSession(userID, requestToken(r))
 	h.clearAuthCookie(w)
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "auth.logout",
+		IPAddress: middleware.ClientIP(r),
+	})
 	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
@@ -334,6 +365,12 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "auth.password_change",
+		Resource:  fmt.Sprintf("user:%d", userID),
+		IPAddress: middleware.ClientIP(r),
+	})
 	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "password changed"})
 }
 
@@ -386,6 +423,12 @@ func (h *Handler) RevokeSession(w http.ResponseWriter, r *http.Request) {
 		utils.WriteError(w, http.StatusNotFound, "session not found")
 		return
 	}
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "auth.session_revoke",
+		Resource:  fmt.Sprintf("session:%d", sessionID),
+		IPAddress: middleware.ClientIP(r),
+	})
 	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "revoked"})
 }
 
@@ -442,4 +485,166 @@ func (h *Handler) clearAuthCookie(w http.ResponseWriter) {
 		Secure:   h.cookieSecure,
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// recordSession stores a login session so /auth/sessions reflects reality.
+//
+// Security ceiling: access tokens are stateless, so flipping is_active here does
+// NOT invalidate the token itself — it stops the session being listed as active
+// and is what the UI and audit trail show. Real revocation needs a jti claim
+// plus a checked blacklist (see docs/design-next-phase.md).
+func (h *Handler) recordSession(userID int64, token, ip, userAgent string, expiresIn int) {
+	now := time.Now()
+	if _, err := h.db.Exec(
+		`INSERT INTO user_sessions (user_id, token, ip_address, user_agent, is_active, created_at, expires_at)
+		 VALUES ($1, $2, $3, $4, true, $5, $6)`,
+		userID, hashToken(token), nullable(ip), nullable(userAgent),
+		now.Format(time.RFC3339),
+		now.Add(time.Duration(expiresIn)*time.Second).Format(time.RFC3339),
+	); err != nil {
+		log.Printf("[Auth] failed to record session for user %d: %v", userID, err)
+	}
+}
+
+// deactivateSession marks the session belonging to the presented token inactive.
+func (h *Handler) deactivateSession(userID int64, token string) {
+	if token == "" {
+		return
+	}
+	h.db.Exec(`UPDATE user_sessions SET is_active = false WHERE user_id = $1 AND token = $2`,
+		userID, hashToken(token))
+}
+
+// hashToken stores only a digest, so a database leak does not hand out live tokens.
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}
+
+// requestToken extracts the bearer token or the access_token cookie, mirroring
+// the lookup order of middleware.AuthMiddleware.
+func requestToken(r *http.Request) string {
+	if header := r.Header.Get("Authorization"); header != "" {
+		if parts := strings.SplitN(header, " ", 2); len(parts) == 2 && strings.EqualFold(parts[0], "bearer") {
+			return parts[1]
+		}
+	}
+	if c, err := r.Cookie("access_token"); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// nullable maps an empty string to SQL NULL.
+func nullable(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+
+// ── Application-specific passwords ─────────────────────────────────────────
+//
+// WebDAV clients (Finder, Windows Explorer, rclone) only speak HTTP Basic auth,
+// so they cannot present a JWT. Giving them the account password instead would
+// leave it stored in plain text on the client and impossible to revoke on its
+// own — hence a separate, individually revocable credential.
+
+// CreateAppPassword issues an application-specific password.
+func (h *Handler) CreateAppPassword(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req struct {
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Password == "" {
+		utils.WriteError(w, http.StatusBadRequest, "name and password required")
+		return
+	}
+	if len(req.Password) < 8 {
+		utils.WriteError(w, http.StatusBadRequest, "password must be at least 8 characters")
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "hash failed")
+		return
+	}
+
+	var id int64
+	if err := h.db.QueryRow(
+		`INSERT INTO app_passwords (user_id, name, password_hash) VALUES ($1, $2, $3) RETURNING id`,
+		userID, req.Name, hash,
+	).Scan(&id); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "create failed")
+		return
+	}
+
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "auth.app_password_create",
+		Resource:  fmt.Sprintf("app_password:%d", id),
+		Detail:    "name=" + req.Name,
+		IPAddress: middleware.ClientIP(r),
+	})
+	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"id": id, "name": req.Name})
+}
+
+// ListAppPasswords returns the caller's app passwords — never their hashes.
+func (h *Handler) ListAppPasswords(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+
+	rows, err := h.db.Query(
+		`SELECT id, name, COALESCE(CAST(last_used_at AS TEXT), ''), CAST(created_at AS TEXT)
+		   FROM app_passwords WHERE user_id = $1 ORDER BY created_at DESC`, userID)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "query failed")
+		return
+	}
+	defer rows.Close()
+
+	type appPassword struct {
+		ID         int64  `json:"id"`
+		Name       string `json:"name"`
+		LastUsedAt string `json:"last_used_at"`
+		CreatedAt  string `json:"created_at"`
+	}
+	items := make([]appPassword, 0)
+	for rows.Next() {
+		var p appPassword
+		if err := rows.Scan(&p.ID, &p.Name, &p.LastUsedAt, &p.CreatedAt); err == nil {
+			items = append(items, p)
+		}
+	}
+	utils.WriteJSON(w, http.StatusOK, items)
+}
+
+// DeleteAppPassword revokes a single app password.
+func (h *Handler) DeleteAppPassword(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+
+	result, err := h.db.Exec(`DELETE FROM app_passwords WHERE id = $1 AND user_id = $2`, id, userID)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "delete failed")
+		return
+	}
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		utils.WriteError(w, http.StatusNotFound, "not found")
+		return
+	}
+
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "auth.app_password_delete",
+		Resource:  fmt.Sprintf("app_password:%d", id),
+		IPAddress: middleware.ClientIP(r),
+	})
+	utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }

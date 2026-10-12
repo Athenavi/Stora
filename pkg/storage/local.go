@@ -25,6 +25,9 @@ func NewLocalDriver(objectsPath, baseURL string) *LocalDriver {
 // Store saves a file at a manually specified path under ObjectsPath.
 // Deprecated: prefer StoreHash for content-addressed storage.
 func (d *LocalDriver) Store(path string, reader io.Reader) error {
+	if err := ValidateKey(path); err != nil {
+		return err
+	}
 	fullPath := filepath.Join(d.ObjectsPath, path)
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -70,7 +73,7 @@ func (d *LocalDriver) StoreHash(reader io.Reader) (hash, relPath string, err err
 	}
 
 	hash = fmt.Sprintf("%x", h.Sum(nil))
-	relPath = fmt.Sprintf("%s/%s", hash[:2], hash[2:])
+	relPath = ObjectKey(hash)
 	fullPath := filepath.Join(d.ObjectsPath, relPath)
 
 	// Check if already exists
@@ -95,6 +98,9 @@ func (d *LocalDriver) StoreHash(reader io.Reader) (hash, relPath string, err err
 }
 
 func (d *LocalDriver) Retrieve(path string) (io.ReadCloser, error) {
+	if err := ValidateKey(path); err != nil {
+		return nil, err
+	}
 	fullPath := filepath.Join(d.ObjectsPath, path)
 	f, err := os.Open(fullPath)
 	if err != nil {
@@ -104,11 +110,17 @@ func (d *LocalDriver) Retrieve(path string) (io.ReadCloser, error) {
 }
 
 func (d *LocalDriver) Delete(path string) error {
+	if err := ValidateKey(path); err != nil {
+		return err
+	}
 	fullPath := filepath.Join(d.ObjectsPath, path)
 	return os.Remove(fullPath)
 }
 
 func (d *LocalDriver) Exists(path string) (bool, error) {
+	if err := ValidateKey(path); err != nil {
+		return false, err
+	}
 	fullPath := filepath.Join(d.ObjectsPath, path)
 	_, err := os.Stat(fullPath)
 	if os.IsNotExist(err) {

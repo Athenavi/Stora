@@ -23,7 +23,7 @@ type FileItem struct {
 	FileSize         int64   `json:"file_size" db:"file_size"`
 	MimeType         *string `json:"mime_type" db:"mime_type"`
 	FileType         string  `json:"file_type" db:"file_type"`           // image/video/audio/document/archive/other
-	StorageDriver    string  `json:"storage_driver" db:"storage_driver"` // local/s3/minio
+	StorageDriver    string  `json:"storage_driver" db:"storage_driver"` // local/s3
 	StorageBucket    *string `json:"storage_bucket" db:"storage_bucket"`
 	StorageKey       *string `json:"storage_key" db:"storage_key"`
 	FileHash         *string `json:"file_hash" db:"file_hash"`

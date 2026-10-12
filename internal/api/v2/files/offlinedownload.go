@@ -328,7 +328,7 @@ func (h *OfflineDownloadHandler) tryDownload(taskID, userID int64, url string, f
 
 	// Create file item linked to the "离线下载" folder
 	mimeType := resp.Header.Get("Content-Type")
-	fileType := detectFileType(mimeType, fname)
+	fileType := DetectFileType(mimeType, fname)
 	var fileID int64
 	err = h.db.QueryRow(
 		`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
@@ -409,8 +409,8 @@ func (h *OfflineDownloadHandler) storeDownloadedFiles(taskID, userID int64, dir,
 		if fi != nil {
 			fileSize = fi.Size()
 		}
-		mimeType := detectFileType("", e.Name())
-		fileType := detectFileType("", e.Name())
+		mimeType := DetectFileType("", e.Name())
+		fileType := DetectFileType("", e.Name())
 		var fileID int64
 		h.db.QueryRow(
 			`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,

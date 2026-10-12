@@ -120,7 +120,7 @@ export default component$<{ file: FileItem | null; onClose$: () => void; onFulls
       ) : isMedia ? (
         <div class="flex items-center justify-center bg-black/5 p-4 max-h-[40vh]">
           {d.file_type === "image" ? (
-            <img src={`/api/v2/files/preview/${d.id}/thumbnail?size=1024`} alt={d.filename}
+            <img src={`/api/v2/files/${d.id}/thumbnail?size=lg`} alt={d.filename}
               class="max-w-full max-h-full object-contain rounded-lg shadow-lg" loading="lazy" />
           ) : (
             <video controls class="max-w-full max-h-full rounded-lg shadow-lg">

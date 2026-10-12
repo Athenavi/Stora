@@ -165,7 +165,14 @@ export const initChunkedUpload = (data: {
   total_chunks: number;
   file_hash?: string;
   folder_id?: number | null;
-}): Promise<{ upload_id: string; chunk_size: number }> =>
+}): Promise<{
+  upload_id: string;
+  chunk_size: number;
+  total_chunks: number;
+  /** Indices the server already holds — the basis for resuming an upload. */
+  received_chunks: number[];
+  resume: boolean;
+}> =>
   api.post('/files/upload/init', data);
 
 export const uploadChunk = (uploadId: string, chunkIndex: number, chunk: Blob) => {

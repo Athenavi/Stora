@@ -19,6 +19,7 @@ import (
 	"github.com/Athenavi/Stora/internal/api/v2/wopi"
 	mobileapi "github.com/Athenavi/Stora/internal/api/v3/mobile"
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/internal/webdav"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/cache"
 	"github.com/Athenavi/Stora/pkg/config"
@@ -121,8 +122,37 @@ func main() {
 	loginLimiter := middleware.NewRateLimiter(10, 1*time.Minute)   // 10 login attempts/min per IP
 	registerLimiter := middleware.NewRateLimiter(3, 1*time.Minute) // 3 registrations/min per IP
 
-	// Initialize storage driver
-	store := storage.NewLocalDriver(cfg.StorageObjectsDir, "/files")
+	// Initialize the object storage driver.
+	//
+	// Both drivers expose the same content-addressed key layout (`<hash[:2]>/<hash[2:]>`),
+	// so switching backends is a configuration change: the file_path values stored
+	// in file_items stay valid and objects are a plain copy apart.
+	var store storage.Driver
+	switch strings.ToLower(cfg.StorageDriver) {
+	case "s3":
+		presignTTL := time.Duration(0)
+		if cfg.S3PresignDownload {
+			presignTTL = 15 * time.Minute
+		}
+		s3Driver, err := storage.NewS3Driver(context.Background(), storage.S3Options{
+			Endpoint:       cfg.S3Endpoint,
+			Region:         cfg.S3Region,
+			Bucket:         cfg.S3Bucket,
+			AccessKey:      cfg.S3AccessKey,
+			SecretKey:      cfg.S3SecretKey,
+			ForcePathStyle: cfg.S3ForcePathStyle,
+			PresignTTL:     presignTTL,
+		})
+		if err != nil {
+			log.Fatalf("[Server] object storage init failed: %v", err)
+		}
+		store = s3Driver
+		log.Printf("[Server] object storage: s3 (bucket=%s endpoint=%s pathStyle=%v)",
+			cfg.S3Bucket, cfg.S3Endpoint, cfg.S3ForcePathStyle)
+	default:
+		store = storage.NewLocalDriver(cfg.StorageObjectsDir, "/files")
+		log.Printf("[Server] object storage: local (root=%s)", cfg.StorageObjectsDir)
+	}
 
 	// Initialize auth API handlers
 	authHandler := authapi.NewHandler(db, jwtManager, cfg.CookieSecure)
@@ -142,6 +172,11 @@ func main() {
 	trashHandler := fileapi.NewTrashHandler(db)
 	blockHandler := fileapi.NewBlockHandler(db, store, cfg.TempFolder)
 	sessionHandler := fileapi.NewUploadSessionHandler(db, store, cfg.TempFolder)
+
+	// Thumbnails are rendered in the background so an upload never waits on image
+	// decoding or ffmpeg.
+	thumbnailHandler := fileapi.NewThumbnailHandler(db, store)
+	go thumbnailHandler.Run(context.Background())
 
 	// Initialize offline download handler
 	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
@@ -204,6 +239,11 @@ func main() {
 			r.Post("/auth/change-password", authHandler.ChangePassword)
 			r.Get("/auth/sessions", authHandler.ListSessions)
 			r.Delete("/auth/sessions/{id}", authHandler.RevokeSession)
+
+			// Credentials for Basic-auth-only clients (WebDAV), individually revocable.
+			r.Get("/auth/app-passwords", authHandler.ListAppPasswords)
+			r.Post("/auth/app-passwords", authHandler.CreateAppPassword)
+			r.Delete("/auth/app-passwords/{id}", authHandler.DeleteAppPassword)
 
 			// User quota
 			r.Get("/users/me/quota", func(w http.ResponseWriter, r *http.Request) {
@@ -285,6 +325,7 @@ func main() {
 			r.Get("/files/{id}/download", fileHandler.DownloadFile)
 			r.Get("/files/download/{id}", fileHandler.DownloadFile) // alias for frontend
 			r.Get("/files/preview/{id}/{filename}", fileHandler.PreviewFile)
+			r.Get("/files/{id}/thumbnail", thumbnailHandler.Get)
 			r.Get("/files/search", fileHandler.Search)
 
 			// File comments
@@ -497,6 +538,12 @@ func main() {
 	r.Route("/api/v3", func(r chi.Router) {
 		r.Post("/auth/login", mobileAuth.Login)
 	})
+
+	// WebDAV — mounted outside /api/v2 because its clients authenticate with
+	// HTTP Basic (an application-specific password), not with the API middleware.
+	// The prefix must be stripped: webdav.Handler treats r.URL.Path as the file path.
+	davHandler := webdav.New(db, store)
+	r.Mount("/dav", http.StripPrefix("/dav", davHandler))
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.ServerHost, cfg.ServerPort)

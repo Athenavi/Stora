@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/storage"
@@ -174,6 +175,8 @@ func (h *Handler) PutFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Edited in Office — the thumbnail no longer reflects the content.
+	fileapi.EnqueueThumbnail(h.db, fileID)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "saved"})
 }

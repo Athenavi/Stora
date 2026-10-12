@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
+	"github.com/Athenavi/Stora/pkg/audit"
 	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/storage"
 	"github.com/go-chi/chi/v5"
@@ -1108,6 +1109,12 @@ func (h *TrashHandler) DestroyFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "destroy failed")
 		return
 	}
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "file.destroy",
+		Resource:  fmt.Sprintf("file:%d", fileID),
+		IPAddress: middleware.ClientIP(r),
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "destroyed"})
 }
 
@@ -1161,6 +1168,14 @@ func (h *TrashHandler) BatchDestroy(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		destroyed, _ = res.RowsAffected()
 	}
+	if destroyed > 0 {
+		audit.Log(h.db, audit.Entry{
+			UserID:    userID,
+			Action:    "file.batch_destroy",
+			Detail:    fmt.Sprintf("count=%d", destroyed),
+			IPAddress: middleware.ClientIP(r),
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]int64{"destroyed": destroyed})
 }
 
@@ -1192,6 +1207,11 @@ func (h *TrashHandler) ClearTrash(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 	h.clearTrashByUser(userID)
 	h.db.Exec(`DELETE FROM file_items WHERE user_id = $1 AND deleted_at IS NOT NULL`, userID)
+	audit.Log(h.db, audit.Entry{
+		UserID:    userID,
+		Action:    "file.trash_clear",
+		IPAddress: middleware.ClientIP(r),
+	})
 	writeJSON(w, http.StatusOK, map[string]string{"message": "trash cleared"})
 }
 
