@@ -1423,6 +1423,8 @@ func (h *TranscribeHandler) processTranscription(taskID, fileID int64) {
 	// Step 3: Save result
 	db.Exec(`UPDATE transcription_tasks SET status = 'completed', content = $1, updated_at = $2 WHERE id = $3`,
 		srtContent, now, taskID)
+	// The subtitle text is searchable, so the index has to catch up.
+	ReindexSearch(db, fileID)
 }
 
 // ---------- Transcode Tasks List ----------

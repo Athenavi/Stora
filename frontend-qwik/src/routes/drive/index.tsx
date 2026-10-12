@@ -3,9 +3,8 @@
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate, useLocation } from "@builder.io/qwik-city";
-import { createServerApi, getFolderChildrenByPath, createFolderByPath, updateFile, updateFolder, deleteFile, deleteFolder, moveFiles, copyFiles, uploadFile, batchDownload, createShare, api, listUserTags, listVaults, copyFileToVault, createOfflineDownload, listOfflineDownloads, retryOfflineDownload, type PathChildrenResponse, type FileItem } from "~/lib/api";
-import { Icon } from "~/components/ui/Icon";
-import { Button, Input } from "~/components/ui/Button";
+import { createServerApi, createFolderByPath, updateFile, deleteFile, deleteFolder, moveFiles, copyFiles, batchDownload, createShare, api, listUserTags, listVaults, copyFileToVault, createOfflineDownload, listOfflineDownloads, retryOfflineDownload, type PathChildrenResponse, type FileItem } from "~/lib/api";
+import { Button } from "~/components/ui/Button";
 import PreviewPanel from "~/components/drive/PreviewPanel";
 import PreviewModal from "~/components/drive/PreviewModal";
 import UploadZone from "~/components/upload/UploadZone";
@@ -100,7 +99,7 @@ export default component$(() => {
   const sharePassword = useSignal("");
   const shareExpiry = useSignal<number | null>(null); // hours, null=永久
   const shareCreating = useSignal(false);
-  const moveTargetId = useSignal<number | undefined>(undefined);
+  const _moveTargetId = useSignal<number | undefined>(undefined);
   const moveTree = useSignal<any[]>([]);
   const moveTreeLoading = useSignal(false);
   const previewFile = useSignal<FileItem | null>(null);
@@ -108,6 +107,7 @@ export default component$(() => {
   const clipboard = useSignal<{ fileIds: number[]; action: "copy" | "cut" } | null>(null);
 
   // Persist clipboard in sessionStorage so it survives folder navigation
+  // eslint-disable-next-line qwik/no-use-visible-task
   useVisibleTask$(() => {
     try {
       const saved = sessionStorage.getItem("stora_clipboard");
@@ -152,10 +152,10 @@ export default component$(() => {
   const onPreview = $((item: any) => { previewFile.value = item; });
   const onFullscreen = $((fileId: number) => { previewFile.value = null; previewModalFile.value = { id: fileId }; });
 
-  const doRename = (item: { id: number; type: string; name: string }) => {
+  const doRename = $((item: { id: number; type: string; name: string }) => {
     renameId.value = item.id;
     renameVal.value = item.name;
-  };
+  });
 
   const openCtx = $((item: any, e: any) => {
     if (window.innerWidth < 768) {
@@ -213,7 +213,7 @@ export default component$(() => {
     }
   });
 
-  const refresh = () => { location.href = `/drive${currentPath ? `?Path=${encodeURIComponent(currentPath)}` : ""}`; };
+  const refresh = $(() => { location.href = `/drive${currentPath ? `?Path=${encodeURIComponent(currentPath)}` : ""}`; });
 
   // Sort state for list view (shared between non-scroll header and scrollable body)
   const sortBy = useSignal(loc.url.searchParams.get("sort_by") || "created_at");
@@ -549,7 +549,7 @@ export default component$(() => {
                 <div class="h-px bg-stora-border my-1" />
                 <button onClick$={async () => {
                   const id = ctxItem.value!.id;
-                  const sel = ctxItem.value!.name;
+                  const _sel = ctxItem.value!.name;
                   ctxItem.value = null;
                   nav(`/tags?file_id=${id}`);
                 }} class="w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 text-stora-foreground hover:bg-stora-muted touch-target">🏷 分组</button>
@@ -998,7 +998,7 @@ export default component$(() => {
 
 // ─── List View ───
 
-export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any; groupBy?: string | null; hideHeader?: boolean }>(({ items, selIds, renameId, renameVal, nav, currentPath, onContextItem$, onPreview$, groupBy, hideHeader }) => {
+export const ListView = component$<{ items: any[]; selIds: any; renameId: any; renameVal: any; nav: any; currentPath?: string; onContextItem$?: any; onPreview$?: any; groupBy?: string | null; hideHeader?: boolean }>(({ items, selIds, nav, onContextItem$, onPreview$, groupBy, hideHeader }) => {
   const sortBy = useSignal("");
   const sortOrder = useSignal("");
   const loc = useLocation();
@@ -1147,6 +1147,7 @@ export const GridView = component$<{ items: any[]; selIds: any; nav: any; curren
           <div class={`aspect-square flex items-center justify-center text-4xl mb-2.5 overflow-hidden`}>
             {item.file_type === "image" ? (
               <img src={`/api/v2/files/${item.id}/thumbnail?size=sm`} alt={item.filename}
+                width={256} height={256}
                 class="w-full h-full object-cover" loading="lazy" />
             ) : (
               <span>{tc.icon}</span>

@@ -14,6 +14,7 @@ import (
 	"github.com/Athenavi/Stora/internal/adminui"
 	adminapi "github.com/Athenavi/Stora/internal/api/v2/admin"
 	authapi "github.com/Athenavi/Stora/internal/api/v2/auth"
+	e2eeapi "github.com/Athenavi/Stora/internal/api/v2/e2ee"
 	fileapi "github.com/Athenavi/Stora/internal/api/v2/files"
 	shareapi "github.com/Athenavi/Stora/internal/api/v2/share"
 	"github.com/Athenavi/Stora/internal/api/v2/wopi"
@@ -177,6 +178,10 @@ func main() {
 	// decoding or ffmpeg.
 	thumbnailHandler := fileapi.NewThumbnailHandler(db, store)
 	go thumbnailHandler.Run(context.Background())
+
+	// Zero-knowledge private spaces: the server stores ciphertext and has no
+	// decrypt path at all (see docs/design-e2ee.md).
+	e2eeHandler := e2eeapi.NewHandler(db, store)
 
 	// Initialize offline download handler
 	offlineDownloadHandler := fileapi.NewOfflineDownloadHandler(db, store, cfg.TempFolder)
@@ -359,6 +364,19 @@ func main() {
 			r.Get("/vaults/{vaultId}/items", vaultHandler.ListVaultItems)
 			r.Get("/vaults/{vaultId}/items/{itemId}", vaultHandler.DownloadVaultItem)
 			r.Delete("/vaults/{vaultId}/items/{itemId}", vaultHandler.DeleteVaultItem)
+
+			// E2EE private spaces — zero knowledge. The server stores wrapped keys
+			// and ciphertext only; it never derives thumbnails, OCR or search
+			// entries for these items, because it cannot read them.
+			r.Route("/e2ee", func(r chi.Router) {
+				r.Get("/vaults", e2eeHandler.ListVaults)
+				r.Post("/vaults", e2eeHandler.CreateVault)
+				r.Delete("/vaults/{vaultId}", e2eeHandler.DeleteVault)
+				r.Get("/vaults/{vaultId}/items", e2eeHandler.ListItems)
+				r.Post("/vaults/{vaultId}/items", e2eeHandler.UploadItem)
+				r.Get("/items/{itemId}/content", e2eeHandler.DownloadItem)
+				r.Delete("/items/{itemId}", e2eeHandler.DeleteItem)
+			})
 
 			// Transcoding
 			r.Post("/files/transcode/{id}", transcodeHandler.StartTranscode)

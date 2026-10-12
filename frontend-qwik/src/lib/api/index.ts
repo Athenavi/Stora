@@ -6,3 +6,4 @@ export * from './files';
 export * from './share';
 export * from './search';
 export * from './auth';
+export * from './e2ee';

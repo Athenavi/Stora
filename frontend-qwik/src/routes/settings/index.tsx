@@ -1,10 +1,10 @@
 /**
  * Stora Account Settings — 账号设置页面
  */
-import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
+import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi } from "~/lib/api";
-import { getProfile, updateProfile, changePassword, logout } from "~/lib/api/auth";
+import { updateProfile, changePassword, logout } from "~/lib/api/auth";
 import { Icon } from "~/components/ui/Icon";
 
 export const useUserProfile = routeLoader$(async ({ request }) => {
@@ -14,7 +14,7 @@ export const useUserProfile = routeLoader$(async ({ request }) => {
 
 export default component$(() => {
   const profile = useUserProfile();
-  const nav = useNavigate();
+  const _nav = useNavigate();
   const saving = useSignal(false);
   const saveMsg = useSignal<{ type: "success" | "error"; text: string } | null>(null);
 

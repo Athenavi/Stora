@@ -55,102 +55,11 @@ func NewThumbnailHandler(db *sql.DB, store storage.Driver) *ThumbnailHandler {
 	return &ThumbnailHandler{db: db, storage: store}
 }
 
-// EnqueueThumbnail schedules thumbnail generation for a file.
+// processThumbnail renders the sm/md/lg variants for one job.
 //
-// A package-level function rather than a method, so every upload path (files,
-// upload, blocks, share, wopi) can call it without holding a ThumbnailHandler.
-// Errors are logged and swallowed on purpose: a thumbnail is a nicety, and an
-// upload must never fail because of it.
-func EnqueueThumbnail(db *sql.DB, fileID int64) {
-	now := time.Now().Format(time.RFC3339)
-	if _, err := db.Exec(
-		`INSERT INTO thumbnail_jobs (file_id, status, attempts, updated_at)
-		 VALUES ($1, 'pending', 0, $2)
-		 ON CONFLICT (file_id) DO UPDATE
-		     SET status = 'pending', attempts = 0, last_error = NULL, updated_at = $2`,
-		fileID, now,
-	); err != nil {
-		log.Printf("[Thumbnail] enqueue failed for file %d: %v", fileID, err)
-	}
-}
-
-// Run processes queued thumbnail jobs until ctx is cancelled.
-//
-// It polls the job table rather than using an in-process channel, so pending work
-// survives a restart and several server instances can share the queue.
-func (h *ThumbnailHandler) Run(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	log.Println("[Thumbnail] worker started (every 5s)")
-	for {
-		select {
-		case <-ctx.Done():
-			log.Println("[Thumbnail] worker stopped")
-			return
-		case <-ticker.C:
-			for {
-				jobs, err := h.claimJobs(ctx, 5)
-				if err != nil {
-					log.Printf("[Thumbnail] claim failed: %v", err)
-					break
-				}
-				if len(jobs) == 0 {
-					break
-				}
-				for _, job := range jobs {
-					h.processJob(ctx, job.id, job.fileID)
-				}
-			}
-		}
-	}
-}
-
-type thumbJob struct {
-	id     int64
-	fileID int64
-}
-
-// claimJobs atomically flips up to `limit` pending jobs to 'running'.
-//
-// SKIP LOCKED lets multiple workers coexist without contending; without it two
-// instances would process the same file twice.
-func (h *ThumbnailHandler) claimJobs(ctx context.Context, limit int) ([]thumbJob, error) {
-	rows, err := h.db.QueryContext(ctx,
-		`UPDATE thumbnail_jobs j
-		    SET status = 'running', attempts = attempts + 1, updated_at = $1
-		   FROM (
-		       SELECT id FROM thumbnail_jobs
-		        WHERE status = 'pending'
-		        ORDER BY id
-		        LIMIT $2
-		        FOR UPDATE SKIP LOCKED
-		   ) claimed
-		  WHERE j.id = claimed.id
-		RETURNING j.id, j.file_id`,
-		time.Now().Format(time.RFC3339), limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var jobs []thumbJob
-	for rows.Next() {
-		var j thumbJob
-		if err := rows.Scan(&j.id, &j.fileID); err != nil {
-			return nil, err
-		}
-		jobs = append(jobs, j)
-	}
-	return jobs, rows.Err()
-}
-
-func (h *ThumbnailHandler) processJob(ctx context.Context, jobID, fileID int64) {
-	now := func() string { return time.Now().Format(time.RFC3339) }
-	fail := func(reason string) {
-		log.Printf("[Thumbnail] file %d: %s", fileID, reason)
-		h.db.Exec(`UPDATE thumbnail_jobs SET status = 'failed', last_error = $1, updated_at = $2 WHERE id = $3`,
-			reason, now(), jobID)
-	}
+// The worker plumbing that drives this lives in derived.go, shared with OCR.
+func (h *ThumbnailHandler) processThumbnail(ctx context.Context, job derivedJob) {
+	fileID := job.fileID
 
 	var filePath, mimeType, fileType string
 	err := h.db.QueryRowContext(ctx,
@@ -159,32 +68,32 @@ func (h *ThumbnailHandler) processJob(ctx context.Context, jobID, fileID int64) 
 		fileID).Scan(&filePath, &mimeType, &fileType)
 	if err == sql.ErrNoRows {
 		// Deleted between enqueue and processing — drop the job with the file.
-		h.db.Exec(`DELETE FROM thumbnail_jobs WHERE id = $1`, jobID)
+		h.db.Exec(`DELETE FROM derived_jobs WHERE id = $1`, job.id)
 		return
 	}
 	if err != nil {
-		fail(fmt.Sprintf("lookup: %v", err))
+		h.finishJob(job.id, "failed", "lookup: "+err.Error())
 		return
 	}
 
 	kind := thumbnailSourceKind(mimeType, fileType)
 	if kind == thumbUnsupported {
-		// Nothing to render (pdf, archive, audio, ...). Marking it 'done' records
-		// that we tried, so the GET endpoint can answer 404 instead of "come back later".
-		h.db.Exec(`UPDATE thumbnail_jobs SET status = 'done', updated_at = $1 WHERE id = $2`, now(), jobID)
+		// Nothing to render (pdf, archive, audio, ...). Marking it done records
+		// that we tried, so GET can answer 404 instead of "come back later".
+		h.finishJob(job.id, "done", "")
 		return
 	}
 
 	reader, err := h.storage.Retrieve(filePath)
 	if err != nil {
-		fail(fmt.Sprintf("retrieve: %v", err))
+		h.finishJob(job.id, "failed", "retrieve: "+err.Error())
 		return
 	}
 	defer reader.Close()
 
 	src, err := loadThumbnailSource(ctx, kind, reader)
 	if err != nil {
-		fail(err.Error())
+		h.finishJob(job.id, "failed", err.Error())
 		return
 	}
 
@@ -195,12 +104,12 @@ func (h *ThumbnailHandler) processJob(ctx context.Context, jobID, fileID int64) 
 			continue
 		}
 		if err != nil {
-			fail(fmt.Sprintf("%s: %v", size, err))
+			h.finishJob(job.id, "failed", size+": "+err.Error())
 			return
 		}
 		_, path, err := h.storage.StoreHash(bytes.NewReader(data))
 		if err != nil {
-			fail(fmt.Sprintf("%s: store: %v", size, err))
+			h.finishJob(job.id, "failed", size+": store: "+err.Error())
 			return
 		}
 		if _, err := h.db.Exec(
@@ -210,13 +119,13 @@ func (h *ThumbnailHandler) processJob(ctx context.Context, jobID, fileID int64) 
 			     SET width = $3, height = $4, storage_path = $5`,
 			fileID, size, w, hgt, path,
 		); err != nil {
-			fail(fmt.Sprintf("%s: persist: %v", size, err))
+			h.finishJob(job.id, "failed", size+": persist: "+err.Error())
 			return
 		}
 		stored++
 	}
 
-	h.db.Exec(`UPDATE thumbnail_jobs SET status = 'done', updated_at = $1 WHERE id = $2`, now(), jobID)
+	h.finishJob(job.id, "done", "")
 	if stored > 0 {
 		log.Printf("[Thumbnail] file %d: generated %d sizes", fileID, stored)
 	}
@@ -269,7 +178,10 @@ func (h *ThumbnailHandler) Get(w http.ResponseWriter, r *http.Request) {
 	// Distinguish "not ready yet" from "never will be", so the browser knows
 	// whether retrying is worth it.
 	var jobStatus string
-	switch err := h.db.QueryRow(`SELECT status FROM thumbnail_jobs WHERE file_id = $1`, fileID).Scan(&jobStatus); {
+	switch err := h.db.QueryRow(
+		`SELECT status FROM derived_jobs WHERE file_id = $1 AND kind = $2`,
+		fileID, jobKindThumbnail,
+	).Scan(&jobStatus); {
 	case err == sql.ErrNoRows, jobStatus == "done", jobStatus == "failed":
 		writeError(w, http.StatusNotFound, "no thumbnail for this file")
 	default:

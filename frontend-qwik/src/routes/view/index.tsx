@@ -2,7 +2,7 @@
  * Stora File Preview — 文件预览（视频/音频/文档编辑 + Flyfish Viewer + 转码清晰度切换）
  */
 import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
-import { routeLoader$, useLocation } from "@builder.io/qwik-city";
+import { routeLoader$ } from "@builder.io/qwik-city";
 import { createServerApi, api } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 import { Button } from "~/components/ui/Button";
@@ -27,7 +27,7 @@ export default component$(() => {
   const editContent = useSignal("");
   const saving = useSignal(false);
   const resolutions = useSignal<{label:string;url:string}[]>([]);
-  const currentRes = useSignal("original");
+  const _currentRes = useSignal("original");
   const transcodeLoading = useSignal(false);
   const showEditor = useSignal(false);
   const subtitleAvailable = useSignal(false);
@@ -104,7 +104,7 @@ export default component$(() => {
     saving.value = false;
   });
 
-  const doTranscode = async () => {
+  const _doTranscode = async () => {
     transcodeLoading.value = true;
     try {
       await api.post(`/files/transcode/${f.id}`);
@@ -236,8 +236,8 @@ export default component$(() => {
           fileId={f.id}
           imageUrl={fileUrl}
           filename={f.filename}
-          onClose={() => showEditor.value = false}
-          onSaved={() => { location.reload(); }}
+          onClose={$(() => { showEditor.value = false; })}
+          onSaved={$(() => { location.reload(); })}
         />
       )}
     </div>

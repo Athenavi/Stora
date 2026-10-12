@@ -68,6 +68,19 @@ export default tseslint.config(
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
+      // 空 catch 是"有意忽略错误"的常见写法（例如清理临时文件失败无需上抛）；
+      // 空块（if/for/while 体）依旧会被报告，不掩盖真正的空逻辑。
+      "no-empty": ["error", { allowEmptyCatch: true }],
+      // 下划线前缀表示"已知未使用"：解构占位、接口要求但用不到的参数。
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          ignoreRestSiblings: true,
+        },
+      ],
     },
   },
 );

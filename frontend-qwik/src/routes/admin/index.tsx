@@ -2,10 +2,10 @@
  * Stora Admin Page — user management, storage plans, audit logs
  * Full implementation with real backend data.
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$ } from "@builder.io/qwik-city";
 import { Icon } from "~/components/ui/Icon";
-import { Button, Skeleton, Badge } from "~/components/ui/Button";
+import { Button, Badge } from "~/components/ui/Button";
 import { api, createServerApi } from "~/lib/api";
 
 // ─── Types ───
@@ -40,11 +40,6 @@ interface AuditLog {
   detail: string | null;
   ip_address: string | null;
   created_at: string;
-}
-
-interface AdminSetting {
-  key: string;
-  value: string;
 }
 
 const tabs = [
@@ -172,15 +167,15 @@ function StatCard({ label, value, icon, color }: { label: string; value: string;
 
 // ─── Users Tab ───
 
-function UsersTab({ users: initialUsers }: { users: AdminUser[] }) {
+const UsersTab = component$<{ users: AdminUser[] }>(({ users: initialUsers }) => {
   const data = initialUsers;
   const users = useSignal(data);
   const searchQuery = useSignal("");
   const editId = useSignal(0);
-  const editActive = useSignal(false);
+  const _editActive = useSignal(false);
   const editQuota = useSignal("");
   const saving = useSignal(false);
-  const expandedId = useSignal(0);
+  const _expandedId = useSignal(0);
 
   const filteredUsers = () => {
     if (!searchQuery.value) return users.value;
@@ -191,16 +186,16 @@ function UsersTab({ users: initialUsers }: { users: AdminUser[] }) {
     );
   };
 
-  const doToggleActive = async (id: number, active: boolean) => {
+  const doToggleActive = $(async (id: number, active: boolean) => {
     saving.value = true;
     try {
       await api.put(`/admin/users/${id}`, { is_active: active });
       users.value = users.value.map(u => u.id === id ? { ...u, is_active: active } : u);
     } catch {}
     saving.value = false;
-  };
+  });
 
-  const doSetQuota = async (id: number) => {
+  const doSetQuota = $(async (id: number) => {
     const bytes = parseInt(editQuota.value) * 1073741824;
     if (!bytes) return;
     saving.value = true;
@@ -210,7 +205,7 @@ function UsersTab({ users: initialUsers }: { users: AdminUser[] }) {
       editId.value = 0;
     } catch {}
     saving.value = false;
-  };
+  });
 
   return (
     <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -329,11 +324,11 @@ function UsersTab({ users: initialUsers }: { users: AdminUser[] }) {
       )}
     </div>
   );
-}
+});
 
 // ─── Audit Tab ───
 
-function AuditTab({ logs: initialLogs }: { logs: { items: AuditLog[]; total: number } }) {
+const AuditTab = component$<{ logs: { items: AuditLog[]; total: number } }>(({ logs: initialLogs }) => {
   const logs = useSignal(initialLogs.items);
 
   const actions: Record<string, string> = {
@@ -409,11 +404,11 @@ function AuditTab({ logs: initialLogs }: { logs: { items: AuditLog[]; total: num
       )}
     </div>
   );
-}
+});
 
 // ─── Settings Tab ───
 
-function SettingsTab({ settings: initialSettings }: { settings: Record<string, string> }) {
+const SettingsTab = component$<{ settings: Record<string, string> }>(({ settings: initialSettings }) => {
   const data = initialSettings;
   const settings = useSignal(Object.entries(data || {}).map(([key, value]) => ({ key, value })));
   const key = useSignal("");
@@ -421,7 +416,7 @@ function SettingsTab({ settings: initialSettings }: { settings: Record<string, s
   const saving = useSignal(false);
   const message = useSignal("");
 
-  const doAdd = async () => {
+  const doAdd = $(async () => {
     if (!key.value || !value.value) return;
     saving.value = true;
     message.value = "";
@@ -433,7 +428,7 @@ function SettingsTab({ settings: initialSettings }: { settings: Record<string, s
       message.value = "设置已保存";
     } catch (e: any) { message.value = e.message || "保存失败"; }
     saving.value = false;
-  };
+  });
 
   return (
     <div class="space-y-6">
@@ -473,4 +468,4 @@ function SettingsTab({ settings: initialSettings }: { settings: Record<string, s
       </div>
     </div>
   );
-}
+});

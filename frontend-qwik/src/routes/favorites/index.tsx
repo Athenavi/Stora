@@ -3,7 +3,7 @@
  */
 import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
-import { createServerApi, updateFile, batchDownload, api, type FileItem } from "~/lib/api";
+import { createServerApi, updateFile, batchDownload, type FileItem } from "~/lib/api";
 import InfiniteScroll from "~/components/ui/InfiniteScroll";
 import PreviewModal from "~/components/drive/PreviewModal";
 
@@ -46,15 +46,15 @@ export default component$(() => {
     loadingMore.value = false;
   });
 
-  const removeFav = async (id: number) => {
+  const _removeFav = async (id: number) => {
     try { await updateFile(id, { is_favorite: false }); items.value = items.value.filter(f => f.id !== id); selIds.value = selIds.value.filter(sid => sid !== id); } catch {}
   };
 
-  const batchRemoveFav = async () => {
+  const batchRemoveFav = $(async () => {
     for (const id of selIds.value) { try { await updateFile(id, { is_favorite: false }); } catch {} }
     items.value = items.value.filter(f => !selIds.value.includes(f.id));
     selIds.value = [];
-  };
+  });
 
   type IconMeta = { color: string; icon: string };
   const fileIcon = (f: FileItem): IconMeta => {

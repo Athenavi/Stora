@@ -414,6 +414,8 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 	})
 	// Generate a preview image in the background.
 	EnqueueThumbnail(h.db, fileID)
+	EnqueueOCR(h.db, fileID)
+	ReindexSearch(h.db, fileID)
 	// Trigger webhook
 	TriggerWebhooks(h.db, "file.create", map[string]interface{}{
 		"event": "file.create", "file_id": fileID,
@@ -569,6 +571,8 @@ func (h *Handler) RenameFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "file not found")
 		return
 	}
+	// The searchable text changed even though the content did not.
+	ReindexSearch(h.db, fileID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "renamed"})
 }
 
@@ -761,6 +765,8 @@ func (h *Handler) UpdateFileContent(w http.ResponseWriter, r *http.Request) {
 	}
 	// Content changed — the cached thumbnails are stale.
 	EnqueueThumbnail(h.db, fileID)
+	EnqueueOCR(h.db, fileID)
+	ReindexSearch(h.db, fileID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "saved"})
 }
 
@@ -819,6 +825,8 @@ func (h *Handler) AddComment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "add comment failed")
 		return
 	}
+	// Comments are part of the searchable text.
+	ReindexSearch(h.db, fileID)
 	writeJSON(w, http.StatusCreated, map[string]int64{"id": commentID})
 }
 
@@ -1254,6 +1262,7 @@ func (h *Handler) AssignFileTags(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "commit failed")
 		return
 	}
+	ReindexSearch(h.db, fileID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "tags updated"})
 }
 
@@ -1278,31 +1287,34 @@ func (h *Handler) RemoveFileTag(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "assignment not found")
 		return
 	}
+	ReindexSearch(h.db, fileID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "tag removed"})
 }
 
 // ---------- Search ----------
 
+// Search finds files by name and by indexed content.
+//
+// Name matching stays a plain ILIKE (cheap, and always worth doing); content
+// matching goes through the pg_trgm index. The two runs are merged in Go rather
+// than by a SQL UNION so a file matching both is reported once, with the
+// stronger reason.
+//
+// mode=name keeps the old behaviour, mode=content searches indexed text only,
+// mode=all (default) does both.
 func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
-	q := r.URL.Query().Get("q")
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
 		writeError(w, http.StatusBadRequest, "query required")
 		return
 	}
 
-	rows, err := h.db.Query(
-		`SELECT id, filename, file_type, file_size, is_folder, created_at FROM file_items
-		 WHERE user_id = $1 AND deleted_at IS NULL AND
-		       (filename ILIKE $2 OR original_filename ILIKE $2)
-		 ORDER BY is_folder DESC, created_at DESC LIMIT 50`,
-		userID, "%"+q+"%",
-	)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "search failed")
-		return
+	mode := r.URL.Query().Get("mode")
+	if mode != "name" && mode != "content" {
+		mode = "all"
 	}
-	defer rows.Close()
+	pattern := "%" + escapeLike(q) + "%"
 
 	type Hit struct {
 		ID        int64   `json:"id"`
@@ -1311,18 +1323,76 @@ func (h *Handler) Search(w http.ResponseWriter, r *http.Request) {
 		FileSize  int64   `json:"file_size"`
 		IsFolder  bool    `json:"is_folder"`
 		CreatedAt *string `json:"created_at"`
+		Score     float64 `json:"score"`
+		Match     string  `json:"match"` // "content" | "name"
 	}
 
-	var hits []Hit
-	for rows.Next() {
-		var h Hit
-		rows.Scan(&h.ID, &h.Filename, &h.FileType, &h.FileSize, &h.IsFolder, &h.CreatedAt)
-		hits = append(hits, h)
+	const limit = 50
+	hits := make([]Hit, 0, limit)
+	seen := make(map[int64]struct{}, limit)
+
+	if mode != "name" {
+		rows, err := h.db.Query(
+			`SELECT fi.id, fi.filename, COALESCE(fi.file_type, ''), COALESCE(fi.file_size, 0),
+			        fi.is_folder, CAST(fi.created_at AS TEXT),
+			        similarity(si.content, $3) AS score
+			   FROM search_index si
+			   JOIN file_items fi ON fi.id = si.file_id
+			  WHERE si.user_id = $1 AND fi.deleted_at IS NULL
+			    AND si.content ILIKE $2 ESCAPE '\'
+			  ORDER BY score DESC, fi.created_at DESC
+			  LIMIT $4`,
+			userID, pattern, q, limit)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "search failed")
+			return
+		}
+		for rows.Next() {
+			var hit Hit
+			if err := rows.Scan(&hit.ID, &hit.Filename, &hit.FileType, &hit.FileSize,
+				&hit.IsFolder, &hit.CreatedAt, &hit.Score); err != nil {
+				continue
+			}
+			hit.Match = "content"
+			seen[hit.ID] = struct{}{}
+			hits = append(hits, hit)
+		}
+		rows.Close()
+	}
+
+	if mode != "content" && len(hits) < limit {
+		rows, err := h.db.Query(
+			`SELECT id, filename, COALESCE(file_type, ''), COALESCE(file_size, 0),
+			        is_folder, CAST(created_at AS TEXT)
+			   FROM file_items
+			  WHERE user_id = $1 AND deleted_at IS NULL
+			    AND (filename ILIKE $2 ESCAPE '\' OR original_filename ILIKE $2 ESCAPE '\')
+			  ORDER BY is_folder DESC, created_at DESC
+			  LIMIT $3`,
+			userID, pattern, limit-len(hits))
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "search failed")
+			return
+		}
+		for rows.Next() {
+			var hit Hit
+			if err := rows.Scan(&hit.ID, &hit.Filename, &hit.FileType, &hit.FileSize,
+				&hit.IsFolder, &hit.CreatedAt); err != nil {
+				continue
+			}
+			if _, dup := seen[hit.ID]; dup {
+				continue
+			}
+			hit.Match = "name"
+			hits = append(hits, hit)
+		}
+		rows.Close()
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"items": hits,
 		"query": q,
+		"mode":  mode,
 	})
 }
 

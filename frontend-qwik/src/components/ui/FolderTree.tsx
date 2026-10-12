@@ -59,11 +59,11 @@ export default component$(() => {
     } catch {}
   });
 
-  const toggle = (id: number) => {
+  const toggle = $((id: number) => {
     const s = new Set(expanded.value);
     if (s.has(id)) s.delete(id); else s.add(id);
     expanded.value = s;
-  };
+  });
 
   const renderTree = (nodes: FolderNode[], depth = 0) => nodes.map(node => {
     const nodePath = pathMap.value.get(node.id) || node.name;

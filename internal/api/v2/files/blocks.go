@@ -456,6 +456,8 @@ func (h *BlockHandler) SyncUploadAssign(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	EnqueueThumbnail(h.db, fileID)
+	EnqueueOCR(h.db, fileID)
+	ReindexSearch(h.db, fileID)
 	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "file_hash": fh, "file_size": sz, "filename": fileName, "path": req.Path})
 }
 
@@ -682,5 +684,7 @@ func (h *BlockHandler) SyncUploadComplete(w http.ResponseWriter, r *http.Request
 		os.RemoveAll(dir)
 	}()
 	EnqueueThumbnail(h.db, fileID)
+	EnqueueOCR(h.db, fileID)
+	ReindexSearch(h.db, fileID)
 	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "file_hash": fh, "file_size": uSize, "filename": fileName, "path": req.Path})
 }

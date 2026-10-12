@@ -3,7 +3,7 @@
  *
  * Skeleton loaders, lazy image, toast, empty state, FAB
  */
-import { component$, Slot, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, Slot, useSignal, useVisibleTask$, type PropFunction } from "@builder.io/qwik";
 import { Icon } from "./Icon";
 
 // ─── Skeleton Loaders ───
@@ -46,9 +46,12 @@ export const LazyImage = component$<{ src: string; alt: string; class?: string }
   return (
     <div class={`relative overflow-hidden ${cls}`}>
       {!loaded.value && <div class="absolute inset-0 bg-slate-100 animate-pulse" />}
+      {/* 宽高比仅作占位：实际尺寸由外层容器与 object-cover 决定 */}
       <img
         src={src}
         alt={alt}
+        width={1}
+        height={1}
         loading="lazy"
         onLoad$={() => { loaded.value = true; }}
         class={`w-full h-full object-cover transition-opacity duration-300 ${loaded.value ? "opacity-100" : "opacity-0"}`}
@@ -108,7 +111,7 @@ export const EmptyState = component$<{ icon: string; title: string; description:
 
 // ─── Floating Action Button (P2.5 mobile) ───
 
-export const FAB = component$<{ onClick$: () => void }>(({ onClick$ }) => (
+export const FAB = component$<{ onClick$: PropFunction<() => void> }>(({ onClick$ }) => (
   <button
     onClick$={onClick$}
     class="lg:hidden fixed bottom-6 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-lg

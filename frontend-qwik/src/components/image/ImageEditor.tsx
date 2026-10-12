@@ -4,25 +4,25 @@
  * 支持：裁剪、旋转、翻转、绘图、文字标注、滤镜
  * 保存：导出 Blob → 通过 PUT /files/{id}/content 保存为新版本
  */
-import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $, type PropFunction } from "@builder.io/qwik";
 import { api } from "~/lib/api";
 
 interface ImageEditorProps {
   fileId: number;
   imageUrl: string;
   filename: string;
-  onClose: () => void;
-  onSaved: () => void;
+  onClose: PropFunction<() => void>;
+  onSaved: PropFunction<() => void>;
 }
 
 type Tool = "crop" | "rotate" | "draw" | "text" | "filter" | "none";
 
 export const ImageEditor = component$<ImageEditorProps>(({ fileId, imageUrl, filename, onClose, onSaved }) => {
   const canvasRef = useSignal<HTMLCanvasElement>();
-  const activeTool = useSignal<Tool>("none");
+  const _activeTool = useSignal<Tool>("none");
   const saving = useSignal(false);
   const filterName = useSignal("none");
-  const textInput = useSignal("");
+  const _textInput = useSignal("");
 
   // Load image and init canvas
   // eslint-disable-next-line qwik/no-use-visible-task
@@ -79,12 +79,14 @@ export const ImageEditor = component$<ImageEditorProps>(({ fileId, imageUrl, fil
           data[i + 2] = Math.min(255, data[i + 2] * 1.2);
         }
         break;
-      default: // "none" — reload original
+      default: {
+        // "none" — reload original
         const img = new Image();
         img.crossOrigin = "anonymous";
         img.onload = () => ctx.drawImage(img, 0, 0);
         img.src = imageUrl;
         return;
+      }
     }
 
     ctx.putImageData(imageData, 0, 0);

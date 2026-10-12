@@ -23,7 +23,7 @@ function fmtDate(d: string | undefined | null): string {
   return new Date(d).toLocaleDateString("zh-CN");
 }
 
-function permLabel(p: string): string {
+function _permLabel(p: string): string {
   return p === "read" ? "仅查看" : p === "download" ? "可下载" : "可编辑";
 }
 
@@ -35,7 +35,7 @@ function isExpired(s: ShareLink): boolean {
 
 export default component$(() => {
   const data = useShareList();
-  const nav = useNavigate();
+  const _nav = useNavigate();
   const shares = useSignal(data.value.items);
   const total = useSignal(data.value.total);
   const page = useSignal(1);

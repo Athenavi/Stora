@@ -139,7 +139,7 @@ export default component$(() => {
   const isTeams = path.startsWith("/teams");
   const isPhotos = path.startsWith("/photos");
   const isAdmin = path.startsWith("/admin");
-  const isSettings = path.startsWith("/settings");
+  const _isSettings = path.startsWith("/settings");
   const mobileMenuOpen = useSignal(false);
   const userMenuOpen = useSignal(false);
 

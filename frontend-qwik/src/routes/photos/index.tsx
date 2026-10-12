@@ -1,7 +1,7 @@
 /**
  * Stora Photo Wall — flat design timeline grid
  */
-import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
+import { component$, useSignal, $ } from "@builder.io/qwik";
 import { routeLoader$, useNavigate } from "@builder.io/qwik-city";
 import { createServerApi, batchDownload, api } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
@@ -17,7 +17,7 @@ interface Photo {
   thumbnail_url?: string;
 }
 
-interface DayGroup {
+interface _DayGroup {
   date: string;
   photos: Photo[];
 }
@@ -46,7 +46,7 @@ function fmtDate(dateStr: string): string {
 
 export default component$(() => {
   const groups = usePhotos();
-  const nav = useNavigate();
+  const _nav = useNavigate();
   const lightbox = useSignal<Photo | null>(null);
   const touchStartX = useSignal(0);
   const currentPhotoIndex = useSignal(0);
@@ -83,12 +83,12 @@ export default component$(() => {
     photoLoading.value = false;
   });
 
-  const toggleSel = (id: number) => {
+  const toggleSel = $((id: number) => {
     const i = selIds.value.indexOf(id);
     if (i >= 0) selIds.value.splice(i, 1);
     else selIds.value.push(id);
     selIds.value = [...selIds.value];
-  };
+  });
 
   return (
     <div class="flex flex-col h-full">
@@ -144,6 +144,8 @@ export default component$(() => {
                         <img
                           src={`/api/v2/files/${photo.id}/thumbnail?size=md`}
                           alt={photo.filename}
+                          width={220}
+                          height={220}
                           class="w-full h-full object-cover"
                           loading="lazy"
                         />
@@ -197,6 +199,8 @@ export default component$(() => {
           )}
           <img src={`/api/v2/files/preview/${lightbox.value.id}/${encodeURIComponent(lightbox.value.filename)}`}
             alt={lightbox.value.filename}
+            width={1}
+            height={1}
             class="max-w-full max-h-full object-contain px-16"
             onClick$={(e: any) => e.stopPropagation()} />
           {currentPhotoIndex.value < allPhotosAccum.value.length - 1 && (

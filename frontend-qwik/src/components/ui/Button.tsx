@@ -1,7 +1,7 @@
 /**
  * Stora Button — enterprise button with variants
  */
-import { component$, Slot } from "@builder.io/qwik";
+import { component$, Slot, type PropFunction } from "@builder.io/qwik";
 import { Icon } from "./Icon";
 
 type Variant = "primary" | "secondary" | "ghost" | "danger";
@@ -13,7 +13,7 @@ export const Button = component$<{
   loading?: boolean;
   disabled?: boolean;
   class?: string;
-  onClick$?: () => void;
+  onClick$?: PropFunction<() => void>;
   type?: "button" | "submit";
 }>(({ variant = "primary", size = "md", loading, disabled, class: cls = "", onClick$, type = "button" }) => {
   const base = "inline-flex items-center justify-center gap-2 font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.97]";
@@ -35,7 +35,7 @@ export const Button = component$<{
 
 export const Input = component$<{
   value?: string;
-  onInput$?: (e: Event) => void;
+  onInput$?: PropFunction<(e: Event) => void>;
   placeholder?: string;
   label?: string;
   error?: string;

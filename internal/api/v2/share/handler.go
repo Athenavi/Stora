@@ -1178,6 +1178,8 @@ func (h *Handler) ShareFileUpload(w http.ResponseWriter, r *http.Request) {
 
 	// The uploaded content is a new file item, so it needs its own thumbnail.
 	fileapi.EnqueueThumbnail(h.db, fileID)
+	fileapi.EnqueueOCR(h.db, fileID)
+	fileapi.ReindexSearch(h.db, fileID)
 	writeJSON(w, http.StatusCreated, map[string]interface{}{"file_id": fileID, "filename": filename})
 }
 

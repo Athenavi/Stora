@@ -1,7 +1,7 @@
 /**
  * Stora Preview Panel — floating slide-in pane with full metadata, tags, category, actions
  */
-import { component$, useSignal, useVisibleTask$, $ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, $, type PropFunction } from "@builder.io/qwik";
 import { api, type FileItem } from "~/lib/api";
 import { listFileTags, assignFileTags, listUserTags, createTag } from "~/lib/api/files";
 import { fmtSize } from "~/utils/format";
@@ -17,9 +17,9 @@ function fmtDuration(s: number): string {
   return `${m}:${String(sec).padStart(2, "0")}`;
 }
 
-const FILE_TYPES = ["image", "video", "audio", "document", "text", "archive", "other"];
+const _FILE_TYPES = ["image", "video", "audio", "document", "text", "archive", "other"];
 
-export default component$<{ file: FileItem | null; onClose$: () => void; onFullscreen$?: (fileId: number) => void }>(({ file, onClose$, onFullscreen$ }) => {
+export default component$<{ file: FileItem | null; onClose$: PropFunction<() => void>; onFullscreen$?: PropFunction<(fileId: number) => void> }>(({ file, onClose$, onFullscreen$ }) => {
   const detail = useSignal<FileItem | null>(null);
   const textContent = useSignal<string | null>(null);
   const fileTags = useSignal<{ id: number; name: string; color: string | null }[]>([]);
@@ -92,7 +92,7 @@ export default component$<{ file: FileItem | null; onClose$: () => void; onFulls
     } catch {}
   });
 
-  const setFileType = $(async (ft: string) => {
+  const _setFileType = $(async (ft: string) => {
     if (!file) return;
     try {
       await api.patch(`/files/${file.id}`, { file_type: ft });
@@ -121,6 +121,7 @@ export default component$<{ file: FileItem | null; onClose$: () => void; onFulls
         <div class="flex items-center justify-center bg-black/5 p-4 max-h-[40vh]">
           {d.file_type === "image" ? (
             <img src={`/api/v2/files/${d.id}/thumbnail?size=lg`} alt={d.filename}
+              width={1024} height={1024}
               class="max-w-full max-h-full object-contain rounded-lg shadow-lg" loading="lazy" />
           ) : (
             <video controls class="max-w-full max-h-full rounded-lg shadow-lg">

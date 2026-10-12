@@ -7,12 +7,13 @@
  *     onLoadMore$={() => fetchNextPage()}
  *   />
  */
-import { component$, useVisibleTask$, $, Slot } from "@builder.io/qwik";
+import { component$, useVisibleTask$, type PropFunction } from "@builder.io/qwik";
 
 interface Props {
   hasMore: boolean;
   loading: boolean;
-  onLoadMore$: () => void;
+  /** 回调型 prop 必须声明为 PropFunction/QRL，否则无法跨 $ 边界序列化。 */
+  onLoadMore$: PropFunction<() => void>;
   threshold?: number;
 }
 

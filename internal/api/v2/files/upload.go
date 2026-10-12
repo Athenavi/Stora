@@ -466,6 +466,8 @@ func (h *UploadHandler) CompleteUpload(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	EnqueueThumbnail(h.db, fileID)
+	EnqueueOCR(h.db, fileID)
+	ReindexSearch(h.db, fileID)
 
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"file_id":   fileID,

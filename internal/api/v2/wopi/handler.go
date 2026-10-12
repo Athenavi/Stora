@@ -177,6 +177,8 @@ func (h *Handler) PutFile(w http.ResponseWriter, r *http.Request) {
 
 	// Edited in Office — the thumbnail no longer reflects the content.
 	fileapi.EnqueueThumbnail(h.db, fileID)
+	fileapi.EnqueueOCR(h.db, fileID)
+	fileapi.ReindexSearch(h.db, fileID)
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{"message": "saved"})
 }

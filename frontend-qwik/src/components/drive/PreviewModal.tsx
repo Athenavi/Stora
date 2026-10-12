@@ -2,13 +2,14 @@
  * Stora Preview Modal — 响应式全屏预览模态框
  * 在当前位置弹出，不打开新页面/新窗口
  */
-import { component$, useSignal, useVisibleTask$ } from "@builder.io/qwik";
+import { component$, useSignal, useVisibleTask$, type PropFunction } from "@builder.io/qwik";
 import { api } from "~/lib/api";
 import { Icon } from "~/components/ui/Icon";
 
 interface Props {
   fileId: number;
-  onClose$: () => void;
+  /** 回调型 prop 必须声明为 PropFunction/QRL，否则无法跨 $ 边界序列化。 */
+  onClose$: PropFunction<() => void>;
 }
 
 export default component$<Props>(({ fileId, onClose$ }) => {

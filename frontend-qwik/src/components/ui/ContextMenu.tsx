@@ -2,14 +2,14 @@
  * Stora ContextMenu — right-click context menu for files/folders
  * Lightweight: no dependencies, pure positioned dropdown.
  */
-import { component$, useSignal, useVisibleTask$, Slot } from "@builder.io/qwik";
+import { component$, useSignal, Slot, $, type PropFunction } from "@builder.io/qwik";
 
 export interface MenuItem {
   label: string;
   icon?: string;
   danger?: boolean;
   divider?: boolean;
-  onClick$: () => void;
+  onClick$: PropFunction<() => void>;
 }
 
 interface ContextMenuProps {
@@ -20,16 +20,17 @@ export default component$<ContextMenuProps>(({ items }) => {
   const visible = useSignal(false);
   const pos = useSignal({ x: 0, y: 0 });
 
-  const show = (e: MouseEvent) => {
-    e.preventDefault();
+  // preventDefault 交给 JSX 的 preventdefault:contextmenu 声明式处理：包进 QRL 后
+  // 它在事件处理结束后才执行，等于无效（这正是 no-async-prevent-default 提醒的）。
+  const show = $((e: MouseEvent) => {
     pos.value = { x: e.clientX, y: e.clientY };
     visible.value = true;
-  };
+  });
 
-  const hide = () => { visible.value = false; };
+  const hide = $(() => { visible.value = false; });
 
   return (
-    <div onContextMenu$={show}>
+    <div onContextMenu$={show} preventdefault:contextmenu>
       <Slot />
       {visible.value && (
         <>

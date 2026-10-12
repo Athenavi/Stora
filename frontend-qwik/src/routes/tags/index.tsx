@@ -24,7 +24,7 @@ const TAG_BG: Record<string, string> = {
 
 export default component$(() => {
   const tags = useTags();
-  const nav = useNavigate();
+  const _nav = useNavigate();
   const items = useSignal<Tag[]>(tags.value || []);
   const showCreate = useSignal(false);
   const editId = useSignal(0);

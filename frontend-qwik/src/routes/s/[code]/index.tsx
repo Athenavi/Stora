@@ -64,7 +64,7 @@ export default component$(() => {
     selFileIds.value = s;
   });
 
-  const toggleAll = $((ids: number[]) => {
+  const _toggleAll = $((ids: number[]) => {
     if (selFileIds.value.size === ids.length) { selFileIds.value = new Set(); }
     else { selFileIds.value = new Set(ids); }
   });
@@ -72,10 +72,10 @@ export default component$(() => {
   // ── Folder content cache ──
   // Key: folderId, Value: { folders, items, total, page, perPage, loading }
   const folderContents = useSignal<Map<number, {
-    folders: FolderEntry[]; items: any[]; total: number; page: number; perPage: number; loading: boolean; loadedRootItems?: any[]; rootTotal?: number; rootPage?: number;
+    folders: FolderEntry[]; items: any[]; total: number; page: number; perPage: number; loading: boolean; loadedRootItems?: any[]; rootTotal?: number; _rootPage?: number;
   }>>(new Map());
 
-  const PER_PAGE = 50;
+  const _PER_PAGE = 50;
   const FOLDER_PAGE = 50;
 
   const loadFolder = $(async (folderId: number, pg: number, pPg: number) => {
@@ -141,7 +141,7 @@ export default component$(() => {
     const folderItems = (s.items || []).filter((x: any) => x.is_folder);
     for (let i = 0; i < Math.min(3, folderItems.length); i++) {
       const fid = folderItems[i].id;
-      const fname = folderItems[i].filename;
+      const _fname = folderItems[i].filename;
       expandedFolders.value = new Set(expandedFolders.value).add(fid);
       const pl = preloaded.find((p: any) => p.id === fid);
       if (pl) {
@@ -180,7 +180,7 @@ export default component$(() => {
   const targetFolderName = useSignal("根目录");
   const saving = useSignal(false);
   const saveDone = useSignal(false);
-  const rootPage = useSignal(1);
+  const _rootPage = useSignal(1);
 
   const loadFolderTreeFn = $(async () => {
     try {
@@ -230,7 +230,7 @@ export default component$(() => {
   });
 
   // ── Collect all selected file IDs from expanded folders ──
-  const collectSelected = $((): number[] => {
+  const _collectSelected = $((): number[] => {
     return [...selFileIds.value];
   });
 
@@ -267,7 +267,7 @@ export default component$(() => {
               const d = res.data || res;
               if (d.need_password) { error.value = "密码错误"; return; }
               shareData.value = d;
-            } catch (e: any) { error.value = "验证失败"; }
+            } catch { error.value = "验证失败"; }
             finally { loading.value = false; }
           }} disabled={loading.value} class="w-full h-12 text-sm font-semibold text-white bg-stora-primary hover:bg-[#1D4ED8]">
             {loading.value ? "验证中..." : "确认"}
