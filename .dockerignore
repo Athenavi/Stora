@@ -1,0 +1,27 @@
+# 构建时不需要进上下文的都排掉，镜像更小、构建更快。
+.git
+.github
+.idea
+.reasonix
+.agents
+.qoderignore
+
+# 密钥绝不进镜像（运行时用 --env-file 注入）
+.env
+.env.local
+.env.production
+
+# 前端产物由 Nginx 托管，服务端不读
+frontend-qwik
+node_modules
+
+# 运行时数据与构建产物
+storage
+temp
+dist
+build
+*.exe
+
+# 文档与设计稿
+docs
+*.md

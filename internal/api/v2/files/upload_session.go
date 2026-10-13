@@ -112,8 +112,11 @@ func (h *UploadSessionHandler) UploadFragment(w http.ResponseWriter, r *http.Req
 	h.db.Exec(`UPDATE upload_sessions SET received_bytes=$1,updated_at=$2 WHERE session_id=$3`, nr, time.Now().Format(time.RFC3339), sid)
 
 	if nr >= ts {
-		h.finalize(sid, userID, fn, pth, ts, fragDir)
-		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{"status": "completed", "session_id": sid})
+		fileID, hash := h.finalize(sid, userID, fn, pth, ts, fragDir)
+		utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "completed", "session_id": sid,
+			"file_id": fileID, "file_hash": hash,
+		})
 	} else {
 		utils.WriteJSON(w, http.StatusAccepted, map[string]interface{}{"status": "active", "received": nr, "total": ts})
 	}
@@ -132,19 +135,23 @@ func (h *UploadSessionHandler) GetSessionStatus(w http.ResponseWriter, r *http.R
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{"status": st, "received": rcvd, "total": total})
 }
 
-func (h *UploadSessionHandler) finalize(sid string, uid int64, fn, pth string, totalSize int64, fragDir string) {
+// finalize 合并分片并落库，返回 file_id 与内容 hash。
+//
+// 返回值是必要的：同步客户端要在同一次调用里拿到基线（id + hash），否则只能
+// 等下一轮 /sync/changes 反查，中间这段时间状态里缺 id，无法判断远端变更归属。
+func (h *UploadSessionHandler) finalize(sid string, uid int64, fn, pth string, totalSize int64, fragDir string) (int64, string) {
 	var readers []io.Reader
 	for i := int64(0); i < totalSize; {
 		data, err := os.ReadFile(filepath.Join(fragDir, fmt.Sprintf("%020d", i)))
 		if err != nil {
-			return
+			return 0, ""
 		}
 		readers = append(readers, bytes.NewReader(data))
 		i += int64(len(data))
 	}
 	fh, sp, err := h.storage.StoreHash(io.MultiReader(readers...))
 	if err != nil {
-		return
+		return 0, ""
 	}
 	now := time.Now().Format(time.RFC3339)
 
@@ -171,14 +178,18 @@ func (h *UploadSessionHandler) finalize(sid string, uid int64, fn, pth string, t
 	err = h.db.QueryRow(`INSERT INTO file_items (user_id,folder_id,filename,original_filename,file_path,file_size,mime_type,file_type,file_hash,is_folder,created_at,updated_at) VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,false,$9,$9) RETURNING id`,
 		uid, pid, fn, sp, totalSize, "application/octet-stream", "other", fh, now).Scan(&fileID)
 	if err != nil {
+		// 同名文件已存在：覆盖内容，并把 fileID 指向既有记录
+		// （原来这里忘了赋值，导致重复上传时返回 file_id = 0）。
 		var eid int64
 		h.db.QueryRow(`SELECT id FROM file_items WHERE user_id=$1 AND folder_id IS NOT DISTINCT FROM $2 AND filename=$3 AND is_folder=false AND deleted_at IS NULL`, uid, pid, fn).Scan(&eid)
 		if eid > 0 {
 			h.db.Exec(`UPDATE file_items SET file_path=$1,file_hash=$2,file_size=$3,updated_at=$4 WHERE id=$5`, sp, fh, totalSize, now, eid)
+			fileID = eid
 		}
 	}
 	h.db.Exec(`UPDATE upload_sessions SET status='completed',updated_at=$1 WHERE session_id=$2`, now, sid)
 	os.RemoveAll(fragDir)
+	return fileID, fh
 }
 
 // Ensure uuid import is available

@@ -496,6 +496,66 @@ func (h *BlockHandler) ListSnapshots(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, map[string]interface{}{"snapshots": snaps})
 }
 
+// folderPaths 把每个文件夹的 id 映射到它的完整路径（不带前导斜杠）。
+// 根目录不会出现在结果里，调用方以空串表示。
+//
+// ponytail: 每次调用都会全量拉一次该用户的文件夹树，万级目录约几毫秒。若
+// /sync/changes 成为热点，可改为递归 CTE 或按用户缓存；签名不用变。
+func (h *BlockHandler) folderPaths(userID int64) map[int64]string {
+	rows, err := h.db.Query(
+		`SELECT id, filename, folder_id FROM file_items
+		 WHERE user_id = $1 AND is_folder = true AND deleted_at IS NULL`,
+		userID,
+	)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	type folder struct {
+		name   string
+		parent *int64
+	}
+	all := make(map[int64]folder)
+	for rows.Next() {
+		var id int64
+		var name string
+		var parent *int64
+		if err := rows.Scan(&id, &name, &parent); err == nil {
+			all[id] = folder{name: name, parent: parent}
+		}
+	}
+
+	out := make(map[int64]string, len(all))
+	var resolve func(id int64, depth int) string
+	resolve = func(id int64, depth int) string {
+		if depth > 64 { // 数据损坏形成环时的保护，避免无限递归
+			return ""
+		}
+		if p, ok := out[id]; ok {
+			return p
+		}
+		f, ok := all[id]
+		if !ok {
+			return ""
+		}
+		prefix := ""
+		if f.parent != nil {
+			prefix = resolve(*f.parent, depth+1)
+		}
+		p := f.name
+		if prefix != "" {
+			p = prefix + "/" + f.name
+		}
+		out[id] = p
+		return p
+	}
+	for id := range all {
+		resolve(id, 0)
+	}
+	return out
+}
+
 func (h *BlockHandler) SyncChanges(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
 	since := r.URL.Query().Get("since")
@@ -510,7 +570,7 @@ func (h *BlockHandler) SyncChanges(w http.ResponseWriter, r *http.Request) {
 
 	if since != "" {
 		rows, err = h.db.Query(
-			`SELECT fi.id, fi.filename, fi.file_hash, fi.file_size, fi.updated_at,
+			`SELECT fi.id, fi.filename, fi.folder_id, fi.file_hash, fi.file_size, fi.updated_at,
 			        CASE WHEN fi.deleted_at IS NOT NULL THEN 'deleted' ELSE 'modified' END
 			 FROM file_items fi
 			 WHERE fi.user_id = $1 AND (fi.updated_at > $2 OR fi.deleted_at > $2)
@@ -521,7 +581,7 @@ func (h *BlockHandler) SyncChanges(w http.ResponseWriter, r *http.Request) {
 		)
 	} else {
 		rows, err = h.db.Query(
-			`SELECT fi.id, fi.filename, fi.file_hash, fi.file_size, fi.updated_at,
+			`SELECT fi.id, fi.filename, fi.folder_id, fi.file_hash, fi.file_size, fi.updated_at,
 			        CASE WHEN fi.deleted_at IS NOT NULL THEN 'deleted' ELSE 'modified' END
 			 FROM file_items fi
 			 WHERE fi.user_id = $1 AND fi.is_folder = false
@@ -536,9 +596,15 @@ func (h *BlockHandler) SyncChanges(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
+	// 同步客户端以「路径」为键，而这里天然只能查到 filename——所以把 folder_id
+	// 沿父链还原成完整路径。没有它，客户端无法判断一个远端变更落在本地哪个目录
+	// （远端新增的文件尤其如此）。
+	folders := h.folderPaths(userID)
+
 	type Change struct {
 		ID       int64  `json:"id"`
 		Filename string `json:"filename"`
+		Path     string `json:"path"`
 		Hash     string `json:"hash,omitempty"`
 		Size     int64  `json:"size"`
 		Time     string `json:"time"`
@@ -549,8 +615,18 @@ func (h *BlockHandler) SyncChanges(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var c Change
 		var t string
-		rows.Scan(&c.ID, &c.Filename, &c.Hash, &c.Size, &t, &c.Action)
+		var folderID *int64
+		rows.Scan(&c.ID, &c.Filename, &folderID, &c.Hash, &c.Size, &t, &c.Action)
 		c.Time = t
+		dir := ""
+		if folderID != nil {
+			dir = folders[*folderID]
+		}
+		if dir != "" {
+			c.Path = dir + "/" + c.Filename
+		} else {
+			c.Path = c.Filename
+		}
 		if t > lastTime {
 			lastTime = t
 		}
