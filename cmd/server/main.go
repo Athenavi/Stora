@@ -426,6 +426,8 @@ func main() {
 			r.Get("/sync/changes", blockHandler.SyncChanges)
 			r.Post("/sync/upload", blockHandler.SyncUpload)
 			r.Post("/sync/upload/complete", blockHandler.SyncUploadComplete)
+			// 块级增量落地：客户端只传变化的块，服务端按清单拼装并写 file_blocks
+			r.Post("/sync/upload/blocks", blockHandler.SyncUploadBlocks)
 			r.Post("/sync/upload/session", sessionHandler.CreateSession)
 			r.Put("/sync/upload/session/{sessionId}", sessionHandler.UploadFragment)
 			r.Get("/sync/upload/session/{sessionId}", sessionHandler.GetSessionStatus)

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -184,6 +185,203 @@ func (h *BlockHandler) GetFileManifest(w http.ResponseWriter, r *http.Request) {
 		"block_size": 4194304,
 		"blocks":     blocks,
 	})
+}
+
+// SyncUploadBlocks 按「块清单」落地一个文件：客户端只上传变化过的块，
+// 这里负责把块拼起来、写 file_items，并补写 file_blocks。
+//
+// 这是块级增量同步的最后一环，也是 file_blocks 唯一的写入者 —— 在此之前
+// 这张表从建立起就没人写过，GET /files/{id}/manifest 恒返回空清单，
+// 于是"只传变化的块"永远无从谈起。
+func (h *BlockHandler) SyncUploadBlocks(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.GetUserID(r.Context())
+	if !ok {
+		utils.WriteError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var req struct {
+		Path     string `json:"path"`
+		FileSize int64  `json:"file_size"`
+		Blocks   []struct {
+			Index  int    `json:"index"`
+			Hash   string `json:"hash"`
+			Offset int64  `json:"offset"`
+			Size   int    `json:"size"`
+		} `json:"blocks"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Path == "" || len(req.Blocks) == 0 {
+		utils.WriteError(w, http.StatusBadRequest, "path and non-empty blocks required")
+		return
+	}
+
+	cleanPath := filepath.Clean(req.Path)
+	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, "..") ||
+		strings.HasPrefix(cleanPath, "/") || strings.HasPrefix(cleanPath, "\\") {
+		utils.WriteError(w, http.StatusBadRequest, "invalid path")
+		return
+	}
+	req.Path = cleanPath
+
+	// 清单里各块大小之和必须等于声明的文件大小，否则拼出来的是坏文件。
+	var declared int64
+	for _, b := range req.Blocks {
+		declared += int64(b.Size)
+	}
+	if declared != req.FileSize {
+		utils.WriteError(w, http.StatusBadRequest, "block sizes do not sum to file_size")
+		return
+	}
+
+	sort.Slice(req.Blocks, func(i, j int) bool { return req.Blocks[i].Index < req.Blocks[j].Index })
+
+	// 先确认每块都在块池里。缺了就明确报出来让客户端补传，
+	// 而不是静默拼出一个不完整的文件。
+	type missingBlock struct {
+		Index int    `json:"index"`
+		Hash  string `json:"hash"`
+	}
+	missing := make([]missingBlock, 0)
+	paths := make([]string, 0, len(req.Blocks))
+	for _, b := range req.Blocks {
+		var sp string
+		if err := h.db.QueryRow(`SELECT storage_path FROM block_store WHERE hash = $1`, b.Hash).Scan(&sp); err != nil {
+			missing = append(missing, missingBlock{Index: b.Index, Hash: b.Hash})
+			paths = append(paths, "")
+			continue
+		}
+		paths = append(paths, sp)
+	}
+	if len(missing) > 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"message": "some blocks are missing",
+			"missing": missing,
+		})
+		return
+	}
+
+	readers := make([]io.Reader, 0, len(paths))
+	closers := make([]io.Closer, 0, len(paths))
+	for _, sp := range paths {
+		rd, err := h.storage.Retrieve(sp)
+		if err != nil {
+			utils.WriteError(w, http.StatusInternalServerError, "block read failed")
+			return
+		}
+		closers = append(closers, rd)
+		readers = append(readers, rd)
+	}
+	defer func() {
+		for _, c := range closers {
+			c.Close()
+		}
+	}()
+
+	fileHash, storagePath, err := h.storage.StoreHash(io.MultiReader(readers...))
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "assemble failed")
+		return
+	}
+
+	now := time.Now().Format(time.RFC3339)
+
+	// file_blocks.file_hash 的外键指向的是 file_fingerprints(hash)，**不是**
+	// file_items。少了这一步，下面写清单会撞外键约束——而且因为 Exec 的错误
+	// 没被检查而静默失败，症状就是 GET /files/{id}/manifest 永远返回空 blocks，
+	// 于是"只传变化的块"根本无从谈起。
+	h.db.Exec(`INSERT INTO file_fingerprints (hash, file_size, mime_type, storage_path, reference_count, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, 1, $5, $5)
+		ON CONFLICT (hash) DO UPDATE SET reference_count = file_fingerprints.reference_count + 1, updated_at = $5`,
+		fileHash, req.FileSize, "application/octet-stream", storagePath, now)
+
+	fileName := filepath.Base(req.Path)
+	dirPath := filepath.Dir(req.Path)
+
+	// 按路径建父目录链（与 SyncUpload 同一规则）
+	var parentID *int64
+	if dirPath != "." {
+		for _, seg := range strings.Split(dirPath, string(filepath.Separator)) {
+			if seg == "" || seg == "." {
+				continue
+			}
+			var folderID int64
+			if parentID != nil {
+				h.db.QueryRow(`SELECT id FROM file_items WHERE user_id = $1 AND folder_id = $2 AND filename = $3 AND is_folder = true AND deleted_at IS NULL`,
+					userID, *parentID, seg).Scan(&folderID)
+			} else {
+				h.db.QueryRow(`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NULL AND filename = $2 AND is_folder = true AND deleted_at IS NULL`,
+					userID, seg).Scan(&folderID)
+			}
+			if folderID == 0 {
+				if err := h.db.QueryRow(`INSERT INTO file_items (user_id, folder_id, filename, is_folder, created_at, updated_at)
+					VALUES ($1, $2, $3, true, $4, $4) RETURNING id`,
+					userID, parentID, seg, now).Scan(&folderID); err != nil {
+					utils.WriteError(w, http.StatusInternalServerError, "create folder failed")
+					return
+				}
+			}
+			id := folderID
+			parentID = &id
+		}
+	}
+
+	var fileID int64
+	err = h.db.QueryRow(`INSERT INTO file_items (user_id, folder_id, filename, original_filename, file_path, file_size,
+		 mime_type, file_type, file_hash, is_folder, created_at, updated_at)
+		 VALUES ($1, $2, $3, $3, $4, $5, $6, $7, $8, false, $9, $9) RETURNING id`,
+		userID, parentID, fileName, storagePath, req.FileSize,
+		"application/octet-stream", detectFileTypeByName(fileName), fileHash, now,
+	).Scan(&fileID)
+	if err != nil {
+		// 同名文件已存在：覆盖内容并复用它的 id
+		var existingID int64
+		h.db.QueryRow(`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
+			 AND filename = $3 AND is_folder = false AND deleted_at IS NULL`,
+			userID, parentID, fileName,
+		).Scan(&existingID)
+		if existingID == 0 {
+			utils.WriteError(w, http.StatusInternalServerError, "insert failed")
+			return
+		}
+		h.db.Exec(`UPDATE file_items SET file_path = $1, file_hash = $2, file_size = $3, updated_at = $4 WHERE id = $5`,
+			storagePath, fileHash, req.FileSize, now, existingID)
+		fileID = existingID
+	}
+
+	// 记录「文件 → 块」清单：下一次增量同步据此算出哪些块可以跳过。
+	h.db.Exec(`DELETE FROM file_blocks WHERE file_hash = $1`, fileHash)
+	for _, b := range req.Blocks {
+		h.db.Exec(`INSERT INTO file_blocks (file_hash, block_index, block_hash, block_offset, block_size)
+			VALUES ($1, $2, $3, $4, $5)`, fileHash, b.Index, b.Hash, b.Offset, b.Size)
+	}
+
+	utils.WriteJSON(w, http.StatusCreated, map[string]interface{}{
+		"file_id":   fileID,
+		"file_hash": fileHash,
+		"file_size": req.FileSize,
+		"filename":  fileName,
+		"path":      req.Path,
+	})
+}
+
+// detectFileTypeByName 按扩展名判定 file_type（与 SyncUpload 内联的判定保持一致）。
+func detectFileTypeByName(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg":
+		return "image"
+	case ".mp4", ".webm", ".avi", ".mkv", ".mov":
+		return "video"
+	case ".mp3", ".wav", ".ogg", ".flac":
+		return "audio"
+	case ".doc", ".docx", ".pdf", ".txt", ".md":
+		return "document"
+	case ".zip", ".rar", ".7z", ".tar", ".gz":
+		return "archive"
+	}
+	return "other"
 }
 
 // SyncUpload uploads a file with its full relative path — auto-creates folders.

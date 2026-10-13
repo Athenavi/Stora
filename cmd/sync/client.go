@@ -80,27 +80,32 @@ func (c *Client) do(req *http.Request, out any) error {
 }
 
 // Login 用账号密码换一个 access token。
+//
+// [FIX] 两点：服务端登录处理器走 r.FormValue 取值，发 JSON body 会被判成
+// "username and password required"（HTTP 400）；且 access_token 在 data 里。
 func (c *Client) Login(ctx context.Context, username, password string) (string, error) {
-	body, err := json.Marshal(map[string]string{"username": username, "password": password})
+	form := url.Values{}
+	form.Set("username", username)
+	form.Set("password", password)
+
+	req, err := c.newRequest(ctx, http.MethodPost, "/auth/login", strings.NewReader(form.Encode()))
 	if err != nil {
 		return "", err
 	}
-	req, err := c.newRequest(ctx, http.MethodPost, "/auth/login", bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	var out struct {
-		AccessToken string `json:"access_token"`
+		Data struct {
+			AccessToken string `json:"access_token"`
+		} `json:"data"`
 	}
 	if err := c.do(req, &out); err != nil {
 		return "", err
 	}
-	if out.AccessToken == "" {
+	if out.Data.AccessToken == "" {
 		return "", fmt.Errorf("服务端没有返回 access_token")
 	}
-	return out.AccessToken, nil
+	return out.Data.AccessToken, nil
 }
 
 // Changes 拉取 since 之后的远端变更，同时返回服务端给的下一轮游标。
@@ -116,22 +121,24 @@ func (c *Client) Changes(ctx context.Context, since string) ([]RemoteChange, str
 	}
 
 	var out struct {
-		Changes []struct {
-			ID       int64  `json:"id"`
-			Filename string `json:"filename"`
-			Path     string `json:"path"`
-			Hash     string `json:"hash"`
-			Size     int64  `json:"size"`
-			Action   string `json:"action"`
-		} `json:"changes"`
-		Next string `json:"next"`
+		Data struct {
+			Changes []struct {
+				ID       int64  `json:"id"`
+				Filename string `json:"filename"`
+				Path     string `json:"path"`
+				Hash     string `json:"hash"`
+				Size     int64  `json:"size"`
+				Action   string `json:"action"`
+			} `json:"changes"`
+			Next string `json:"next"`
+		} `json:"data"`
 	}
 	if err := c.do(req, &out); err != nil {
 		return nil, since, err
 	}
 
-	changes := make([]RemoteChange, 0, len(out.Changes))
-	for _, ch := range out.Changes {
+	changes := make([]RemoteChange, 0, len(out.Data.Changes))
+	for _, ch := range out.Data.Changes {
 		rel := ch.Path
 		if rel == "" { // 老服务端不返回 path 时退化成文件名，至少不会 panic
 			rel = ch.Filename
@@ -144,7 +151,7 @@ func (c *Client) Changes(ctx context.Context, since string) ([]RemoteChange, str
 			Action: ch.Action,
 		})
 	}
-	next := out.Next
+	next := out.Data.Next
 	if next == "" {
 		next = since
 	}
@@ -183,13 +190,15 @@ func (c *Client) uploadSmall(ctx context.Context, rel string, f *os.File) (int64
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
 	var out struct {
-		FileID int64  `json:"file_id"`
-		Hash   string `json:"file_hash"`
+		Data struct {
+			FileID int64  `json:"file_id"`
+			Hash   string `json:"file_hash"`
+		} `json:"data"`
 	}
 	if err := c.do(req, &out); err != nil {
 		return 0, "", err
 	}
-	return out.FileID, out.Hash, nil
+	return out.Data.FileID, out.Data.Hash, nil
 }
 
 // uploadSession 逐段上传并在服务端确认完成时拿到基线。
@@ -211,12 +220,14 @@ func (c *Client) uploadSession(ctx context.Context, rel string, f *os.File, size
 	req.Header.Set("Content-Type", "application/json")
 
 	var created struct {
-		SessionID string `json:"session_id"`
+		Data struct {
+			SessionID string `json:"session_id"`
+		} `json:"data"`
 	}
 	if err := c.do(req, &created); err != nil {
 		return 0, "", err
 	}
-	if created.SessionID == "" {
+	if created.Data.SessionID == "" {
 		return 0, "", fmt.Errorf("服务端没有返回 session_id")
 	}
 
@@ -230,25 +241,27 @@ func (c *Client) uploadSession(ctx context.Context, rel string, f *os.File, size
 			return 0, "", err
 		}
 
-		req, err := c.newRequest(ctx, http.MethodPut, "/sync/upload/session/"+created.SessionID, bytes.NewReader(part))
+		req, err := c.newRequest(ctx, http.MethodPut, "/sync/upload/session/"+created.Data.SessionID, bytes.NewReader(part))
 		if err != nil {
 			return 0, "", err
 		}
 		req.Header.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, end-1, size))
 
 		var st struct {
-			Status string `json:"status"`
-			FileID int64  `json:"file_id"`
-			Hash   string `json:"file_hash"`
+			Data struct {
+				Status string `json:"status"`
+				FileID int64  `json:"file_id"`
+				Hash   string `json:"file_hash"`
+			} `json:"data"`
 		}
 		if err := c.do(req, &st); err != nil {
 			return 0, "", err
 		}
-		if st.Status == "completed" {
-			return st.FileID, st.Hash, nil
+		if st.Data.Status == "completed" {
+			return st.Data.FileID, st.Data.Hash, nil
 		}
 	}
-	return 0, "", fmt.Errorf("分片已全部发出但服务端未确认完成（会话 %s）", created.SessionID)
+	return 0, "", fmt.Errorf("分片已全部发出但服务端未确认完成（会话 %s）", created.Data.SessionID)
 }
 
 // Download 下载到 dst。
