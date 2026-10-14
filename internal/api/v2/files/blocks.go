@@ -336,15 +336,29 @@ func (h *BlockHandler) SyncUploadBlocks(w http.ResponseWriter, r *http.Request) 
 		"application/octet-stream", detectFileTypeByName(fileName), fileHash, now,
 	).Scan(&fileID)
 	if err != nil {
-		// 同名文件已存在：覆盖内容并复用它的 id
+		// 同名文件已存在：覆盖内容并复用它的 id。
 		var existingID int64
-		h.db.QueryRow(`SELECT id FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
+		var oldHash string
+		h.db.QueryRow(`SELECT id, coalesce(file_hash, '') FROM file_items WHERE user_id = $1 AND folder_id IS NOT DISTINCT FROM $2
 			 AND filename = $3 AND is_folder = false AND deleted_at IS NULL`,
 			userID, parentID, fileName,
-		).Scan(&existingID)
+		).Scan(&existingID, &oldHash)
 		if existingID == 0 {
 			utils.WriteError(w, http.StatusInternalServerError, "insert failed")
 			return
+		}
+		// 覆盖前先把旧内容记进 file_versions —— 与网页端/WebDAV 上传走同一套留档。
+		// 不补这一步的话，同步上传过的文件在服务端永远没有版本历史，
+		// GET /files/{id}/versions 恒为空（这张表全仓库有 5 处写入者，唯独同步路径没有）。
+		h.db.Exec(`INSERT INTO file_versions (file_id, version_num, file_path, file_size, file_hash, storage_driver, created_by, created_at)
+			SELECT $1, COALESCE((SELECT MAX(version_num) FROM file_versions WHERE file_id = $1), 0) + 1,
+			       file_path, file_size, file_hash, storage_driver, $2, $3 FROM file_items WHERE id = $1`,
+			existingID, userID, now)
+
+		// 内容变了就先把旧内容的引用释放掉。不释放的话 file_fingerprints
+		// 的 reference_count 只增不减，旧 hash 下的 file_blocks 也永远不回收。
+		if oldHash != "" && oldHash != fileHash {
+			releaseFingerprint(h.db, oldHash)
 		}
 		h.db.Exec(`UPDATE file_items SET file_path = $1, file_hash = $2, file_size = $3, updated_at = $4 WHERE id = $5`,
 			storagePath, fileHash, req.FileSize, now, existingID)
@@ -365,6 +379,19 @@ func (h *BlockHandler) SyncUploadBlocks(w http.ResponseWriter, r *http.Request) 
 		"filename":  fileName,
 		"path":      req.Path,
 	})
+}
+
+// releaseFingerprint 释放一次 file_fingerprints 引用。
+// 计数归零就删掉该条，file_blocks 会随外键 on delete cascade 一起清理，
+// 块池里的内容本身留给运维侧回收（同一份内容可能仍被其他记录引用）。
+func releaseFingerprint(db *sql.DB, hash string) {
+	if hash == "" {
+		return
+	}
+	if _, err := db.Exec(`UPDATE file_fingerprints SET reference_count = reference_count - 1 WHERE hash = $1`, hash); err != nil {
+		return
+	}
+	db.Exec(`DELETE FROM file_fingerprints WHERE hash = $1 AND reference_count <= 0`, hash)
 }
 
 // detectFileTypeByName 按扩展名判定 file_type（与 SyncUpload 内联的判定保持一致）。

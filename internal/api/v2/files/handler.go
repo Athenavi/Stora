@@ -1487,6 +1487,18 @@ func (h *Handler) PreviewFile(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Close()
 
+	// mime_type 可能是空的（历史数据、同步上传等）。空 Content-Type 会让浏览器/
+	// WebView2 无法判断文件类型，从而把 inline 预览退化成下载——表现为"PDF、HTML
+	// 点开没反应或弹出下载"。这里按扩展名兜底推断。
+	if mimeType == "" || mimeType == "application/octet-stream" {
+		if guessed := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename))); guessed != "" {
+			mimeType = guessed
+		}
+	}
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+
 	w.Header().Set("Content-Type", mimeType)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("inline", map[string]string{"filename": filename}))
 	w.WriteHeader(http.StatusOK)
