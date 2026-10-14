@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Athenavi/Stora/internal/middleware"
 	"github.com/Athenavi/Stora/pkg/audit"
+	"github.com/Athenavi/Stora/pkg/auth"
 	"github.com/Athenavi/Stora/pkg/utils"
 	"github.com/go-chi/chi/v5"
 )
@@ -397,15 +399,99 @@ func (h *Handler) CreateNotification(w http.ResponseWriter, r *http.Request) {
 
 // ---------- 2FA ----------
 
+// Setup2FA 开始绑定 TOTP：生成密钥并暂存，但**先不启用**。
+//
+// 必须等用户用验证器算出一次验证码、再调 /auth/2fa/verify 确认，才把
+// is_2fa_enabled 打开。否则用户一旦没扫上码（或验证器装错），就会被锁在门外 ——
+// 之前的实现正是只把标志位置 true 就返回，既不生成密钥也不校验，登录流程更是
+// 完全不看这个标志，等于一个只有名字的双因素。
 func (h *Handler) Setup2FA(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
-	h.db.Exec(`UPDATE users SET is_2fa_enabled = true WHERE id = $1`, userID)
-	writeJSON(w, http.StatusOK, map[string]string{"message": "2FA enabled"})
+
+	var username string
+	if err := h.db.QueryRow(
+		`SELECT COALESCE(username, '') FROM users WHERE id = $1`, userID,
+	).Scan(&username); err != nil {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+
+	secret, err := auth.GenerateTOTPSecret()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot generate secret")
+		return
+	}
+
+	// 重新绑定会让旧验证器失效，这是有意的：换手机走的就是这条路
+	if _, err := h.db.Exec(
+		`UPDATE users SET totp_secret = $1, is_2fa_enabled = false WHERE id = $2`,
+		secret, userID,
+	); err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot save secret")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"secret":      secret,
+		"otpauth_url": auth.BuildOtpauthURL("Stora", username, secret),
+		"enabled":     false,
+	})
+}
+
+// Verify2FA 用一次验证码确认绑定。确认通过才真正启用，并返回一次性恢复码。
+func (h *Handler) Verify2FA(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.GetUserID(r.Context())
+
+	code := r.FormValue("code")
+	if code == "" {
+		var body struct {
+			Code string `json:"code"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err == nil {
+			code = body.Code
+		}
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		writeError(w, http.StatusBadRequest, "code required")
+		return
+	}
+
+	var secret sql.NullString
+	if err := h.db.QueryRow(`SELECT totp_secret FROM users WHERE id = $1`, userID).Scan(&secret); err != nil ||
+		!secret.Valid || secret.String == "" {
+		writeError(w, http.StatusBadRequest, "call /auth/2fa/setup first")
+		return
+	}
+
+	if !auth.VerifyTOTP(secret.String, code) {
+		writeError(w, http.StatusUnauthorized, "invalid code")
+		return
+	}
+
+	codes, err := auth.GenerateRecoveryCodes(8)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot generate recovery codes")
+		return
+	}
+
+	if _, err := h.db.Exec(
+		`UPDATE users SET is_2fa_enabled = true, backup_codes = $1 WHERE id = $2`,
+		strings.Join(codes, ","), userID,
+	); err != nil {
+		writeError(w, http.StatusInternalServerError, "cannot enable 2fa")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled":        true,
+		"recovery_codes": codes,
+	})
 }
 
 func (h *Handler) Disable2FA(w http.ResponseWriter, r *http.Request) {
 	userID, _ := middleware.GetUserID(r.Context())
-	h.db.Exec(`UPDATE users SET is_2fa_enabled = false, totp_secret = NULL WHERE id = $1`, userID)
+	h.db.Exec(`UPDATE users SET is_2fa_enabled = false, totp_secret = NULL, backup_codes = NULL WHERE id = $1`, userID)
 	writeJSON(w, http.StatusOK, map[string]string{"message": "2FA disabled"})
 }
 

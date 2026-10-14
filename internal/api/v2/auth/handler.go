@@ -106,10 +106,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	var user models.User
 	err := h.db.QueryRow(
-		`SELECT id, username, email, password, is_superuser, is_active, profile_picture, last_login_ip
+		`SELECT id, username, email, password, is_superuser, is_active, profile_picture, last_login_ip, is_2fa_enabled
 		 FROM users WHERE (username = $1 OR email = $1) AND is_active = true`,
 		username,
-	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.IsSuperuser, &user.IsActive, &user.ProfilePicture, &user.LastLoginIP)
+	).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.IsSuperuser, &user.IsActive, &user.ProfilePicture, &user.LastLoginIP, &user.Is2FAEnabled)
 
 	if err == sql.ErrNoRows {
 		audit.Log(h.db, audit.Entry{
@@ -137,14 +137,39 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 密码已经对了，但如果用户开了双因素，此时还不能发 token ——
+	// 先给一张短期的临时凭证，由 /auth/2fa/validate 换取真正的 token 对。
+	// 这一支以前完全不存在：is_2fa_enabled 被置 true 之后登录照样一路畅通。
+	if user.Is2FAEnabled {
+		challenge, err := h.jwtManager.GenerateTwoFactorToken(user.ID)
+		if err != nil {
+			utils.WriteError(w, http.StatusInternalServerError, "token generation failed")
+			return
+		}
+		utils.WriteJSON(w, http.StatusOK, map[string]any{
+			"requires_2fa": true,
+			"challenge":    challenge,
+		})
+		return
+	}
+
 	tokens, err := h.jwtManager.GenerateTokens(user.ID, *user.Username, user.IsSuperuser)
 	if err != nil {
 		utils.WriteError(w, http.StatusInternalServerError, "token generation failed")
 		return
 	}
 
-	// Login anomaly detection: check if IP changed significantly
+	h.finishLogin(w, r, &user, tokens)
+}
+
+// finishLogin 是两条登录路径（直接登录、通过 2FA 校验）共用的收尾：
+// 异地登录提醒、更新最后登录信息、下发 cookie、记录会话、审计、返回响应体。
+// 抽出来是为了让 2FA 那条路不必复制这一整段 —— 否则两边迟早会漂移，
+// 而"通过 2FA 登录的记录不进审计"这种事很难被发现。
+func (h *Handler) finishLogin(w http.ResponseWriter, r *http.Request, user *models.User, tokens *auth.TokenPair) {
 	clientIP := middleware.ClientIP(r)
+
+	// Login anomaly detection: check if IP changed significantly
 	if user.LastLoginIP != nil && *user.LastLoginIP != "" && *user.LastLoginIP != clientIP {
 		h.db.Exec(`INSERT INTO notifications (user_id, type, title, body, created_at)
 			VALUES ($1, 'security', '异地登录提醒', $2, $3)`,
@@ -180,6 +205,86 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 			"profile_picture": user.ProfilePicture,
 		},
 	})
+}
+
+// Validate2FA 是登录的第二步：用第一步拿到的临时凭证 + 一次 TOTP 验证码换取真正的 token。
+//
+// 也接受一次性恢复码（验证器丢失时救急），命中即从 backup_codes 中删掉。
+func (h *Handler) Validate2FA(w http.ResponseWriter, r *http.Request) {
+	r.ParseMultipartForm(32 << 20)
+	r.ParseForm()
+
+	challenge := r.FormValue("challenge")
+	code := strings.TrimSpace(r.FormValue("code"))
+	if challenge == "" || code == "" {
+		utils.WriteError(w, http.StatusBadRequest, "challenge and code required")
+		return
+	}
+
+	// 只认 2fa_pending 类型的凭证：拿 access token 来冒充会被这里挡掉
+	userID, err := h.jwtManager.ValidateTwoFactorToken(challenge)
+	if err != nil {
+		utils.WriteError(w, http.StatusUnauthorized, "challenge expired or invalid")
+		return
+	}
+
+	var user models.User
+	if err := h.db.QueryRow(
+		`SELECT id, username, email, is_superuser, is_active, profile_picture,
+		        is_2fa_enabled, totp_secret, backup_codes
+		 FROM users WHERE id = $1 AND is_active = true`, userID,
+	).Scan(&user.ID, &user.Username, &user.Email, &user.IsSuperuser, &user.IsActive,
+		&user.ProfilePicture, &user.Is2FAEnabled, &user.TOTPSecret, &user.BackupCodes); err != nil {
+		utils.WriteError(w, http.StatusUnauthorized, "user not found")
+		return
+	}
+
+	if !user.Is2FAEnabled || user.TOTPSecret == nil || *user.TOTPSecret == "" {
+		utils.WriteError(w, http.StatusBadRequest, "2fa is not enabled for this account")
+		return
+	}
+
+	ok := auth.VerifyTOTP(*user.TOTPSecret, code)
+
+	// 验证码不对时再看是不是一次性恢复码。命中就把它从列表里摘掉，
+	// 保证同一个恢复码只能用一次。
+	if !ok && user.BackupCodes != nil && *user.BackupCodes != "" {
+		remaining := make([]string, 0)
+		for _, c := range strings.Split(*user.BackupCodes, ",") {
+			c = strings.TrimSpace(c)
+			if c == "" {
+				continue
+			}
+			if strings.EqualFold(c, code) {
+				ok = true
+				continue // 不回填，即作废
+			}
+			remaining = append(remaining, c)
+		}
+		if ok {
+			h.db.Exec(`UPDATE users SET backup_codes = $1 WHERE id = $2`,
+				strings.Join(remaining, ","), userID)
+		}
+	}
+
+	if !ok {
+		audit.Log(h.db, audit.Entry{
+			UserID:    userID,
+			Action:    "auth.2fa_failed",
+			Resource:  fmt.Sprintf("user:%d", userID),
+			IPAddress: middleware.ClientIP(r),
+		})
+		utils.WriteError(w, http.StatusUnauthorized, "invalid code")
+		return
+	}
+
+	tokens, err := h.jwtManager.GenerateTokens(user.ID, *user.Username, user.IsSuperuser)
+	if err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "token generation failed")
+		return
+	}
+
+	h.finishLogin(w, r, &user, tokens)
 }
 
 // Refresh accepts FormData: refresh_token

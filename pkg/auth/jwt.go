@@ -20,6 +20,10 @@ type TokenType string
 const (
 	TokenTypeAccess  TokenType = "access"
 	TokenTypeRefresh TokenType = "refresh"
+	// TokenTypeTwoFactor 是登录第一步（密码通过）之后、第二步（TOTP 验证码）之前
+	// 用的临时凭证。它不能拿去访问任何业务接口，只能用来换取真正的 token 对，
+	// 因此即使被截获，攻击者仍然过不了第二因子。
+	TokenTypeTwoFactor TokenType = "2fa_pending"
 )
 
 // Claims represents JWT claims.
@@ -97,6 +101,36 @@ func (m *JWTManager) GenerateTokens(userID int64, username string, isAdmin bool)
 		TokenType:    "bearer",
 		ExpiresIn:    int(m.accessExpiration.Seconds()),
 	}, nil
+}
+
+// GenerateTwoFactorToken 签发登录第一步通过后的临时凭证。
+// 有效期很短：它只是"密码已经对了"的证明，不该在客户端长期留存。
+func (m *JWTManager) GenerateTwoFactorToken(userID int64) (string, error) {
+	now := time.Now()
+	return m.sign(&Claims{
+		UserID:    userID,
+		TokenType: TokenTypeTwoFactor,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
+			IssuedAt:  jwt.NewNumericDate(now),
+			Issuer:    "stora",
+		},
+	})
+}
+
+// ValidateTwoFactorToken 校验临时凭证并返回它指向的用户。
+//
+// 会拒绝类型不是 2fa_pending 的 token：否则随便拿一个 access token 塞过来，
+// 就等于跳过了第二因子。
+func (m *JWTManager) ValidateTwoFactorToken(tokenString string) (int64, error) {
+	claims, err := m.ValidateToken(tokenString)
+	if err != nil {
+		return 0, err
+	}
+	if claims.TokenType != TokenTypeTwoFactor {
+		return 0, ErrInvalidToken
+	}
+	return claims.UserID, nil
 }
 
 func (m *JWTManager) sign(claims *Claims) (string, error) {

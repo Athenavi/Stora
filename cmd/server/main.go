@@ -217,6 +217,13 @@ func main() {
 	scheduler.Start()
 	defer scheduler.Stop()
 
+	// 块池回收。引用降到零的块不会被立刻删除——同一份内容可能被别的文件共用，
+	// 所以需要一个周期任务把确实没人引用的块清掉；否则 block_store 与磁盘上的
+	// objects/ 只增不减。它不走 CleanupObserver：那套是事件驱动的，而"哪个块成了
+	// 孤儿"只能靠全表比对得出。
+	blockSweeper := &cleanup.OrphanBlockSweeper{DB: db, Storage: store, Interval: 6 * time.Hour}
+	blockSweeper.Start(context.Background())
+
 	// API v2 routes
 	r.Route("/api/v2", func(r chi.Router) {
 		r.Get("/", func(w http.ResponseWriter, r *http.Request) {
@@ -227,6 +234,10 @@ func main() {
 		// Auth routes (public)
 		r.Route("/auth", func(r chi.Router) {
 			r.With(loginLimiter.HTTPMiddleware).Post("/login", authHandler.Login)
+			// 登录第二步：此时客户端还拿不到 token，所以必须放在这个未认证的组里，
+			// 并且和 /login 一样限流 —— 否则 6 位验证码可以被暴力穷举。
+			// 注意组前缀已经是 /api/v2/auth，这里写 /2fa/validate。
+			r.With(loginLimiter.HTTPMiddleware).Post("/2fa/validate", authHandler.Validate2FA)
 			r.With(registerLimiter.HTTPMiddleware).Post("/register", authHandler.Register)
 			r.Post("/refresh", authHandler.Refresh)
 			r.Post("/send-code", authHandler.SendCode)
@@ -466,6 +477,7 @@ func main() {
 
 			// 2FA
 			r.Post("/auth/2fa/setup", adminHandler.Setup2FA)
+			r.Post("/auth/2fa/verify", adminHandler.Verify2FA)
 			r.Post("/auth/2fa/disable", adminHandler.Disable2FA)
 
 			// Admin (requires superuser)
